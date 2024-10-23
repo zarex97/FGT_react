@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react';
+import { w3cwebsocket as W3CWebSocket } from 'websocket';
+
+const client = new W3CWebSocket('ws://localhost:8080');
 
 const TacticalGame = () => {
     const [selectedUnit, setSelectedUnit] = useState(null);
