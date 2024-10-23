@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react';
 import { w3cwebsocket as W3CWebSocket } from 'websocket';
 
-const client = new WebSocket('ws://localhost:80');
+const client = new W3CWebSocket('ws://localhost:8080');
 
 const TacticalGame = () => {
     const [selectedUnit, setSelectedUnit] = useState(null);
@@ -13,122 +13,85 @@ const TacticalGame = () => {
     const [showNPMenu, setShowNPMenu] = useState(false);
     const [showProfile, setShowProfile] = useState(false);
     const [highlightedCells, setHighlightedCells] = useState([]);
-    const [gameState, setGameState] = useState({
-        units: [
-            { 
-                id: 1, 
-                x: 1, 
-                y: 1, 
-                team: 'player', 
-                hp: 20, 
-                atk: 8, 
-                def: 5, 
-                movementRange: 5,
-                movementLeft: 5,
-                hasAttacked: false,
-                name: 'Anastasia',
-                sprite: "/sprites/(Archer) Anastasia (Summer)_portrait.webp",
-                skills: [
-                    { id: 1, name: 'Shvibzik', type: 'Skill', description: 'Restores Luck', cooldown: 3 },
-                    { id: 2, name: 'Ice Bucket Challenge for You', type: 'Attack Skill', description: 'rains ice', cooldown: 2 }
-                ],
-                noblePhantasms: [
-                    { id: 1, name: 'Snegleta・Snegurochka: Summer Snow', description: 'Unleashes the power of summer', cooldown: 5 }
-                ],
-                reactions: [
-                    { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
-                ]
-            },
-            { 
-                id: 2, 
-                x: 3, 
-                y: 1, 
-                team: 'player', 
-                hp: 18, 
-                atk: 6, 
-                def: 7, 
-                movementRange: 3,     // Heavy armored unit with low movement
-                movementLeft: 3,
-                hasAttacked: false,
-                name: 'Artoria',
-                sprite: "/sprites/(Saber) Artoria_portrait.png",
-                skills: [
-                    { id: 1, name: 'Charisma', type: 'Skill', description: 'Boost allies ATK', cooldown: 3 },
-                    { id: 2, name: 'Mana Burst', type: 'Attack Skill', description: 'Powerful magic attack', cooldown: 2 }
-                ],
-                noblePhantasms: [
-                    { id: 1, name: 'Excalibur', description: 'Unleash holy sword energy', cooldown: 5 }
-                ],
-                reactions: [
-                    { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
-                ]
-            },
-            { 
-                id: 3, 
-                x: 6, 
-                y: 6, 
-                team: 'enemy', 
-                hp: 15, 
-                atk: 7, 
-                def: 4, 
-                movementRange: 4,     // Standard infantry unit
-                movementLeft: 4,
-                hasAttacked: false,
-                name: 'Bandit',
-                sprite: "/sprites/(Archer) Arash_portrait.webp",
-                skills: [
-                    { id: 1, name: 'Clairvoyance', type: 'Skill', description: 'makes his attacks harder to dodge', cooldown: 3 },
-                    { id: 2, name: 'Bow and Arrow Creation ', type: 'Attack Skill', description: 'Powerful magic attack', cooldown: 2 }
-                ],
-                noblePhantasms: [
-                    { id: 1, name: 'Stella: Lone Meteor ', description: 'Unleash the power of his last arrow', cooldown: 5 }
-                ],
-                reactions: [
-                ]
-            }
+  const [gameState, setGameState] = useState({
+    units: [
+      { 
+        id: 1, 
+        x: 1, 
+        y: 1, 
+        team: 'player', 
+        hp: 20, 
+        atk: 8, 
+        def: 5, 
+        movementRange: 5,
+        movementLeft: 5,
+        hasAttacked: false,
+        name: 'Anastasia',
+        sprite: "/sprites/(Archer) Anastasia (Summer)_portrait.webp",
+        skills: [
+          { id: 1, name: 'Shvibzik', type: 'Skill', description: 'Restores Luck', cooldown: 3 },
+          { id: 2, name: 'Ice Bucket Challenge for You', type: 'Attack Skill', description: 'rains ice', cooldown: 2 }
         ],
-        turn: 'player'
-    });
-
-    const [visibilityGrid, setVisibilityGrid] = useState(
-        Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false))
-    );
-
-    // useEffect(() => {
-    //     client.onopen = () => {
-    //         console.log('WebSocket Client Connected');
-    //     };
-
-    //     client.onmessage = (message) => {
-    //         const data = JSON.parse(message.data);
-    //         setGameState(data);
-    //     };
-
-    //     return () => {
-    //         client.close();
-    //     };
-    // }, []);
-
-    const sendGameState = (state) => {
-        client.send(JSON.stringify(state));
-    };
+        noblePhantasms: [
+          { id: 1, name: 'Snegleta・Snegurochka: Summer Snow', description: 'Unleashes the power of summer', cooldown: 5 }
+        ],
+        reactions: [
+          { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
+        ]
+      },
+      { 
+        id: 2, 
+        x: 3, 
+        y: 1, 
+        team: 'player', 
+        hp: 18, 
+        atk: 6, 
+        def: 7, 
+        movementRange: 3,     // Heavy armored unit with low movement
+        movementLeft: 3,
+        hasAttacked: false,
+        name: 'Artoria',
+        sprite: "/sprites/(Saber) Artoria_portrait.png",
+        skills: [
+            { id: 1, name: 'Charisma', type: 'Skill', description: 'Boost allies ATK', cooldown: 3 },
+            { id: 2, name: 'Mana Burst', type: 'Attack Skill', description: 'Powerful magic attack', cooldown: 2 }
+          ],
+          noblePhantasms: [
+            { id: 1, name: 'Excalibur', description: 'Unleash holy sword energy', cooldown: 5 }
+          ],
+          reactions: [
+            { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
+          ]
+      },
+      { 
+        id: 3, 
+        x: 6, 
+        y: 6, 
+        team: 'enemy', 
+        hp: 15, 
+        atk: 7, 
+        def: 4, 
+        movementRange: 4,     // Standard infantry unit
+        movementLeft: 4,
+        hasAttacked: false,
+        name: 'Bandit',
+        sprite: "/sprites/(Archer) Arash_portrait.webp",
+        skills: [
+            { id: 1, name: 'Clairvoyance', type: 'Skill', description: 'makes his attacks harder to dodge', cooldown: 3 },
+            { id: 2, name: 'Bow and Arrow Creation ', type: 'Attack Skill', description: 'Powerful magic attack', cooldown: 2 }
+          ],
+          noblePhantasms: [
+            { id: 1, name: 'Stella: Lone Meteor ', description: 'Unleash the power of his last arrow', cooldown: 5 }
+          ],
+          reactions: [
+          ]
+      }
+    ],
+    turn: 'player'
+  });
 
     // Close all menus when clicking outside
     useEffect(() => {
-        client.onopen = () => {
-            console.log('WebSocket Client Connected');
-        };
-
-        client.onmessage = (message) => {
-            const data = JSON.parse(message.data);
-            setGameState(data);
-        };
-
-        return () => {
-            client.close();
-        };
-
-
         const handleClickOutside = (event) => {
             if (contextMenu && !event.target.closest('.fixed')) { // Check if clicking outside the context menu
                 setContextMenu(null);
@@ -166,8 +129,8 @@ const TacticalGame = () => {
         }
     };
 
-    const ContextMenu = ({ position, unit, playerId }) => {
-        if (!position || playerId !== unit.playerId) return null;
+    const ContextMenu = ({ position, unit }) => {
+        if (!position) return null;
 
         return (
             <div 
@@ -416,17 +379,6 @@ const TacticalGame = () => {
         setGameState(prev => ({ ...prev, units: updatedUnits }));
         setSelectedUnit(null);
         setHighlightedCells([]);
-        updateVisibility(unit);
-        sendGameState({ ...gameState, units: updatedUnits });
-    };
-
-    const updateVisibility = (unit) => {
-        const newVisibilityGrid = visibilityGrid.map((row, y) => 
-            row.map((isVisible, x) => 
-                isVisible || calculateDistance(unit.x, unit.y, x, y) <= unit.visionRange
-            )
-        );
-        setVisibilityGrid(newVisibilityGrid);
     };
 
     const handleCellClick = (x, y) => {
@@ -456,7 +408,6 @@ const TacticalGame = () => {
         }));
         setSelectedUnit(null);
         setHighlightedCells([]);
-        sendGameState({ ...gameState, units: updatedUnits, turn: gameState.turn === 'player' ? 'enemy' : 'player' });
     };
 
     const UnitStatsTooltip = ({ unit }) => (
@@ -473,7 +424,6 @@ const TacticalGame = () => {
 
     const renderCell = (x, y) => {
         const unit = getUnitAt(x, y);
-        const isVisible = visibilityGrid[y][x];
         const isSelected = selectedUnit && selectedUnit.id === unit?.id;
         const isValidMove = highlightedCells.some(move => move.x === x && move.y === y);
         
@@ -504,7 +454,6 @@ const TacticalGame = () => {
                         {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
                     </div>
                 )}
-                {!isVisible && <div className="absolute inset-0 bg-black opacity-50"></div>}
             </div>
         );
     };
@@ -532,7 +481,7 @@ const TacticalGame = () => {
             </div>
 
             {contextMenu && activeUnit && (
-                <ContextMenu position={contextMenu} unit={activeUnit} playerId={activeUnit.playerId} />
+                <ContextMenu position={contextMenu} unit={activeUnit} />
             )}
             {showSkillsMenu && activeUnit && (
                 <SkillsMenu unit={activeUnit} />

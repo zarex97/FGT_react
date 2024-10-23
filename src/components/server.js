@@ -1,0 +1,26 @@
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 8080 });
+
+const clients = new Map();
+
+wss.on('connection', (ws) => {
+    const clientId = Math.random().toString(36).substr(2, 9);
+    clients.set(clientId, ws);
+
+    ws.on('message', (message) => {
+        const data = JSON.parse(message);
+        broadcast(data, clientId);
+    });
+
+    ws.on('close', () => {
+        clients.delete(clientId);
+    });
+});
+
+function broadcast(data, senderId) {
+    clients.forEach((client, id) => {
+        if (id !== senderId) {
+            client.send(JSON.stringify(data));
+        }
+    });
+}
