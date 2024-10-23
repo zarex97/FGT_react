@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react';
 import { w3cwebsocket as W3CWebSocket } from 'websocket';
 
-const client = new W3CWebSocket('ws://localhost:8080');
+const client = new W3CWebSocket('wss://c53c-2800-810-54b-5f8-f596-dc3d-2c92-7ff8.ngrok-free.app');
 
 const TacticalGame = () => {
     const [selectedUnit, setSelectedUnit] = useState(null);
