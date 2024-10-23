@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react';
 import { w3cwebsocket as W3CWebSocket } from 'websocket';
 
-const client = new W3CWebSocket('ws://localhost:3080');
+const client = new WebSocket('ws://localhost:80');
 
 const TacticalGame = () => {
     const [selectedUnit, setSelectedUnit] = useState(null);
@@ -94,6 +94,26 @@ const TacticalGame = () => {
         Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false))
     );
 
+    // useEffect(() => {
+    //     client.onopen = () => {
+    //         console.log('WebSocket Client Connected');
+    //     };
+
+    //     client.onmessage = (message) => {
+    //         const data = JSON.parse(message.data);
+    //         setGameState(data);
+    //     };
+
+    //     return () => {
+    //         client.close();
+    //     };
+    // }, []);
+
+    const sendGameState = (state) => {
+        client.send(JSON.stringify(state));
+    };
+
+    // Close all menus when clicking outside
     useEffect(() => {
         client.onopen = () => {
             console.log('WebSocket Client Connected');
@@ -107,14 +127,8 @@ const TacticalGame = () => {
         return () => {
             client.close();
         };
-    }, []);
 
-    const sendGameState = (state) => {
-        client.send(JSON.stringify(state));
-    };
 
-    // Close all menus when clicking outside
-    useEffect(() => {
         const handleClickOutside = (event) => {
             if (contextMenu && !event.target.closest('.fixed')) { // Check if clicking outside the context menu
                 setContextMenu(null);

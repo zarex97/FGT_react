@@ -1,12 +1,12 @@
 import { WebSocketServer } from 'ws';
 
-const wss = new WebSocketServer({ port: 3080 });
+const wss = new WebSocketServer({ port: 80 });
 
-console.log('WebSocket server is listening on port 8080');
 
 const clients = new Map();
 
 wss.on('connection', (ws) => {
+    console.log('Client connected');
     const clientId = Math.random().toString(36).substr(2, 9);
     clients.set(clientId, ws);
 
