@@ -41,7 +41,7 @@ const TacticalGame = ({ username, roomId }) => {
                         movementLeft: 5,
                         hasAttacked: false,
                         name: 'Anastasia',
-                        sprite: "/sprites/(Archer) Anastasia (Summer)_portrait.webp",
+                        sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp",
                         skills: [
                             { id: 1, name: 'Shvibzik', type: 'Skill', description: 'Restores Luck', cooldown: 3 },
                             { id: 2, name: 'Ice Bucket Challenge for You', type: 'Attack Skill', description: 'rains ice', cooldown: 2 }
