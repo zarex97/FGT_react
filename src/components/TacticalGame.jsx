@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react';
-import { w3cwebsocket as W3CWebSocket } from 'websocket';
+import useWebSocket, { ReadyState } from 'react-use-websocket';
 
-const client = new WebSocket('ws://localhost:80');
-
-const TacticalGame = () => {
+const TacticalGame = ({ username, roomId }) => {
+    console.log('TacticalGame props:', { username, roomId });
     const [selectedUnit, setSelectedUnit] = useState(null);
     const [hoveredUnit, setHoveredUnit] = useState(null);
     const [contextMenu, setContextMenu] = useState(null);
@@ -13,161 +12,166 @@ const TacticalGame = () => {
     const [showNPMenu, setShowNPMenu] = useState(false);
     const [showProfile, setShowProfile] = useState(false);
     const [highlightedCells, setHighlightedCells] = useState([]);
-    const [gameState, setGameState] = useState({
-        units: [
-            { 
-                id: 1, 
-                x: 1, 
-                y: 1, 
-                team: 'player', 
-                hp: 20, 
-                atk: 8, 
-                def: 5, 
-                movementRange: 5,
-                movementLeft: 5,
-                hasAttacked: false,
-                name: 'Anastasia',
-                sprite: "/sprites/(Archer) Anastasia (Summer)_portrait.webp",
-                skills: [
-                    { id: 1, name: 'Shvibzik', type: 'Skill', description: 'Restores Luck', cooldown: 3 },
-                    { id: 2, name: 'Ice Bucket Challenge for You', type: 'Attack Skill', description: 'rains ice', cooldown: 2 }
-                ],
-                noblePhantasms: [
-                    { id: 1, name: 'Snegleta・Snegurochka: Summer Snow', description: 'Unleashes the power of summer', cooldown: 5 }
-                ],
-                reactions: [
-                    { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
+    const [gameState, setGameState] = useState(null);
+    const [connectionStatus, setConnectionStatus] = useState('Connecting...');
+    const [isConnecting, setIsConnecting] = useState(true);
+
+
+
+
+    const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
+    const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(WS_URL, {
+        share: false,
+        onOpen: () => {
+            console.log('WebSocket connected');
+            // Initialize game state when connection is established
+            sendJsonMessage({
+                type: 'JOIN_ROOM',
+                roomId,
+                initialUnits: [
+                    { 
+                        id: 1, 
+                        x: 1, 
+                        y: 1, 
+                        team: 'player1', 
+                        hp: 20, 
+                        atk: 8, 
+                        def: 5, 
+                        movementRange: 5,
+                        movementLeft: 5,
+                        hasAttacked: false,
+                        name: 'Anastasia',
+                        sprite: "/sprites/(Archer) Anastasia (Summer)_portrait.webp",
+                        skills: [
+                            { id: 1, name: 'Shvibzik', type: 'Skill', description: 'Restores Luck', cooldown: 3 },
+                            { id: 2, name: 'Ice Bucket Challenge for You', type: 'Attack Skill', description: 'rains ice', cooldown: 2 }
+                        ],
+                        noblePhantasms: [
+                            { id: 1, name: 'Snegleta・Snegurochka: Summer Snow', description: 'Unleashes the power of summer', cooldown: 5 }
+                        ],
+                        reactions: [
+                            { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
+                        ]
+                    },
+                    // Add other initial units here
                 ]
-            },
-            { 
-                id: 2, 
-                x: 3, 
-                y: 1, 
-                team: 'player', 
-                hp: 18, 
-                atk: 6, 
-                def: 7, 
-                movementRange: 3,     // Heavy armored unit with low movement
-                movementLeft: 3,
-                hasAttacked: false,
-                name: 'Artoria',
-                sprite: "/sprites/(Saber) Artoria_portrait.png",
-                skills: [
-                    { id: 1, name: 'Charisma', type: 'Skill', description: 'Boost allies ATK', cooldown: 3 },
-                    { id: 2, name: 'Mana Burst', type: 'Attack Skill', description: 'Powerful magic attack', cooldown: 2 }
-                ],
-                noblePhantasms: [
-                    { id: 1, name: 'Excalibur', description: 'Unleash holy sword energy', cooldown: 5 }
-                ],
-                reactions: [
-                    { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
-                ]
-            },
-            { 
-                id: 3, 
-                x: 6, 
-                y: 6, 
-                team: 'enemy', 
-                hp: 15, 
-                atk: 7, 
-                def: 4, 
-                movementRange: 4,     // Standard infantry unit
-                movementLeft: 4,
-                hasAttacked: false,
-                name: 'Bandit',
-                sprite: "/sprites/(Archer) Arash_portrait.webp",
-                skills: [
-                    { id: 1, name: 'Clairvoyance', type: 'Skill', description: 'makes his attacks harder to dodge', cooldown: 3 },
-                    { id: 2, name: 'Bow and Arrow Creation ', type: 'Attack Skill', description: 'Powerful magic attack', cooldown: 2 }
-                ],
-                noblePhantasms: [
-                    { id: 1, name: 'Stella: Lone Meteor ', description: 'Unleash the power of his last arrow', cooldown: 5 }
-                ],
-                reactions: [
-                ]
-            }
-        ],
-        turn: 'player'
+            });
+        },
+        onError: (error) => {
+            console.error('WebSocket error:', error);
+            setIsConnecting(false);
+        },
+        onClose: () => {
+            console.log('WebSocket disconnected');
+            setIsConnecting(false);
+        }
     });
 
-    const [visibilityGrid, setVisibilityGrid] = useState(
-        Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false))
-    );
-
-    // useEffect(() => {
-    //     client.onopen = () => {
-    //         console.log('WebSocket Client Connected');
-    //     };
-
-    //     client.onmessage = (message) => {
-    //         const data = JSON.parse(message.data);
-    //         setGameState(data);
-    //     };
-
-    //     return () => {
-    //         client.close();
-    //     };
-    // }, []);
-
-    const sendGameState = (state) => {
-        client.send(JSON.stringify(state));
-    };
-
-    // Close all menus when clicking outside
+    // Handle incoming WebSocket messages
     useEffect(() => {
-        client.onopen = () => {
-            console.log('WebSocket Client Connected');
-        };
+        if (lastJsonMessage?.type === 'GAME_STATE_UPDATE') {
+            console.log('Received game state:', lastJsonMessage.gameState);
+            setGameState(lastJsonMessage.gameState);
+            setIsConnecting(false);
+        }
+    }, [lastJsonMessage]);
 
-        client.onmessage = (message) => {
-            const data = JSON.parse(message.data);
-            setGameState(data);
-        };
+    // Loading state
+    if (isConnecting) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="text-center">
+                    <h2 className="text-xl font-bold mb-4">Connecting to game...</h2>
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+                </div>
+            </div>
+        );
+    }
 
-        return () => {
-            client.close();
-        };
+    // Error state
+    if (!gameState && !isConnecting) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="text-center">
+                    <h2 className="text-xl font-bold mb-4">Unable to connect to game</h2>
+                    <p>Please try refreshing the page</p>
+                </div>
+            </div>
+        );
+    }
 
-
-        const handleClickOutside = (event) => {
-            if (contextMenu && !event.target.closest('.fixed')) { // Check if clicking outside the context menu
-                setContextMenu(null);
-            }
-            if (showSkillsMenu && !event.target.closest('.fixed')) {
-                setShowSkillsMenu(false);
-            }
-            if (showNPMenu && !event.target.closest('.fixed')) {
-                setShowNPMenu(false);
-            }
-            if (showProfile && !event.target.closest('.fixed')) {
-                setShowProfile(false);
-            }
-            setActiveUnit(null); // Reset active unit when clicking outside
-        };
-
-        document.addEventListener('click', handleClickOutside);
-        return () => document.removeEventListener('click', handleClickOutside);
-    }, [contextMenu, showSkillsMenu, showNPMenu, showProfile, activeUnit]);
+    // Your existing menu handling useEffect...
 
     const handleContextMenu = (e, unit) => {
         e.preventDefault();
-        if (unit.team === gameState.turn) {
+        const playerTeam = gameState.players[Object.keys(gameState.players).find(
+            id => gameState.players[id].username === username
+        )].team;
+        
+        if (unit.team === playerTeam && unit.team === gameState.turn) {
             setContextMenu({ x: e.pageX, y: e.pageY });
             setActiveUnit(unit);
         }
     };
 
-    const handleAction = (action, unit) => {
-        if (action === 'move') {
-            setHighlightedCells(getPossibleMoves(unit));
-            setContextMenu(null);
-        } else if (action === 'attack') {
-            // Handle attack action
-        }
+    const moveUnit = (unit, newX, newY) => {
+        if (!unit || unit.movementLeft <= 0) return;
+        
+        const distance = calculateDistance(unit.x, unit.y, newX, newY);
+        if (distance > unit.movementLeft) return;
+
+        sendJsonMessage({
+            type: 'GAME_ACTION',
+            action: 'MOVE_UNIT',
+            unitId: unit.id,
+            newX,
+            newY,
+            newMovementLeft: unit.movementLeft - distance
+        });
+
+        setSelectedUnit(null);
+        setHighlightedCells([]);
     };
 
-    const ContextMenu = ({ position, unit, playerId }) => {
-        if (!position || playerId !== unit.playerId) return null;
+    const handleAttack = (attacker, target) => {
+        // Calculate damage
+        const damage = Math.max(1, attacker.atk - target.def);
+        const newHp = Math.max(0, target.hp - damage);
+
+        sendJsonMessage({
+            type: 'GAME_ACTION',
+            action: 'ATTACK',
+            attackerId: attacker.id,
+            targetId: target.id,
+            newHp
+        });
+    };
+
+    const endTurn = () => {
+        const updatedUnits = gameState.units.map(unit => ({
+            ...unit,
+            movementLeft: unit.movementRange,
+            hasAttacked: false
+        }));
+
+        const currentPlayerIndex = parseInt(gameState.turn.slice(-1));
+        const nextPlayerIndex = currentPlayerIndex === Object.keys(gameState.players).length ? 1 : currentPlayerIndex + 1;
+        
+        sendJsonMessage({
+            type: 'GAME_ACTION',
+            action: 'END_TURN',
+            updatedUnits,
+            nextTurn: `player${nextPlayerIndex}`
+        });
+
+        setSelectedUnit(null);
+        setHighlightedCells([]);
+    };
+
+
+
+const ContextMenu = ({ position, unit }) => {
+        if (!position) return null;
 
         return (
             <div 
@@ -314,7 +318,7 @@ const TacticalGame = () => {
                                         <span className="font-bold">DEF:</span> {unit.def}
                                     </div>
                                     <div className="p-2 border rounded">
-                                        <span className="font-bold">Movement:</span> {unit.movementRange}
+                                        <span className="font-bold">Movement:</span> {unit.movementLeft}/{unit.movementRange}
                                     </div>
                                 </div>
                             </div>
@@ -353,7 +357,7 @@ const TacticalGame = () => {
 
                         {activeTab === 'reactions' && (
                             <div className="space-y-4">
-                                {unit.reactions.map(reaction => (
+                                {unit.reactions?.map(reaction => (
                                     <div key={reaction.id} className="p-4 border rounded">
                                         <h3 className="font-bold text-lg">{reaction.name}</h3>
                                         <div className="text-sm text-gray-600 mt-2">{reaction.description}</div>
@@ -370,15 +374,13 @@ const TacticalGame = () => {
     const GRID_SIZE = 11;
 
     const getUnitAt = (x, y) => {
-        return gameState.units.find(unit => unit.x === x && unit.y === y);
+        return gameState?.units.find(unit => unit.x === x && unit.y === y);
     };
 
-    // Calculate Manhattan distance between two points
     const calculateDistance = (x1, y1, x2, y2) => {
         return Math.abs(x1 - x2) + Math.abs(y1 - y2);
     };
 
-    // Get all possible moves within remaining movement points
     const getPossibleMoves = (unit) => {
         const moves = [];
         const range = unit.movementLeft;
@@ -395,42 +397,29 @@ const TacticalGame = () => {
         return moves;
     };
 
-    const moveUnit = (unit, newX, newY) => {
-        if (!unit || unit.movementLeft <= 0) return;
-        
-        const distance = calculateDistance(unit.x, unit.y, newX, newY);
-        if (distance > unit.movementLeft) return;
+    const handleAction = (action, unit) => {
+        const playerTeam = gameState.players[Object.keys(gameState.players).find(
+            id => gameState.players[id].username === username
+        )].team;
 
-        const updatedUnits = gameState.units.map(u => {
-            if (u.id === unit.id) {
-                return {
-                    ...u,
-                    x: newX,
-                    y: newY,
-                    movementLeft: u.movementLeft - distance
-                };
-            }
-            return u;
-        });
-        
-        setGameState(prev => ({ ...prev, units: updatedUnits }));
-        setSelectedUnit(null);
-        setHighlightedCells([]);
-        updateVisibility(unit);
-        sendGameState({ ...gameState, units: updatedUnits });
-    };
+        if (unit.team !== playerTeam || unit.team !== gameState.turn) return;
 
-    const updateVisibility = (unit) => {
-        const newVisibilityGrid = visibilityGrid.map((row, y) => 
-            row.map((isVisible, x) => 
-                isVisible || calculateDistance(unit.x, unit.y, x, y) <= unit.visionRange
-            )
-        );
-        setVisibilityGrid(newVisibilityGrid);
+        if (action === 'move') {
+            setHighlightedCells(getPossibleMoves(unit));
+            setContextMenu(null);
+        } else if (action === 'attack') {
+            // Handle attack action
+            setContextMenu(null);
+            // You could set a state to indicate attack mode and highlight possible targets
+            // Then handle the actual attack in handleCellClick when a target is selected
+        }
     };
 
     const handleCellClick = (x, y) => {
         const clickedUnit = getUnitAt(x, y);
+        const playerTeam = gameState.players[Object.keys(gameState.players).find(
+            id => gameState.players[id].username === username
+        )].team;
         
         if (selectedUnit) {
             if (!clickedUnit && highlightedCells.some(move => move.x === x && move.y === y)) {
@@ -439,24 +428,9 @@ const TacticalGame = () => {
                 setSelectedUnit(null);
                 setHighlightedCells([]);
             }
-        } else if (clickedUnit && clickedUnit.team === gameState.turn && clickedUnit.movementLeft > 0) {
+        } else if (clickedUnit && clickedUnit.team === playerTeam && clickedUnit.team === gameState.turn) {
             setSelectedUnit(clickedUnit);
         }
-    };
-
-    const endTurn = () => {
-        const updatedUnits = gameState.units.map(unit => ({
-            ...unit,
-            movementLeft: unit.movementRange // Reset movement points to full
-        }));
-        setGameState(prev => ({
-            ...prev,
-            units: updatedUnits,
-            turn: prev.turn === 'player' ? 'enemy' : 'player'
-        }));
-        setSelectedUnit(null);
-        setHighlightedCells([]);
-        sendGameState({ ...gameState, units: updatedUnits, turn: gameState.turn === 'player' ? 'enemy' : 'player' });
     };
 
     const UnitStatsTooltip = ({ unit }) => (
@@ -473,7 +447,6 @@ const TacticalGame = () => {
 
     const renderCell = (x, y) => {
         const unit = getUnitAt(x, y);
-        const isVisible = visibilityGrid[y][x];
         const isSelected = selectedUnit && selectedUnit.id === unit?.id;
         const isValidMove = highlightedCells.some(move => move.x === x && move.y === y);
         
@@ -486,12 +459,12 @@ const TacticalGame = () => {
                 key={`${x}-${y}`}
                 className={`w-16 h-16 border border-gray-300 ${bgColor} flex items-center justify-center relative cursor-pointer`}
                 onClick={() => handleCellClick(x, y)}
-                onContextMenu={(e) => handleContextMenu(e, unit)}
+                onContextMenu={(e) => unit && handleContextMenu(e, unit)}
             >
                 {unit && (
                     <div 
                         className={`absolute inset-0 flex items-center justify-center 
-                            ${unit.team === 'player' ? 'text-blue-600' : 'text-red-600'}
+                            ${unit.team === playerTeam ? 'text-blue-600' : 'text-red-600'}
                             ${unit.movementLeft === 0 ? 'opacity-50' : ''}`}
                         onMouseEnter={() => setHoveredUnit(unit)}
                         onMouseLeave={() => setHoveredUnit(null)}
@@ -504,23 +477,29 @@ const TacticalGame = () => {
                         {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
                     </div>
                 )}
-                {!isVisible && <div className="absolute inset-0 bg-black opacity-50"></div>}
             </div>
         );
     };
+
+    // Get current player's team for proper unit coloring
+    const playerTeam = gameState?.players[Object.keys(gameState.players).find(
+        id => gameState.players[id].username === username
+    )]?.team;
 
     return (
         <div className="p-4">
             <div className="mb-4">
                 <h2 className="text-xl font-bold mb-2">
-                    Turn: {gameState.turn === 'player' ? 'Player Phase' : 'Enemy Phase'}
+                    {gameState.turn === playerTeam ? "Your Turn" : `${gameState.turn}'s Turn`}
                 </h2>
-                <button
-                    onClick={endTurn}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                    End Turn
-                </button>
+                {gameState.turn === playerTeam && (
+                    <button
+                        onClick={endTurn}
+                        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                        End Turn
+                    </button>
+                )}
             </div>
             
             <div className="inline-block border-2 border-gray-400">
@@ -532,7 +511,7 @@ const TacticalGame = () => {
             </div>
 
             {contextMenu && activeUnit && (
-                <ContextMenu position={contextMenu} unit={activeUnit} playerId={activeUnit.playerId} />
+                <ContextMenu position={contextMenu} unit={activeUnit} />
             )}
             {showSkillsMenu && activeUnit && (
                 <SkillsMenu unit={activeUnit} />
