@@ -16,6 +16,10 @@ const TacticalGame = ({ username, roomId }) => {
     const [gameState, setGameState] = useState(null);
     const [connectionStatus, setConnectionStatus] = useState('Connecting...');
     const [isConnecting, setIsConnecting] = useState(true);
+    const [activeSkill, setActiveSkill] = useState(null);
+    const [skillTargetingMode, setSkillTargetingMode] = useState(false);
+    const [previewCells, setPreviewCells] = useState(new Set());
+
 
 
 
@@ -44,8 +48,7 @@ const TacticalGame = ({ username, roomId }) => {
                         name: 'Anastasia',
                         sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp",
                         skills: [
-                            { id: 1, name: 'Shvibzik', type: 'Skill', description: 'Restores Luck', cooldown: 3 },
-                            { id: 2, name: 'Ice Bucket Challenge for You', type: 'Attack Skill', description: 'rains ice', cooldown: 2 }
+                            createMahalapraya()
                         ],
                         noblePhantasms: [
                             { id: 1, name: 'Snegleta・Snegurochka: Summer Snow', description: 'Unleashes the power of summer', cooldown: 5 }
