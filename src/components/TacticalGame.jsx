@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react';
 import useWebSocket, { ReadyState } from 'react-use-websocket';
+import { createMahalapraya } from '../game/skills/Mahalapraya';
 
 const TacticalGame = ({ username, roomId }) => {
     console.log('TacticalGame props:', { username, roomId });

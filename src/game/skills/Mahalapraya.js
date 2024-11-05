@@ -1,4 +1,7 @@
-import { Skill, MicroAction, TargetingType } from '../index';
+import { Skill } from '../Skill';
+import { MicroAction } from '../MicroAction';
+import { TargetingType } from '../targeting/TargetingTypes';
+import { TargetingLogic } from '../targeting/TargetingLogic';
 
 export const createMahalapraya = () => {
     const mahalaprayaAction = new MicroAction({
