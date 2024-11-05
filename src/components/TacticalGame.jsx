@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react';
 import useWebSocket, { ReadyState } from 'react-use-websocket';
 import { createMahalapraya } from '../game/skills/Mahalapraya';
+import { Skill } from '../game/Skill';
 
 const TacticalGame = ({ username, roomId }) => {
     console.log('TacticalGame props:', { username, roomId });
@@ -29,6 +30,10 @@ const TacticalGame = ({ username, roomId }) => {
         share: false,
         onOpen: () => {
             console.log('WebSocket connected');
+
+            const mahalaprayaSkill = createMahalapraya();
+            console.log('Created skill for unit:', mahalaprayaSkill); // Debug log
+
             // Initialize game state when connection is established
             sendJsonMessage({
                 type: 'JOIN_ROOM',
@@ -48,7 +53,7 @@ const TacticalGame = ({ username, roomId }) => {
                         name: 'Anastasia',
                         sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp",
                         skills: [
-                            createMahalapraya()
+                            mahalaprayaSkill
                         ],
                         noblePhantasms: [
                             { id: 1, name: 'Snegleta・Snegurochka: Summer Snow', description: 'Unleashes the power of summer', cooldown: 5 }
@@ -104,6 +109,24 @@ const TacticalGame = ({ username, roomId }) => {
         );
     }
 
+
+    // Add this function to handle skill selection
+const handleSkillSelect = (skill, unit) => {
+    if (skill.isOnCooldown(gameState.currentTurn)) {
+        console.log('Skill is on cooldown');
+        return;
+    }
+    
+    setActiveSkill(skill);
+    setSkillTargetingMode(true);
+    setShowSkillsMenu(false); // Close the skills menu
+    
+    // For AOE_AROUND_SELF, we can show the preview immediately
+    if (skill.microActions[0].targetingType === TargetingType.AOE_AROUND_SELF) {
+        const affectedCells = skill.microActions[0].getAffectedCells(unit, null, null, 11);
+        setPreviewCells(affectedCells);
+    }
+};
     // Your existing menu handling useEffect...
 
     const handleContextMenu = (e, unit) => {
@@ -172,7 +195,7 @@ const TacticalGame = ({ username, roomId }) => {
         setHighlightedCells([]);
     };
 
-
+   
 
 const ContextMenu = ({ position, unit }) => {
         if (!position) return null;
@@ -219,33 +242,60 @@ const ContextMenu = ({ position, unit }) => {
         );
     };
 
+    const debugSkillMethods = (skill) => {
+        console.log('Skill debug:', {
+            name: skill.name,
+            isFunction: typeof skill.isOnCooldown === 'function',
+            prototype: Object.getPrototypeOf(skill),
+            methods: Object.getOwnPropertyNames(Object.getPrototypeOf(skill))
+        });
+    };
+    
+
+
     const SkillsMenu = ({ unit }) => {
         if (!showSkillsMenu) return null;
+        
+        unit.skills?.forEach(debugSkillMethods);
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white rounded-lg p-4 w-96">
                     <h3 className="text-xl font-bold mb-4">Skills</h3>
                     <div className="space-y-2">
-                        {unit.skills.map(skill => (
-                            <div key={skill.id} className="p-2 border rounded hover:bg-gray-50">
+                    {unit.skills?.map((skill, index) => {
+                        // Verify skill instance
+                        if (!(skill instanceof Skill)) {
+                            console.error('Invalid skill instance:', skill);
+                            return null;
+                        }
+
+                        return (
+                            <div 
+                                key={index}
+                                className="p-2 border rounded hover:bg-gray-50 cursor-pointer"
+                            >
                                 <div className="font-bold flex justify-between">
                                     {skill.name}
-                                    <span className="text-sm text-gray-500">CD: {skill.cooldown}</span>
+                                    <span className="text-sm text-gray-500">
+                                        {skill.isOnCooldown(gameState.currentTurn) 
+                                            ? `CD: ${skill.onCooldownUntil - gameState.currentTurn}`
+                                            : 'Ready'}
+                                    </span>
                                 </div>
                                 <div className="text-sm text-gray-600">{skill.description}</div>
-                                <div className="text-xs text-gray-500">Type: {skill.type}</div>
                             </div>
-                        ))}
-                    </div>
-                    <button 
-                        className="mt-4 px-4 py-2 bg-gray-200 rounded"
-                        onClick={() => setShowSkillsMenu(false)}
-                    >
-                        Close
-                    </button>
+                        );
+                    })}
                 </div>
+                <button 
+                    className="mt-4 px-4 py-2 bg-gray-200 rounded"
+                    onClick={() => setShowSkillsMenu(false)}
+                >
+                    Close
+                </button>
             </div>
+        </div>
         );
     };
 
@@ -420,6 +470,36 @@ const ContextMenu = ({ position, unit }) => {
     };
 
     const handleCellClick = (x, y) => {
+        //logic for targeting
+        if (skillTargetingMode && activeSkill) {
+            const caster = selectedUnit;
+            if (!caster) return;
+    
+            // Execute the skill
+            const result = activeSkill.execute(gameState, caster, x, y);
+            if (result.success) {
+                // Send the update to the server
+                sendJsonMessage({
+                    type: 'GAME_ACTION',
+                    action: 'USE_SKILL',
+                    skillName: activeSkill.name,
+                    casterId: caster.id,
+                    targetX: x,
+                    targetY: y,
+                    updatedGameState: result.updatedGameState
+                });
+            }
+    
+            // Reset targeting mode
+            setSkillTargetingMode(false);
+            setActiveSkill(null);
+            setPreviewCells(new Set());
+            setSelectedUnit(null);
+            return;
+        }
+
+        //logic for clicking when trying to move
+        
         const clickedUnit = getUnitAt(x, y);
         const playerTeam = gameState.players[Object.keys(gameState.players).find(
             id => gameState.players[id].username === username
@@ -437,6 +517,20 @@ const ContextMenu = ({ position, unit }) => {
         }
     };
 
+    // Add this function to handle mouse movement during targeting
+const handleCellHover = (x, y) => {
+    if (skillTargetingMode && activeSkill && selectedUnit) {
+        // For targeting types that need a target point
+        if (activeSkill.microActions[0].targetingType === TargetingType.AOE_FROM_POINT) {
+            const affectedCells = activeSkill.microActions[0].getAffectedCells(
+                selectedUnit, x, y, 11
+            );
+            setPreviewCells(affectedCells);
+        }
+    }
+};
+
+
     const UnitStatsTooltip = ({ unit }) => (
         <div className="absolute -top-24 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-75 text-white p-2 rounded shadow-lg z-10">
             <div className="text-sm font-bold mb-1">{unit.name}</div>
@@ -453,17 +547,26 @@ const ContextMenu = ({ position, unit }) => {
         const unit = getUnitAt(x, y);
         const isSelected = selectedUnit && selectedUnit.id === unit?.id;
         const isValidMove = highlightedCells.some(move => move.x === x && move.y === y);
+        //addition for skill use logic
+        const isInSkillPreview = previewCells.has(`${x},${y}`);
         
         let bgColor = 'bg-green-100';
-        if (isSelected) bgColor = 'bg-blue-300';
-        else if (isValidMove) bgColor = 'bg-blue-100';
+    if (isInSkillPreview) {
+        bgColor = 'bg-red-200'; // or different colors based on skill type
+    } else if (isSelected) {
+        bgColor = 'bg-blue-300';
+    } else if (isValidMove) {
+        bgColor = 'bg-blue-100';
+    }
 
         return (
             <div
-                key={`${x}-${y}`}
-                className={`w-16 h-16 border border-gray-300 ${bgColor} flex items-center justify-center relative cursor-pointer`}
-                onClick={() => handleCellClick(x, y)}
-                onContextMenu={(e) => unit && handleContextMenu(e, unit)}
+            key={`${x}-${y}`}
+            className={`w-16 h-16 border border-gray-300 ${bgColor} flex items-center justify-center relative cursor-pointer`}
+            onClick={() => handleCellClick(x, y)}
+            //onMouseEnter is the addition for skill logic
+            onMouseEnter={() => handleCellHover(x, y)}
+            onContextMenu={(e) => unit && handleContextMenu(e, unit)}
             >
                 {unit && (
                     <div 

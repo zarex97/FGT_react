@@ -6,6 +6,10 @@ export class Skill {
         this.range = range;
         this.microActions = microActions;
         this.onCooldownUntil = 0;
+
+        this.isOnCooldown = this.isOnCooldown.bind(this);
+        this.startCooldown = this.startCooldown.bind(this);
+        this.execute = this.execute.bind(this);
     }
 
     isOnCooldown(currentTurn) {
@@ -41,3 +45,7 @@ export class Skill {
         };
     }
 }
+
+export const createSkill = (name, description, cooldown, range, microActions) => {
+    return new Skill(name, description, cooldown, range, microActions);
+};
