@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react';
 import useWebSocket, { ReadyState } from 'react-use-websocket';
+import { createMahalapraya } from '../game/skills/Mahalapraya';
+import { Skill } from '../game/Skill';
+import { getSkillImplementation, isSkillOnCooldown, executeSkill, getSkillAffectedCells  } from '../game/skills/registry';
+import { TargetingType } from '../game/targeting/TargetingTypes';
+import { TargetingLogic } from '../game/targeting/TargetingLogic';
 
 const TacticalGame = ({ username, roomId }) => {
     console.log('TacticalGame props:', { username, roomId });
@@ -15,15 +20,20 @@ const TacticalGame = ({ username, roomId }) => {
     const [gameState, setGameState] = useState(null);
     const [connectionStatus, setConnectionStatus] = useState('Connecting...');
     const [isConnecting, setIsConnecting] = useState(true);
+    const [activeSkill, setActiveSkill] = useState(null);
+    const [skillTargetingMode, setSkillTargetingMode] = useState(false);
+    const [previewCells, setPreviewCells] = useState(new Set());
 
 
 
 
+    
     const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
     const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(WS_URL, {
         share: false,
         onOpen: () => {
             console.log('WebSocket connected');
+
             // Initialize game state when connection is established
             sendJsonMessage({
                 type: 'JOIN_ROOM',
@@ -43,8 +53,10 @@ const TacticalGame = ({ username, roomId }) => {
                         name: 'Anastasia',
                         sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp",
                         skills: [
-                            { id: 1, name: 'Shvibzik', type: 'Skill', description: 'Restores Luck', cooldown: 3 },
-                            { id: 2, name: 'Ice Bucket Challenge for You', type: 'Attack Skill', description: 'rains ice', cooldown: 2 }
+                            {
+                                id: "Mahalapraya",
+                                onCooldownUntil: 0
+                            }
                         ],
                         noblePhantasms: [
                             { id: 1, name: 'Snegleta・Snegurochka: Summer Snow', description: 'Unleashes the power of summer', cooldown: 5 }
@@ -54,6 +66,33 @@ const TacticalGame = ({ username, roomId }) => {
                         ]
                     },
                     // Add other initial units here
+
+                    { 
+                        id: 2, 
+                        x: 3, 
+                        y: 1, 
+                        team: 'player2', 
+                        hp: 18, 
+                        atk: 6, 
+                        def: 7, 
+                        movementRange: 3,     // Heavy armored unit with low movement
+                        movementLeft: 3,
+                        hasAttacked: false,
+                        name: 'Artoria',
+                        sprite: "dist/sprites/(Saber) Artoria_portrait.png",
+                        skills: [
+                            {
+                                id: "Mahalapraya",
+                                onCooldownUntil: 0
+                            }
+                          ],
+                          noblePhantasms: [
+                            { id: 1, name: 'Excalibur', description: 'Unleash holy sword energy', cooldown: 5 }
+                          ],
+                          reactions: [
+                            { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
+                          ]
+                      }
                 ]
             });
         },
@@ -66,6 +105,7 @@ const TacticalGame = ({ username, roomId }) => {
             setIsConnecting(false);
         }
     });
+
 
     // Handle incoming WebSocket messages
     useEffect(() => {
@@ -100,6 +140,34 @@ const TacticalGame = ({ username, roomId }) => {
         );
     }
 
+
+    // Add this function to handle skill selection
+    const handleSkillSelect = (skillRef, skillImpl, unit) => {
+        if (isSkillOnCooldown(skillRef, gameState.currentTurn)) {
+            console.log('Skill is on cooldown');
+            return;
+        }
+        
+        setActiveSkill({
+            ref: skillRef,
+            impl: skillImpl
+        });
+        setSkillTargetingMode(true);
+        setContextMenu(false);
+        setShowSkillsMenu(false);
+    
+        // For AOE_AROUND_SELF targeting type
+        if (skillImpl.microActions?.[0]?.targetingType === TargetingType.AOE_AROUND_SELF) {
+            const affectedCells = getSkillAffectedCells(
+                skillImpl,
+                unit,
+                null,
+                null,
+                11
+            );
+            setPreviewCells(affectedCells);
+        }
+    };
     // Your existing menu handling useEffect...
 
     const handleContextMenu = (e, unit) => {
@@ -168,7 +236,7 @@ const TacticalGame = ({ username, roomId }) => {
         setHighlightedCells([]);
     };
 
-
+   
 
 const ContextMenu = ({ position, unit }) => {
         if (!position) return null;
@@ -215,24 +283,47 @@ const ContextMenu = ({ position, unit }) => {
         );
     };
 
+    const debugSkillMethods = (skill) => {
+        console.log('Skill debug:', {
+            name: skill.name,
+            isFunction: typeof skill.isOnCooldown === 'function',
+            prototype: Object.getPrototypeOf(skill),
+            methods: Object.getOwnPropertyNames(Object.getPrototypeOf(skill))
+        });
+    };
+    
+
+
     const SkillsMenu = ({ unit }) => {
         if (!showSkillsMenu) return null;
-
+    
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white rounded-lg p-4 w-96">
                     <h3 className="text-xl font-bold mb-4">Skills</h3>
                     <div className="space-y-2">
-                        {unit.skills.map(skill => (
-                            <div key={skill.id} className="p-2 border rounded hover:bg-gray-50">
-                                <div className="font-bold flex justify-between">
-                                    {skill.name}
-                                    <span className="text-sm text-gray-500">CD: {skill.cooldown}</span>
+                        {unit.skills?.map((skillRef, index) => {
+                            const skillImpl = getSkillImplementation(skillRef.id);
+                            if (!skillImpl) return null;
+    
+                            return (
+                                <div 
+                                    key={index}
+                                    className="p-2 border rounded hover:bg-gray-50 cursor-pointer"
+                                    onClick={() => handleSkillSelect(skillRef, skillImpl, unit)}
+                                >
+                                    <div className="font-bold flex justify-between">
+                                        {skillImpl.name}
+                                        <span className="text-sm text-gray-500">
+                                            {isSkillOnCooldown(skillRef, gameState.currentTurn)
+                                                ? `CD: ${skillRef.onCooldownUntil - gameState.currentTurn}`
+                                                : 'Ready'}
+                                        </span>
+                                    </div>
+                                    <div className="text-sm text-gray-600">{skillImpl.description}</div>
                                 </div>
-                                <div className="text-sm text-gray-600">{skill.description}</div>
-                                <div className="text-xs text-gray-500">Type: {skill.type}</div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                     <button 
                         className="mt-4 px-4 py-2 bg-gray-200 rounded"
@@ -244,6 +335,7 @@ const ContextMenu = ({ position, unit }) => {
             </div>
         );
     };
+    
 
     const NoblePhantasmMenu = ({ unit }) => {
         if (!showNPMenu) return null;
@@ -416,6 +508,36 @@ const ContextMenu = ({ position, unit }) => {
     };
 
     const handleCellClick = (x, y) => {
+        if (skillTargetingMode && activeSkill) {
+            const caster = selectedUnit;
+            if (!caster) return;
+    
+            const { ref, impl } = activeSkill;
+            
+            // Execute the skill using the implementation
+            const result = executeSkill(ref, gameState, caster, x, y);
+            if (result.success) {
+                sendJsonMessage({
+                    type: 'GAME_ACTION',
+                    action: 'USE_SKILL',
+                    skillName: impl.name,
+                    casterId: caster.id,
+                    targetX: x,
+                    targetY: y,
+                    updatedGameState: result.updatedGameState
+                });
+            }
+    
+            // Reset targeting mode
+            setSkillTargetingMode(false);
+            setActiveSkill(null);
+            setPreviewCells(new Set());
+            setSelectedUnit(null);
+            return;
+        }
+
+        //logic for clicking when trying to move
+        
         const clickedUnit = getUnitAt(x, y);
         const playerTeam = gameState.players[Object.keys(gameState.players).find(
             id => gameState.players[id].username === username
@@ -433,6 +555,25 @@ const ContextMenu = ({ position, unit }) => {
         }
     };
 
+    // Add this function to handle mouse movement during targeting
+    const handleCellHover = (x, y) => {
+        if (skillTargetingMode && activeSkill && selectedUnit) {
+            const { impl } = activeSkill;
+            
+            // Use the TargetingLogic class through our utility function
+            const affectedCells = getSkillAffectedCells(
+                impl,
+                selectedUnit,
+                x,
+                y,
+                11 // gridSize
+            );
+            setPreviewCells(affectedCells);
+        }
+    };
+    
+
+
     const UnitStatsTooltip = ({ unit }) => (
         <div className="absolute -top-24 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-75 text-white p-2 rounded shadow-lg z-10">
             <div className="text-sm font-bold mb-1">{unit.name}</div>
@@ -449,17 +590,26 @@ const ContextMenu = ({ position, unit }) => {
         const unit = getUnitAt(x, y);
         const isSelected = selectedUnit && selectedUnit.id === unit?.id;
         const isValidMove = highlightedCells.some(move => move.x === x && move.y === y);
+        //addition for skill use logic
+        const isInSkillPreview = previewCells.has(`${x},${y}`);
         
         let bgColor = 'bg-green-100';
-        if (isSelected) bgColor = 'bg-blue-300';
-        else if (isValidMove) bgColor = 'bg-blue-100';
+    if (isInSkillPreview) {
+        bgColor = 'bg-red-200'; // or different colors based on skill type
+    } else if (isSelected) {
+        bgColor = 'bg-blue-300';
+    } else if (isValidMove) {
+        bgColor = 'bg-blue-100';
+    }
 
         return (
             <div
-                key={`${x}-${y}`}
-                className={`w-16 h-16 border border-gray-300 ${bgColor} flex items-center justify-center relative cursor-pointer`}
-                onClick={() => handleCellClick(x, y)}
-                onContextMenu={(e) => unit && handleContextMenu(e, unit)}
+            key={`${x}-${y}`}
+            className={`w-16 h-16 border border-gray-300 ${bgColor} flex items-center justify-center relative cursor-pointer`}
+            onClick={() => handleCellClick(x, y)}
+            //onMouseEnter is the addition for skill logic
+            onMouseEnter={() => handleCellHover(x, y)}
+            onContextMenu={(e) => unit && handleContextMenu(e, unit)}
             >
                 {unit && (
                     <div 

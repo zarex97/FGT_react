@@ -85,6 +85,17 @@ const handleMessage = (bytes, uuid) => {
           room.gameState.units = message.updatedUnits
           room.gameState.turn = message.nextTurn
           break
+
+        case 'USE_SKILL':
+            // Validate the action
+            const caster = room.gameState.units.find(u => u.id === message.casterId);
+            if (!caster) return;
+
+            // Update game state with the skill results
+            room.gameState = message.updatedGameState;
+            broadcastToRoom(player.currentRoom);
+          break;
+      
       }
       
       broadcastToRoom(player.currentRoom)
