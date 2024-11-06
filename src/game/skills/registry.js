@@ -1,71 +1,60 @@
-import { TargetingType } from '../targeting/TargetingTypes';
+// src/game/skills/registry.js
+import { MicroAction } from '../MicroAction';
 import { TargetingLogic } from '../targeting/TargetingLogic';
+import { TargetingType } from '../targeting/TargetingTypes';
+import { Skill } from '../Skill';
 
-
-// Skill implementations repository
-export const SkillImplementations = {
-    "Mahalapraya": {
-        name: "Mahalapraya",
-        description: "Hits a 7x7 panel area within 6 cells. Applies 'uwu' effect and deals 5x ATK damage.",
-        cooldown: 5,
-        range: 6,
-        microActions: [{
-            targetingType: TargetingType.AOE_FROM_POINT,
-            range: 6,
-            dimensions: { width: 7, height: 7 },
-            getAffectedCells: (caster, targetX, targetY, gridSize) => {
-                const affectedCells = new Set();
-                const halfWidth = 3; // (7-1)/2
-                const halfHeight = 3;
-
-                // Check if target point is within skill range from caster
-                const distanceToTarget = Math.abs(caster.x - targetX) + Math.abs(caster.y - targetY);
-                if (distanceToTarget <= 6) {
-                    // Add all cells in the area
-                    for (let x = targetX - halfWidth; x <= targetX + halfWidth; x++) {
-                        for (let y = targetY - halfHeight; y <= targetY + halfHeight; y++) {
-                            if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
-                                affectedCells.add(`${x},${y}`);
-                            }
-                        }
-                    }
-                }
-                return affectedCells;
-            },
-            execute: (gameState, caster, affectedCells) => {
-                const updatedUnits = gameState.units.map(unit => {
-                    if (unit.team !== caster.team && 
-                        affectedCells.has(`${unit.x},${unit.y}`)) {
-                        return {
-                            ...unit,
-                            hp: Math.max(0, unit.hp - (5 * caster.atk)),
-                            effects: [...(unit.effects || []), {
-                                name: 'uwu',
-                                duration: 7,
-                                appliedAt: gameState.currentTurn
-                            }]
-                        };
-                    }
-                    return unit;
-                });
-
+// Create the MicroAction instances first
+const mahalaprayaMicroAction = new MicroAction({
+    targetingType: TargetingType.AOE_FROM_POINT,
+    range: 6,
+    dimensions: { width: 7, height: 7 },
+    applyCornerRule: false,
+    effectLogic: (gameState, caster, affectedCells) => {
+        const updatedUnits = gameState.units.map(unit => {
+            if (unit.team !== caster.team && 
+                affectedCells.has(`${unit.x},${unit.y}`)) {
                 return {
-                    ...gameState,
-                    units: updatedUnits
+                    ...unit,
+                    hp: Math.max(0, unit.hp - (5 * caster.atk)),
+                    effects: [...(unit.effects || []), {
+                        name: 'uwu',
+                        duration: 7,
+                        appliedAt: gameState.currentTurn
+                    }]
                 };
             }
-        }]
-    },
-    // Add more skills here
+            return unit;
+        });
+
+        return {
+            ...gameState,
+            units: updatedUnits
+        };
+    }
+});
+
+// Create Skill instances using our Skill class
+const mahalapraya = new Skill(
+    "Mahalapraya",
+    "Hits a 7x7 panel area within 6 cells. Applies 'uwu' effect and deals 5x ATK damage.",
+    5, // cooldown
+    6, // range
+    [mahalaprayaMicroAction]
+);
+
+// Export the skill implementations using our class instances
+export const SkillImplementations = {
+    "Mahalapraya": mahalapraya
 };
 
-// Utility functions to work with skills
+// The rest of your utility functions now work with the class instances
 export const getSkillImplementation = (skillId) => {
     return SkillImplementations[skillId];
 };
 
 export const isSkillOnCooldown = (skillRef, currentTurn) => {
-    return currentTurn < skillRef.onCooldownUntil;
+    return currentTurn < (skillRef.onCooldownUntil || 0);
 };
 
 export const executeSkill = (skillRef, gameState, caster, targetX, targetY) => {
@@ -80,19 +69,30 @@ export const executeSkill = (skillRef, gameState, caster, targetX, targetY) => {
         return { success: false, message: 'Skill is on cooldown' };
     }
 
-    let updatedGameState = { ...gameState };
+    // Use the Skill class's execute method
+    const result = skillImpl.execute(gameState, caster, targetX, targetY);
     
-    for (const microAction of skillImpl.microActions) {
-        const affectedCells = microAction.getAffectedCells(caster, targetX, targetY, 11);
-        updatedGameState = microAction.execute(updatedGameState, caster, affectedCells);
+    // Update cooldown in the reference if execution was successful
+    if (result.success) {
+        skillRef.onCooldownUntil = gameState.currentTurn + skillImpl.cooldown;
     }
 
-    // Update cooldown in the reference
-    skillRef.onCooldownUntil = gameState.currentTurn + skillImpl.cooldown;
+    return result;
+};
 
-    return {
-        success: true,
-        message: `${skillImpl.name} executed successfully`,
-        updatedGameState
-    };
+// Utility function to get affected cells using TargetingLogic
+export const getSkillAffectedCells = (skillImpl, caster, targetX, targetY, gridSize) => {
+    if (!skillImpl.microActions?.[0]) return new Set();
+
+    return TargetingLogic.getAffectedCells({
+        targetingType: skillImpl.microActions[0].targetingType,
+        casterX: caster.x,
+        casterY: caster.y,
+        range: skillImpl.microActions[0].range,
+        targetX,
+        targetY,
+        applyCornerRule: skillImpl.microActions[0].applyCornerRule,
+        gridSize,
+        dimensions: skillImpl.microActions[0].dimensions
+    });
 };
