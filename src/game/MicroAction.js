@@ -1,3 +1,6 @@
+import { TargetingLogic } from '../game/targeting/TargetingLogic';
+import { TargetingType } from '../game/targeting/TargetingTypes';
+
 export class MicroAction {
     constructor({
         targetingType,

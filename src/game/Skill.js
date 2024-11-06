@@ -1,3 +1,7 @@
+import { TargetingLogic } from '../game/targeting/TargetingLogic';
+import { TargetingType } from '../game/targeting/TargetingTypes';
+
+
 export class Skill {
     constructor(name, description, cooldown, range, microActions) {
         this.name = name;

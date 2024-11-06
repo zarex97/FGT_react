@@ -3,8 +3,9 @@ import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react
 import useWebSocket, { ReadyState } from 'react-use-websocket';
 import { createMahalapraya } from '../game/skills/Mahalapraya';
 import { Skill } from '../game/Skill';
-import { getSkillImplementation, isSkillOnCooldown, executeSkill } from '../game/skills/registry';
+import { getSkillImplementation, isSkillOnCooldown, executeSkill, getSkillAffectedCells  } from '../game/skills/registry';
 import { TargetingType } from '../game/targeting/TargetingTypes';
+import { TargetingLogic } from '../game/targeting/TargetingLogic';
 
 const TacticalGame = ({ username, roomId }) => {
     console.log('TacticalGame props:', { username, roomId });
@@ -65,6 +66,33 @@ const TacticalGame = ({ username, roomId }) => {
                         ]
                     },
                     // Add other initial units here
+
+                    { 
+                        id: 2, 
+                        x: 3, 
+                        y: 1, 
+                        team: 'player2', 
+                        hp: 18, 
+                        atk: 6, 
+                        def: 7, 
+                        movementRange: 3,     // Heavy armored unit with low movement
+                        movementLeft: 3,
+                        hasAttacked: false,
+                        name: 'Artoria',
+                        sprite: "dist/sprites/(Saber) Artoria_portrait.png",
+                        skills: [
+                            {
+                                id: "Mahalapraya",
+                                onCooldownUntil: 0
+                            }
+                          ],
+                          noblePhantasms: [
+                            { id: 1, name: 'Excalibur', description: 'Unleash holy sword energy', cooldown: 5 }
+                          ],
+                          reactions: [
+                            { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
+                          ]
+                      }
                 ]
             });
         },
@@ -120,13 +148,23 @@ const TacticalGame = ({ username, roomId }) => {
             return;
         }
         
-        setActiveSkill({ ref: skillRef, impl: skillImpl });
+        setActiveSkill({
+            ref: skillRef,
+            impl: skillImpl
+        });
         setSkillTargetingMode(true);
+        setContextMenu(false);
         setShowSkillsMenu(false);
     
-        // For AOE_AROUND_SELF, we can show the preview immediately
-        if (skillImpl.microActions[0].targetingType === TargetingType.AOE_AROUND_SELF) {
-            const affectedCells = skillImpl.microActions[0].getAffectedCells(unit, null, null, 11);
+        // For AOE_AROUND_SELF targeting type
+        if (skillImpl.microActions?.[0]?.targetingType === TargetingType.AOE_AROUND_SELF) {
+            const affectedCells = getSkillAffectedCells(
+                skillImpl,
+                unit,
+                null,
+                null,
+                11
+            );
             setPreviewCells(affectedCells);
         }
     };
@@ -521,18 +559,16 @@ const ContextMenu = ({ position, unit }) => {
     const handleCellHover = (x, y) => {
         if (skillTargetingMode && activeSkill && selectedUnit) {
             const { impl } = activeSkill;
-            console.log('Active skill implementation:', impl); // Debug log
-    
-            // Safe check for microActions
-            if (impl?.microActions?.[0]?.targetingType === TargetingType.AOE_FROM_POINT) {
-                const affectedCells = impl.microActions[0].getAffectedCells(
-                    selectedUnit,
-                    x,
-                    y,
-                    11
-                );
-                setPreviewCells(affectedCells);
-            }
+            
+            // Use the TargetingLogic class through our utility function
+            const affectedCells = getSkillAffectedCells(
+                impl,
+                selectedUnit,
+                x,
+                y,
+                11 // gridSize
+            );
+            setPreviewCells(affectedCells);
         }
     };
     
