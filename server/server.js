@@ -94,39 +94,37 @@ const handleMessage = (bytes, uuid) => {
           break
 
           case 'USE_SKILL':
-            // Validate the action
-            const caster = room.gameState.units.find(u => u.id === message.casterId);
-            if (!caster) return;
-        
-            // Update both the game state and the skill cooldown
-            room.gameState.units = room.gameState.units.map(unit => {
-                if (unit.id === message.casterId) {
-                    return {
-                        ...unit,
-                        skills: unit.skills.map(skill => {
-                            if (skill.id === message.skillName) {
-                                return {
-                                    ...skill,
-                                    onCooldownUntil: message.newCooldownUntil
-                                };
-                            }
-                            return skill;
-                        })
-                    };
-                }
-                return unit;
-            });
-        
-            // Apply other skill effects from updatedGameState
-            if (message.updatedGameState) {
-                room.gameState = {
-                    ...message.updatedGameState,
-                    units: room.gameState.units // Keep our updated units with cooldowns
+    // Validate the action
+    const caster = room.gameState.units.find(u => u.id === message.casterId);
+    if (!caster) return;
+
+    // Update the entire game state including effects and HP changes
+    room.gameState = {
+        ...message.updatedGameState,
+        units: message.updatedGameState.units.map(updatedUnit => {
+            // Preserve skill cooldowns while updating unit state
+            const existingUnit = room.gameState.units.find(u => u.id === updatedUnit.id);
+            if (existingUnit) {
+                return {
+                    ...updatedUnit,
+                    skills: existingUnit.skills.map(skill => {
+                        if (skill.id === message.skillName && updatedUnit.id === message.casterId) {
+                            return {
+                                ...skill,
+                                onCooldownUntil: message.newCooldownUntil
+                            };
+                        }
+                        return skill;
+                    })
                 };
             }
-            
-            broadcastToRoom(player.currentRoom);
-            break;
+            return updatedUnit;
+        })
+    };
+    
+    console.log('Updated game state after skill:', room.gameState); // Debug log
+    broadcastToRoom(player.currentRoom);
+    break;
       
       }
       

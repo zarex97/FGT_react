@@ -573,11 +573,24 @@ const TacticalGame = ({ username, roomId }) => {
     
             const { ref, impl } = activeSkill;
             
+            console.log('Executing skill:', {
+                skillName: impl.name,
+                caster: caster.name,
+                targetX: x,
+                targetY: y
+            });
+
             // Execute the skill using the implementation
             const result = executeSkill(ref, gameState, caster, x, y);
             if (result.success) {
+
                 const newCooldownUntil = gameState.currentTurn + impl.cooldown;
 
+                console.log('Skill execution result:', {
+                    success: result.success,
+                    updatedState: result.updatedGameState
+                });
+                
                 sendJsonMessage({
                     type: 'GAME_ACTION',
                     action: 'USE_SKILL',
