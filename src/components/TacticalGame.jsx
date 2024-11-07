@@ -1,3 +1,5 @@
+//TacticalGame.jsx
+
 import React, { useState, useEffect } from 'react';
 import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react';
 import useWebSocket, { ReadyState } from 'react-use-websocket';
@@ -116,6 +118,36 @@ const TacticalGame = ({ username, roomId }) => {
         }
     }, [lastJsonMessage]);
 
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            // Don't handle if no menus are open
+            if (!contextMenu && !showProfile && !showSkillsMenu && !showNPMenu) {
+                return;
+            }
+    
+            const isContextMenuClick = event.target.closest('.context-menu');
+            const isProfileMenuClick = event.target.closest('.profile-menu');
+            const isSkillsMenuClick = event.target.closest('.skills-menu');
+            const isNPMenuClick = event.target.closest('.np-menu');
+    
+            // If clicking outside all menus
+            if (!isContextMenuClick && !isProfileMenuClick && !isSkillsMenuClick && !isNPMenuClick) {
+                setContextMenu(null);
+                setActiveUnit(null);
+                setShowProfile(false);
+                setShowSkillsMenu(false);
+                setShowNPMenu(false);
+            }
+        };
+    
+        // Add handlers
+        document.addEventListener('mousedown', handleClickOutside);
+    
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [contextMenu, showProfile, showSkillsMenu, showNPMenu]);
+
     // Loading state
     if (isConnecting) {
         return (
@@ -172,14 +204,23 @@ const TacticalGame = ({ username, roomId }) => {
 
     const handleContextMenu = (e, unit) => {
         e.preventDefault();
+        e.stopPropagation();
+        
         const playerTeam = gameState.players[Object.keys(gameState.players).find(
             id => gameState.players[id].username === username
-        )].team;
+        )]?.team;
         
-        if (unit.team === playerTeam && unit.team === gameState.turn) {
-            setContextMenu({ x: e.pageX, y: e.pageY });
-            setActiveUnit(unit);
+        // Close menu if unit is not owned by player or not their turn
+        if (!unit || unit.team !== playerTeam || unit.team !== gameState.turn) {
+            setContextMenu(null);
+            setActiveUnit(null);
+            return;
         }
+        setShowProfile(false);
+        setShowSkillsMenu(false);
+        setShowNPMenu(false);
+        setContextMenu({ x: e.pageX, y: e.pageY });
+        setActiveUnit(unit);
     };
 
     const moveUnit = (unit, newX, newY) => {
@@ -236,16 +277,14 @@ const TacticalGame = ({ username, roomId }) => {
         setHighlightedCells([]);
     };
 
-   
 
-const ContextMenu = ({ position, unit }) => {
+    const ContextMenu = ({ position, unit }) => {
         if (!position) return null;
-
+    
         return (
             <div 
-                className="fixed bg-white shadow-lg rounded-lg border border-gray-200 z-50 w-48"
+                className="fixed bg-white shadow-lg rounded-lg border border-gray-200 z-50 w-48 context-menu"
                 style={{ left: position.x, top: position.y }}
-                onClick={e => e.stopPropagation()}
             >
                 <button 
                     className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
@@ -257,19 +296,28 @@ const ContextMenu = ({ position, unit }) => {
                 </button>
                 <button 
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-                    onClick={() => setShowSkillsMenu(true)}
+                    onClick={() => {
+                        setShowSkillsMenu(true);
+                        setContextMenu(null);
+                    }}
                 >
                     <ScrollText size={16} /> Skills
                 </button>
                 <button 
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-                    onClick={() => setShowNPMenu(true)}
+                    onClick={() => {
+                        setShowNPMenu(true);
+                        setContextMenu(null);
+                    }}
                 >
                     <Star size={16} /> Noble Phantasms
                 </button>
                 <button 
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-                    onClick={() => setShowProfile(true)}
+                    onClick={() => {
+                        setShowProfile(true);
+                        setContextMenu(null);
+                    }}
                 >
                     <User size={16} /> Show Profile
                 </button>
@@ -282,6 +330,7 @@ const ContextMenu = ({ position, unit }) => {
             </div>
         );
     };
+    
 
     const debugSkillMethods = (skill) => {
         console.log('Skill debug:', {
@@ -299,7 +348,7 @@ const ContextMenu = ({ position, unit }) => {
     
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg p-4 w-96">
+                <div className="bg-white rounded-lg p-4 w-96 skills-menu" onClick={e => e.stopPropagation()}>
                     <h3 className="text-xl font-bold mb-4">Skills</h3>
                     <div className="space-y-2">
                         {unit.skills?.map((skillRef, index) => {
@@ -342,7 +391,7 @@ const ContextMenu = ({ position, unit }) => {
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg p-4 w-96">
+                <div className="bg-white rounded-lg p-4 w-96 np-menu" onClick={e => e.stopPropagation()}>
                     <h3 className="text-xl font-bold mb-4">Noble Phantasms</h3>
                     <div className="space-y-2">
                         {unit.noblePhantasms.map(np => (
@@ -373,7 +422,7 @@ const ContextMenu = ({ position, unit }) => {
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg p-4 w-[800px] h-[600px]">
+                <div className="bg-white rounded-lg p-4 w-[800px] h-[600px] profile-menu" onClick={e => e.stopPropagation()}>
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-2xl font-bold">{unit.name}</h2>
                         <button 
@@ -508,6 +557,8 @@ const ContextMenu = ({ position, unit }) => {
     };
 
     const handleCellClick = (x, y) => {
+        setContextMenu(null);
+        setActiveUnit(null);
         if (skillTargetingMode && activeSkill) {
             const caster = selectedUnit;
             if (!caster) return;
@@ -609,7 +660,16 @@ const ContextMenu = ({ position, unit }) => {
             onClick={() => handleCellClick(x, y)}
             //onMouseEnter is the addition for skill logic
             onMouseEnter={() => handleCellHover(x, y)}
-            onContextMenu={(e) => unit && handleContextMenu(e, unit)}
+            onContextMenu={(e) => {
+                e.preventDefault();
+                if (unit) {
+                    handleContextMenu(e, unit);
+                } else {
+                    // Close menu when right-clicking empty cell
+                    setContextMenu(null);
+                    setActiveUnit(null);
+                }
+            }}
             >
                 {unit && (
                     <div 
