@@ -23,6 +23,7 @@ const handleMessage = (bytes, uuid) => {
           gameState: {
             units: message.initialUnits || [],
             turn: 'player1',
+            currentTurn: 1,
             players: {}
           }
         }
@@ -82,19 +83,50 @@ const handleMessage = (bytes, uuid) => {
           break
 
         case 'END_TURN':
-          room.gameState.units = message.updatedUnits
-          room.gameState.turn = message.nextTurn
+          room.gameState = {
+            ...room.gameState,
+            units: message.updatedUnits,
+            turn: message.nextTurn,
+            currentTurn: room.gameState.currentTurn + 1  // Increment turn counter
+        };
+        
+        broadcastToRoom(player.currentRoom);
           break
 
-        case 'USE_SKILL':
+          case 'USE_SKILL':
             // Validate the action
             const caster = room.gameState.units.find(u => u.id === message.casterId);
             if (!caster) return;
-
-            // Update game state with the skill results
-            room.gameState = message.updatedGameState;
+        
+            // Update both the game state and the skill cooldown
+            room.gameState.units = room.gameState.units.map(unit => {
+                if (unit.id === message.casterId) {
+                    return {
+                        ...unit,
+                        skills: unit.skills.map(skill => {
+                            if (skill.id === message.skillName) {
+                                return {
+                                    ...skill,
+                                    onCooldownUntil: message.newCooldownUntil
+                                };
+                            }
+                            return skill;
+                        })
+                    };
+                }
+                return unit;
+            });
+        
+            // Apply other skill effects from updatedGameState
+            if (message.updatedGameState) {
+                room.gameState = {
+                    ...message.updatedGameState,
+                    units: room.gameState.units // Keep our updated units with cooldowns
+                };
+            }
+            
             broadcastToRoom(player.currentRoom);
-          break;
+            break;
       
       }
       

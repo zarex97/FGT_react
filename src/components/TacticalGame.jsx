@@ -1,5 +1,4 @@
 //TacticalGame.jsx
-
 import React, { useState, useEffect } from 'react';
 import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react';
 import useWebSocket, { ReadyState } from 'react-use-websocket';
@@ -262,7 +261,7 @@ const TacticalGame = ({ username, roomId }) => {
             movementLeft: unit.movementRange,
             hasAttacked: false
         }));
-
+    
         const currentPlayerIndex = parseInt(gameState.turn.slice(-1));
         const nextPlayerIndex = currentPlayerIndex === Object.keys(gameState.players).length ? 1 : currentPlayerIndex + 1;
         
@@ -270,9 +269,10 @@ const TacticalGame = ({ username, roomId }) => {
             type: 'GAME_ACTION',
             action: 'END_TURN',
             updatedUnits,
-            nextTurn: `player${nextPlayerIndex}`
+            nextTurn: `player${nextPlayerIndex}`,
+            // currentTurn will be incremented on the server
         });
-
+    
         setSelectedUnit(null);
         setHighlightedCells([]);
     };
@@ -355,21 +355,29 @@ const TacticalGame = ({ username, roomId }) => {
                             const skillImpl = getSkillImplementation(skillRef.id);
                             if (!skillImpl) return null;
     
+                            const isOnCd = isSkillOnCooldown(skillRef, gameState.currentTurn);
+                            const turnsRemaining = isOnCd ? 
+                                skillRef.onCooldownUntil - gameState.currentTurn : 0;
+    
                             return (
                                 <div 
                                     key={index}
-                                    className="p-2 border rounded hover:bg-gray-50 cursor-pointer"
-                                    onClick={() => handleSkillSelect(skillRef, skillImpl, unit)}
+                                    className={`p-2 border rounded hover:bg-gray-50 cursor-pointer 
+                                        ${isOnCd ? 'opacity-50' : ''}`}
+                                    onClick={() => !isOnCd && handleSkillSelect(skillRef, skillImpl, unit)}
                                 >
                                     <div className="font-bold flex justify-between">
                                         {skillImpl.name}
-                                        <span className="text-sm text-gray-500">
-                                            {isSkillOnCooldown(skillRef, gameState.currentTurn)
-                                                ? `CD: ${skillRef.onCooldownUntil - gameState.currentTurn}`
+                                        <span className={`text-sm ${isOnCd ? 'text-red-500' : 'text-green-500'}`}>
+                                            {isOnCd 
+                                                ? `CD: ${turnsRemaining} turn${turnsRemaining !== 1 ? 's' : ''}`
                                                 : 'Ready'}
                                         </span>
                                     </div>
                                     <div className="text-sm text-gray-600">{skillImpl.description}</div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                        Cooldown: {skillImpl.cooldown} turns
+                                    </div>
                                 </div>
                             );
                         })}
@@ -568,6 +576,8 @@ const TacticalGame = ({ username, roomId }) => {
             // Execute the skill using the implementation
             const result = executeSkill(ref, gameState, caster, x, y);
             if (result.success) {
+                const newCooldownUntil = gameState.currentTurn + impl.cooldown;
+
                 sendJsonMessage({
                     type: 'GAME_ACTION',
                     action: 'USE_SKILL',
@@ -575,7 +585,8 @@ const TacticalGame = ({ username, roomId }) => {
                     casterId: caster.id,
                     targetX: x,
                     targetY: y,
-                    updatedGameState: result.updatedGameState
+                    updatedGameState: result.updatedGameState,
+                    newCooldownUntil: newCooldownUntil
                 });
             }
     
@@ -702,6 +713,9 @@ const TacticalGame = ({ username, roomId }) => {
                 <h2 className="text-xl font-bold mb-2">
                     {gameState.turn === playerTeam ? "Your Turn" : `${gameState.turn}'s Turn`}
                 </h2>
+                <span className="text-lg">
+                    Turn: {gameState.currentTurn}
+                </span>
                 {gameState.turn === playerTeam && (
                     <button
                         onClick={endTurn}
