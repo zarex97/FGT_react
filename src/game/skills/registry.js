@@ -3,80 +3,19 @@ import { MicroAction } from '../MicroAction';
 import { TargetingLogic } from '../targeting/TargetingLogic';
 import { TargetingType } from '../targeting/TargetingTypes';
 import { Skill } from '../Skill';
+import { ServantRegistry } from '../servants/registry_character';
 
-// Create the MicroAction instances first
-const mahalaprayaMicroAction = new MicroAction({
-    targetingType: TargetingType.AOE_FROM_POINT,
-    range: 6,
-    dimensions: { width: 7, height: 7 },
-    applyCornerRule: false,
-    effectLogic: (gameState, caster, affectedCells) => {
-        console.log('Executing Mahalapraya MicroAction:', {
-            caster,
-            affectedCellsCount: affectedCells.size,
-            currentGameState: gameState
+
+export const SkillImplementations = Object.values(ServantRegistry).reduce((acc, servantClass) => {
+    Object.values(servantClass).forEach(servant => {
+        Object.entries(servant.skills).forEach(([skillName, skillImpl]) => {
+            acc[skillName] = skillImpl;
         });
+    });
+    return acc;
+}, {});
 
-        const updatedUnits = gameState.units.map(unit => {
-            if (unit.team !== caster.team && 
-                affectedCells.has(`${unit.x},${unit.y}`)) {
-                
-                // Calculate new HP
-                const newHp = Math.max(0, unit.hp - (5 * caster.atk));
-                
-                // Ensure effects array exists and add new effect
-                const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
-                const newEffect = {
-                    name: 'uwu',
-                    duration: 7,
-                    appliedAt: gameState.currentTurn,
-                    description: 'Under the effect of Mahalapraya'
-                };
-
-                console.log('Applying effect to unit:', {
-                    unitName: unit.name,
-                    oldHp: unit.hp,
-                    newHp,
-                    newEffect
-                });
-
-                return {
-                    ...unit,
-                    hp: newHp,
-                    effects: [...currentEffects, newEffect]
-                };
-            }
-            return unit;
-        });
-
-        const newGameState = {
-            ...gameState,
-            units: updatedUnits
-        };
-
-        console.log('MicroAction execution result:', {
-            updatedUnitsCount: updatedUnits.length,
-            affectedUnits: updatedUnits.filter(u => u.effects?.some(e => e.name === 'uwu'))
-        });
-
-        return newGameState;
-    }
-});
-
-// Create Skill instances using our Skill class
-const mahalapraya = new Skill(
-    "Mahalapraya",
-    "Hits a 7x7 panel area within 6 cells. Applies 'uwu' effect and deals 5x ATK damage.",
-    5, // cooldown
-    6, // range
-    [mahalaprayaMicroAction]
-);
-
-// Export the skill implementations using our class instances
-export const SkillImplementations = {
-    "Mahalapraya": mahalapraya
-};
-
+// Rest of your existing registry.js code remains the same
 export const getSkillImplementation = (skillId) => {
     return SkillImplementations[skillId];
 };
