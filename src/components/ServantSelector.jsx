@@ -2,16 +2,53 @@
 import React, { useState } from 'react';
 import { ServantRegistry } from '../game/servants/registry_character';
 
-const ServantSelector = ({ onClose, onSelectServant, teams }) => {
+const ServantSelector = ({ onClose, onSelectServant, teams, gameState  }) => {
     const [selectedClass, setSelectedClass] = useState(null);
     const [selectedServant, setSelectedServant] = useState(null);
     const [selectedTeam, setSelectedTeam] = useState(null);
     const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [positionError, setPositionError] = useState(null);
 
     const servantClasses = Object.keys(ServantRegistry);
 
+    // Check if a position is occupied
+    const isPositionOccupied = (x, y) => {
+        return gameState.units.some(unit => unit.x === x && unit.y === y);
+    };
+
+    // Validate position when it changes
+    const handlePositionChange = (axis, value) => {
+        const numValue = parseInt(value);
+        const newPosition = { ...position, [axis]: numValue };
+        
+        // Clear previous error
+        setPositionError(null);
+
+        // Validate bounds
+        if (numValue < 0 || numValue > 10) {
+            setPositionError('Position must be between 0 and 10');
+            setPosition(newPosition);
+            return;
+        }
+
+        // Validate occupation
+        if (isPositionOccupied(axis === 'x' ? numValue : position.x, axis === 'y' ? numValue : position.y)) {
+            setPositionError('This position is already occupied');
+        }
+
+        setPosition(newPosition);
+    };
+
+
+
     const handleSubmit = () => {
-        if (selectedServant && selectedTeam && position) {
+        // Final validation before submission
+        if (isPositionOccupied(position.x, position.y)) {
+            setPositionError('This position is already occupied');
+            return;
+        }
+        
+        if (selectedServant && selectedTeam && position && !positionError) {
             const servantTemplate = ServantRegistry[selectedClass][selectedServant].template;
             const newUnit = {
                 id: Date.now(), // Simple way to generate unique IDs
@@ -121,10 +158,11 @@ const ServantSelector = ({ onClose, onSelectServant, teams }) => {
                                 <input
                                     type="number"
                                     min="0"
-                                    max="10"
+                                    max="11"
                                     value={position.x}
-                                    onChange={(e) => setPosition({ ...position, x: e.target.value })}
-                                    className="mt-1 block w-full border rounded-md shadow-sm p-2"
+                                    onChange={(e) => handlePositionChange('x', e.target.value)}
+                                    className={`mt-1 block w-full border rounded-md shadow-sm p-2 
+                                        ${positionError ? 'border-red-500' : 'border-gray-300'}`}
                                 />
                             </div>
                             <div>
@@ -134,13 +172,19 @@ const ServantSelector = ({ onClose, onSelectServant, teams }) => {
                                     min="0"
                                     max="10"
                                     value={position.y}
-                                    onChange={(e) => setPosition({ ...position, y: e.target.value })}
-                                    className="mt-1 block w-full border rounded-md shadow-sm p-2"
+                                    onChange={(e) => handlePositionChange('y', e.target.value)}
+                                    className={`mt-1 block w-full border rounded-md shadow-sm p-2 
+                                        ${positionError ? 'border-red-500' : 'border-gray-300'}`}
                                 />
                             </div>
                         </div>
                     </div>
                 )}
+                {positionError && (
+                            <p className="mt-2 text-sm text-red-600">
+                                {positionError}
+                            </p>
+                        )}
 
                 {/* Action Buttons */}
                 <div className="flex justify-end gap-2 mt-6">
