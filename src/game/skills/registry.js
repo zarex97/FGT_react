@@ -83,7 +83,7 @@ export const getSkillImplementation = (skillId) => {
 
 export const isSkillOnCooldown = (skillRef, currentTurn) => {
     if (!skillRef || typeof skillRef.onCooldownUntil !== 'number') return false;
-    return currentTurn < skillRef.onCooldownUntil;
+    return currentTurn <= skillRef.onCooldownUntil;
 };
 
 export const executeSkill = (skillRef, gameState, caster, targetX, targetY) => {
