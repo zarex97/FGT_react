@@ -791,6 +791,7 @@ const TacticalGame = ({ username, roomId }) => {
                     onClose={() => setShowServantSelector(false)}
                     onSelectServant={handleAddServant}
                     teams={Object.values(gameState.players).map(player => player.team)}
+                    gameState={gameState} // Pass gameState for position validation
                 />
             )}
         </div>
