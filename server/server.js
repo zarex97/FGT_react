@@ -23,6 +23,7 @@ const handleMessage = (bytes, uuid) => {
           gameState: {
             units: message.initialUnits || [],
             turn: 'player1',
+            currentTurn: 1,
             players: {}
           }
         }
@@ -82,19 +83,48 @@ const handleMessage = (bytes, uuid) => {
           break
 
         case 'END_TURN':
-          room.gameState.units = message.updatedUnits
-          room.gameState.turn = message.nextTurn
+          room.gameState = {
+            ...room.gameState,
+            units: message.updatedUnits,
+            turn: message.nextTurn,
+            currentTurn: room.gameState.currentTurn + 1  // Increment turn counter
+        };
+        
+        broadcastToRoom(player.currentRoom);
           break
 
-        case 'USE_SKILL':
-            // Validate the action
-            const caster = room.gameState.units.find(u => u.id === message.casterId);
-            if (!caster) return;
+          case 'USE_SKILL':
+    // Validate the action
+    const caster = room.gameState.units.find(u => u.id === message.casterId);
+    if (!caster) return;
 
-            // Update game state with the skill results
-            room.gameState = message.updatedGameState;
-            broadcastToRoom(player.currentRoom);
-          break;
+    // Update the entire game state including effects and HP changes
+    room.gameState = {
+        ...message.updatedGameState,
+        units: message.updatedGameState.units.map(updatedUnit => {
+            // Preserve skill cooldowns while updating unit state
+            const existingUnit = room.gameState.units.find(u => u.id === updatedUnit.id);
+            if (existingUnit) {
+                return {
+                    ...updatedUnit,
+                    skills: existingUnit.skills.map(skill => {
+                        if (skill.id === message.skillName && updatedUnit.id === message.casterId) {
+                            return {
+                                ...skill,
+                                onCooldownUntil: message.newCooldownUntil
+                            };
+                        }
+                        return skill;
+                    })
+                };
+            }
+            return updatedUnit;
+        })
+    };
+    
+    console.log('Updated game state after skill:', room.gameState); // Debug log
+    broadcastToRoom(player.currentRoom);
+    break;
       
       }
       
