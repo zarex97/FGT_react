@@ -24,6 +24,8 @@ const handleMessage = (bytes, uuid) => {
             units: message.initialUnits || [],
             turn: 'player1',
             currentTurn: 1,
+            currentRound: 1,
+            turnsPerRound: message.turnsPerRound || 2, // Default to 2 if not specified
             players: {}
           }
         }
@@ -83,11 +85,22 @@ const handleMessage = (bytes, uuid) => {
           break
 
         case 'END_TURN':
+          //logic to take into account rounds
+        const newTurn = message.nextTurn;
+                    const currentTurn = room.gameState.currentTurn + 1;
+                    let newRound = room.gameState.currentRound;
+
+                    // Check if we need to increment the round
+                    if (currentTurn % room.gameState.turnsPerRound === 1) {
+                        newRound += 1;
+                        console.log(`Starting round ${newRound}`);
+                    }
           room.gameState = {
             ...room.gameState,
             units: message.updatedUnits,
             turn: message.nextTurn,
-            currentTurn: room.gameState.currentTurn + 1  // Increment turn counter
+            currentTurn: room.gameState.currentTurn + 1,  // Increment turn counter
+            currentRound: newRound
         };
         
         broadcastToRoom(player.currentRoom);

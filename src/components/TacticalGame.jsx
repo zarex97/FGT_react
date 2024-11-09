@@ -39,6 +39,7 @@ const TacticalGame = ({ username, roomId }) => {
             sendJsonMessage({
                 type: 'JOIN_ROOM',
                 roomId,
+                turnsPerRound: 3,
                 initialUnits: [
                     { 
                         id: 1, 
@@ -726,9 +727,18 @@ const TacticalGame = ({ username, roomId }) => {
                 <h2 className="text-xl font-bold mb-2">
                     {gameState.turn === playerTeam ? "Your Turn" : `${gameState.turn}'s Turn`}
                 </h2>
-                <span className="text-lg">
-                    Turn: {gameState.currentTurn}
-                </span>
+                <div className="text-sm text-gray-600">
+                        Turn {gameState.currentTurn} | Round {gameState.currentRound}
+                    </div>
+                <div className="text-right">
+                    <div className="text-sm text-gray-600">
+                        Turns per Round: {gameState.turnsPerRound}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                        Turns until next round: {gameState.turnsPerRound - (gameState.currentTurn % gameState.turnsPerRound)}
+                    </div>
+                </div>
+
                 {gameState.turn === playerTeam && (
                     <button
                         onClick={endTurn}
