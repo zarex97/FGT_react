@@ -26,6 +26,10 @@ const TacticalGame = ({ username, roomId }) => {
     const [skillTargetingMode, setSkillTargetingMode] = useState(false);
     const [previewCells, setPreviewCells] = useState(new Set());
     const [showServantSelector, setShowServantSelector] = useState(false);
+    const [hoveredCell, setHoveredCell] = useState(null);
+    const isCellVisible = (x, y) => {
+        return gameState.visibleCells?.includes(`${x},${y}`);
+    };
 
 
 
@@ -677,26 +681,38 @@ const TacticalGame = ({ username, roomId }) => {
         const isValidMove = highlightedCells.some(move => move.x === x && move.y === y);
         //addition for skill use logic
         const isInSkillPreview = previewCells.has(`${x},${y}`);
+        //addition for visibility
+        const isVisible = isCellVisible(x, y);
         
         let bgColor = 'bg-green-100';
-    if (isInSkillPreview) {
+
+        if (!isVisible) {
+            bgColor = 'bg-gray-900'; // Dark fog
+        }
+        else if (isInSkillPreview) {
         bgColor = 'bg-red-200'; // or different colors based on skill type
-    } else if (isSelected) {
+        } else if (isSelected) {
         bgColor = 'bg-blue-300';
-    } else if (isValidMove) {
+        } else if (isValidMove) {
         bgColor = 'bg-blue-100';
-    }
+        }
+
+        const isHovered = hoveredCell?.x === x && hoveredCell?.y === y;
+        if (isHovered && unit && unit.team === playerTeam) {
+            bgColor = 'bg-yellow-200';
+        }
 
         return (
             <div
             key={`${x}-${y}`}
             className={`w-16 h-16 border border-gray-300 ${bgColor} flex items-center justify-center relative cursor-pointer`}
-            onClick={() => handleCellClick(x, y)}
+            onClick={() => isVisible && handleCellClick(x, y)}
             //onMouseEnter is the addition for skill logic
             onMouseEnter={() => handleCellHover(x, y)}
+            onMouseLeave={() => setHoveredCell(null)}
             onContextMenu={(e) => {
                 e.preventDefault();
-                if (unit) {
+                if (unit && isVisible) {
                     handleContextMenu(e, unit);
                 } else {
                     // Close menu when right-clicking empty cell
@@ -705,7 +721,7 @@ const TacticalGame = ({ username, roomId }) => {
                 }
             }}
             >
-                {unit && (
+                {unit && isVisible && (
                     <div 
                         className={`absolute inset-0 flex items-center justify-center 
                             ${unit.team === playerTeam ? 'text-blue-600' : 'text-red-600'}
@@ -725,29 +741,62 @@ const TacticalGame = ({ username, roomId }) => {
         );
     };
 
+    const VisionRangeOverlay = () => {
+        if (!hoveredCell) return null;
+        
+        const unit = getUnitAt(hoveredCell.x, hoveredCell.y);
+        if (!unit || unit.team !== playerTeam) return null;
+
+        const visionRange = unit.visionRange || 3;
+        const visibleCells = calculateVisibleCells(unit);
+
+        return (
+            <div className="absolute inset-0 pointer-events-none">
+                {Array.from(visibleCells).map(cellCoord => {
+                    const [x, y] = cellCoord.split(',').map(Number);
+                    return (
+                        <div
+                            key={cellCoord}
+                            className="absolute bg-yellow-100 opacity-30"
+                            style={{
+                                left: `${x * 64}px`,
+                                top: `${y * 64}px`,
+                                width: '64px',
+                                height: '64px'
+                            }}
+                        />
+                    );
+                })}
+            </div>
+        );
+    };
+
     // Get current player's team for proper unit coloring
     const playerTeam = gameState?.players[Object.keys(gameState.players).find(
         id => gameState.players[id].username === username
     )]?.team;
 
-    return (
-        <div className="p-4">
-            <div className="mb-4">
-                <h2 className="text-xl font-bold mb-2">
-                    {gameState.turn === playerTeam ? "Your Turn" : `${gameState.turn}'s Turn`}
-                </h2>
-                <div className="text-sm text-gray-600">
-                        Turn {gameState.currentTurn} | Round {gameState.currentRound}
-                    </div>
-                <div className="text-right">
-                    <div className="text-sm text-gray-600">
-                        Turns per Round: {gameState.turnsPerRound}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                        Turns until next round: {gameState.turnsPerRound - (gameState.currentTurn % gameState.turnsPerRound)}
-                    </div>
-                </div>
+    // In TacticalGame.jsx, replace the return statement with:
 
+return (
+    <div className="p-4">
+        <div className="mb-4">
+            <h2 className="text-xl font-bold mb-2">
+                {gameState.turn === playerTeam ? "Your Turn" : `${gameState.turn}'s Turn`}
+            </h2>
+            <div className="text-sm text-gray-600">
+                Turn {gameState.currentTurn} | Round {gameState.currentRound}
+            </div>
+            <div className="text-right">
+                <div className="text-sm text-gray-600">
+                    Turns per Round: {gameState.turnsPerRound}
+                </div>
+                <div className="text-sm text-gray-600">
+                    Turns until next round: {gameState.turnsPerRound - (gameState.currentTurn % gameState.turnsPerRound)}
+                </div>
+            </div>
+
+            <div className="flex gap-2 mt-2">
                 {gameState.turn === playerTeam && (
                     <button
                         onClick={endTurn}
@@ -756,46 +805,46 @@ const TacticalGame = ({ username, roomId }) => {
                         End Turn
                     </button>
                 )}
-                    <button
+                <button
                     onClick={() => setShowServantSelector(true)}
                     className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
                 >
                     Add Servant
-            </button>       
-
-            </div>     
-
-            
-            <div className="inline-block border-2 border-gray-400">
-                {Array.from({ length: GRID_SIZE }).map((_, y) => (
-                    <div key={y} className="flex">
-                        {Array.from({ length: GRID_SIZE }).map((_, x) => renderCell(x, y))}
-                    </div>
-                ))}
+                </button>
             </div>
-
-            {contextMenu && activeUnit && (
-                <ContextMenu position={contextMenu} unit={activeUnit} />
-            )}
-            {showSkillsMenu && activeUnit && (
-                <SkillsMenu unit={activeUnit} />
-            )}
-            {showNPMenu && activeUnit && (
-                <NoblePhantasmMenu unit={activeUnit} />
-            )}
-            {showProfile && activeUnit && (
-                <ProfileSheet unit={activeUnit} />
-            )}
-            {showServantSelector && (
-                <ServantSelector
-                    onClose={() => setShowServantSelector(false)}
-                    onSelectServant={handleAddServant}
-                    teams={Object.values(gameState.players).map(player => player.team)}
-                    gameState={gameState} // Pass gameState for position validation
-                />
-            )}
         </div>
-    );
+        
+        <div className="inline-block border-2 border-gray-400 relative">
+            {Array.from({ length: GRID_SIZE }).map((_, y) => (
+                <div key={y} className="flex">
+                    {Array.from({ length: GRID_SIZE }).map((_, x) => renderCell(x, y))}
+                </div>
+            ))}
+            <VisionRangeOverlay />
+        </div>
+
+        {contextMenu && activeUnit && (
+            <ContextMenu position={contextMenu} unit={activeUnit} />
+        )}
+        {showSkillsMenu && activeUnit && (
+            <SkillsMenu unit={activeUnit} />
+        )}
+        {showNPMenu && activeUnit && (
+            <NoblePhantasmMenu unit={activeUnit} />
+        )}
+        {showProfile && activeUnit && (
+            <ProfileSheet unit={activeUnit} />
+        )}
+        {showServantSelector && (
+            <ServantSelector
+                onClose={() => setShowServantSelector(false)}
+                onSelectServant={handleAddServant}
+                teams={Object.values(gameState.players).map(player => player.team)}
+                gameState={gameState}
+            />
+        )}
+    </div>
+);
 };
 
 export default TacticalGame;
