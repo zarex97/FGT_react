@@ -30,6 +30,8 @@ const TacticalGame = ({ username, roomId }) => {
     const isCellVisible = (x, y) => {
         return gameState.visibleCells?.includes(`${x},${y}`);
     };
+    const [detectionResults, setDetectionResults] = useState(null);
+    const [detectionError, setDetectionError] = useState(null);
 
 
 
@@ -121,6 +123,12 @@ const TacticalGame = ({ username, roomId }) => {
             console.log('Received game state:', lastJsonMessage.gameState);
             setGameState(lastJsonMessage.gameState);
             setIsConnecting(false);
+        } else if (lastJsonMessage?.type === 'DETECTION_RESULTS') {
+            setDetectionResults(lastJsonMessage.results);
+            setTimeout(() => setDetectionResults(null), 3000);
+        } else if (lastJsonMessage?.type === 'DETECTION_ERROR') {
+            setDetectionError(lastJsonMessage.message);
+            setTimeout(() => setDetectionError(null), 3000);
         }
     }, [lastJsonMessage]);
 
@@ -177,6 +185,49 @@ const TacticalGame = ({ username, roomId }) => {
             </div>
         );
     }
+
+    const DetectionError = ({ message }) => {
+        if (!message) return null;
+    
+        return (
+            <div className="fixed top-4 right-4 p-4 bg-red-500 text-white rounded shadow-lg">
+                <p>{message}</p>
+            </div>
+        );
+    };
+    
+    // Update the detection button to show availability
+    const DetectionButton = () => {
+        const currentPlayerId = Object.keys(gameState.players).find(id => 
+            gameState.players[id].username === username
+        );
+        
+        const hasUsedDetection = Array.isArray(gameState.detectionsThisTurn) && 
+            gameState.detectionsThisTurn.includes(currentPlayerId);
+    
+        return (
+            <button
+                onClick={handleDetection}
+                className={`px-4 py-2 rounded ${
+                    hasUsedDetection 
+                        ? 'bg-gray-400 cursor-not-allowed' 
+                        : 'bg-purple-500 hover:bg-purple-600'
+                } text-white`}
+                disabled={hasUsedDetection}
+                title={hasUsedDetection ? "Detection already used this turn" : "Attempt to detect hidden units"}
+            >
+                Detect Hidden Units
+                {hasUsedDetection && <span className="ml-2 text-xs">(Used)</span>}
+            </button>
+        );
+    };
+
+    const handleDetection = () => {
+        sendJsonMessage({
+            type: 'GAME_ACTION',
+            action: 'ATTEMPT_DETECTION'
+        });
+    };
 
     const handleAddServant = (newUnit) => {
         sendJsonMessage({
@@ -771,6 +822,35 @@ const TacticalGame = ({ username, roomId }) => {
         );
     };
 
+
+    // Add this component definition in TacticalGame.jsx before the return statement:
+
+const DetectionResults = ({ results }) => {
+    if (!results) return null;
+
+    return (
+        <div className="fixed top-4 right-4 p-4 bg-black bg-opacity-75 text-white rounded shadow-lg">
+            <h3 className="text-lg font-bold mb-2">Detection Results</h3>
+            {results.map((result, index) => (
+                <div key={index} className="mb-2">
+                    <div className="text-sm">
+                        Unit {result.unitId}:
+                        {result.wasDetected ? (
+                            <span className="text-green-400 ml-2">Detected!</span>
+                        ) : (
+                            <span className="text-red-400 ml-2">Remained Hidden</span>
+                        )}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                        Roll: {result.roll} / Threshold: {result.threshold}
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+
     // Get current player's team for proper unit coloring
     const playerTeam = gameState?.players[Object.keys(gameState.players).find(
         id => gameState.players[id].username === username
@@ -805,6 +885,7 @@ return (
                         End Turn
                     </button>
                 )}
+                <DetectionButton/>
                 <button
                     onClick={() => setShowServantSelector(true)}
                     className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
@@ -843,6 +924,8 @@ return (
                 gameState={gameState}
             />
         )}
+        {detectionResults && <DetectionResults results={detectionResults} />}
+        {detectionError && <DetectionError message={detectionError} />}
     </div>
 );
 };

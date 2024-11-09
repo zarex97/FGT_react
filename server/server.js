@@ -26,7 +26,8 @@ const handleMessage = (bytes, uuid) => {
             currentTurn: 1,
             currentRound: 1,
             turnsPerRound: message.turnsPerRound || 2, // Default to 2 if not specified
-            players: {}
+            players: {},
+            detectionsThisTurn: [] // Initialize as array - Track who has used detection
           }
         }
       }
@@ -117,16 +118,87 @@ case 'END_TURN':
       return existingUnit;
   });
 
+  room.gameState.detectionsThisTurn = new Set();
   room.gameState = {
       ...room.gameState,
       units: updatedUnits,
       turn: newTurn,
       currentTurn: currentTurn,
-      currentRound: newRound
+      currentRound: newRound,
+      detectionsThisTurn: [] // Reset as empty array
   };
   
   broadcastToRoom(player.currentRoom);
   break;
+
+  case 'ATTEMPT_DETECTION':
+    // Check if player has already used detection this turn
+    if (room.gameState.detectionsThisTurn.includes(uuid)) {
+        connection.send(JSON.stringify({
+            type: 'DETECTION_ERROR',
+            message: 'Detection already used this turn'
+        }));
+        return;
+    }
+
+    const detectingTeam = room.gameState.players[uuid].team;
+    const visibilityInfo = getVisibleUnits(room.gameState, detectingTeam);
+    const visibleCellsSet = new Set(visibilityInfo.visibleCells);
+
+    // Get all enemy units that could be visible (in range) but are concealed
+    const concealedUnits = room.gameState.units.filter(unit => {
+        const isEnemy = unit.team !== detectingTeam;
+        const isInRange = visibleCellsSet.has(`${unit.x},${unit.y}`);
+        const hasConcealment = unit.effects?.some(
+            effect => effect.name === 'Presence Concealment' &&
+            effect.appliedAt + effect.duration > room.gameState.currentTurn
+        );
+        return isEnemy && isInRange && hasConcealment;
+    });
+
+    // Attempt detection for each concealed unit
+    const detectionResults = concealedUnits.map(unit => {
+        const concealmentEffect = unit.effects.find(e => e.name === 'Presence Concealment');
+        const detectAttemptNumber = Math.floor(Math.random() * 100) + 1;
+        const wasDetected = detectAttemptNumber <= concealmentEffect.chanceOfBeingDiscovered;
+
+        return {
+            unitId: unit.id,
+            wasDetected,
+            roll: detectAttemptNumber,
+            threshold: concealmentEffect.chanceOfBeingDiscovered
+        };
+    });
+
+    // Update units based on detection results
+    room.gameState.units = room.gameState.units.map(unit => {
+        const detectionResult = detectionResults.find(r => r.unitId === unit.id);
+        if (detectionResult?.wasDetected) {
+            return {
+                ...unit,
+                effects: unit.effects.filter(e => e.name !== 'Presence Concealment')
+            };
+        }
+        return unit;
+    });
+
+    // Mark detection as used for this player
+    room.gameState.detectionsThisTurn.push(uuid);
+
+    // Send detection results to all players
+    Object.entries(room.gameState.players).forEach(([playerId, playerInfo]) => {
+        const connection = connections[playerId];
+        if (connection) {
+            connection.send(JSON.stringify({
+                type: 'DETECTION_RESULTS',
+                results: detectionResults,
+                playerTeam: playerInfo.team
+            }));
+        }
+    });
+
+    broadcastToRoom(player.currentRoom);
+    break;
 
           case 'USE_SKILL':
     // Validate the action
@@ -201,40 +273,55 @@ const calculateVisibleCells = (unit, gridSize = 11) => {
   return visibleCells;
 };
 
+// Update the getVisibleUnits function in server.js to handle True Sight
 const getVisibleUnits = (gameState, playerTeam) => {
-  // Get all cells visible to the player's units
+  // Get all cells visible to the player's units and check for True Sight
   const visibleCells = new Set();
+  const unitsWithTrueSight = new Set();
+  
   gameState.units
       .filter(unit => unit.team === playerTeam)
       .forEach(unit => {
           const unitVisibleCells = calculateVisibleCells(unit);
           unitVisibleCells.forEach(cell => visibleCells.add(cell));
+          
+          // Check if unit has True Sight
+          if (unit.effects?.some(effect => 
+              effect.name === 'True Sight' && 
+              effect.appliedAt + effect.duration > gameState.currentTurn
+          )) {
+              unitsWithTrueSight.add(unit.id);
+          }
       });
 
-  // Filter units based on visibility and Presence Concealment
+  // Filter units based on visibility and concealment
   const filteredUnits = gameState.units.map(unit => {
       const isVisible = visibleCells.has(`${unit.x},${unit.y}`);
       const isAlly = unit.team === playerTeam;
-      const hasPresenceConcealment = unit.effects?.some(
+      const hasConcealment = unit.effects?.some(
           effect => effect.name === 'Presence Concealment' && 
           effect.appliedAt + effect.duration > gameState.currentTurn
       );
       
       // Always show allied units
-      if (isAlly) {
+      if (isAlly) return unit;
+
+      // If unit is not in visible range, don't show it
+      if (!isVisible) return null;
+
+      // If unit has concealment but there's a unit with True Sight that can see it, show it
+      if (hasConcealment && unitsWithTrueSight.size > 0) {
           return unit;
       }
 
-      // Hide enemy units that are either:
-      // 1. Outside vision range OR
-      // 2. Have active Presence Concealment
-      if (!isVisible || hasPresenceConcealment) {
+      // If unit has concealment and no True Sight can see it, hide it
+      if (hasConcealment) {
           return null;
       }
 
-      // Return full info for visible enemy units without Presence Concealment
+      // Show visible enemies without concealment
       return unit;
-  }).filter(Boolean); // Remove null entries
+  }).filter(Boolean);
 
   return {
       units: filteredUnits,
