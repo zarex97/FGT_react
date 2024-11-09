@@ -7,6 +7,7 @@ import { Skill } from '../game/Skill';
 import { getSkillImplementation, isSkillOnCooldown, executeSkill, getSkillAffectedCells  } from '../game/skills/registry';
 import { TargetingType } from '../game/targeting/TargetingTypes';
 import { TargetingLogic } from '../game/targeting/TargetingLogic';
+import ServantSelector from './ServantSelector';
 
 const TacticalGame = ({ username, roomId }) => {
     console.log('TacticalGame props:', { username, roomId });
@@ -24,6 +25,7 @@ const TacticalGame = ({ username, roomId }) => {
     const [activeSkill, setActiveSkill] = useState(null);
     const [skillTargetingMode, setSkillTargetingMode] = useState(false);
     const [previewCells, setPreviewCells] = useState(new Set());
+    const [showServantSelector, setShowServantSelector] = useState(false);
 
 
 
@@ -171,6 +173,13 @@ const TacticalGame = ({ username, roomId }) => {
         );
     }
 
+    const handleAddServant = (newUnit) => {
+        sendJsonMessage({
+            type: 'GAME_ACTION',
+            action: 'ADD_UNIT',
+            unit: newUnit
+        });
+    };
 
     // Add this function to handle skill selection
     const handleSkillSelect = (skillRef, skillImpl, unit) => {
@@ -737,7 +746,15 @@ const TacticalGame = ({ username, roomId }) => {
                         End Turn
                     </button>
                 )}
-            </div>
+                    <button
+                    onClick={() => setShowServantSelector(true)}
+                    className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                >
+                    Add Servant
+            </button>       
+
+            </div>     
+
             
             <div className="inline-block border-2 border-gray-400">
                 {Array.from({ length: GRID_SIZE }).map((_, y) => (
@@ -758,6 +775,13 @@ const TacticalGame = ({ username, roomId }) => {
             )}
             {showProfile && activeUnit && (
                 <ProfileSheet unit={activeUnit} />
+            )}
+            {showServantSelector && (
+                <ServantSelector
+                    onClose={() => setShowServantSelector(false)}
+                    onSelectServant={handleAddServant}
+                    teams={Object.values(gameState.players).map(player => player.team)}
+                />
             )}
         </div>
     );

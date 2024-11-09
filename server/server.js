@@ -49,6 +49,13 @@ const handleMessage = (bytes, uuid) => {
 
       // Update game state based on action
       switch (message.action) {
+
+        case 'ADD_UNIT':
+          // Add the new unit to the game state
+          room.gameState.units.push(message.unit);
+          broadcastToRoom(player.currentRoom);
+          break;
+
         case 'MOVE_UNIT':
           room.gameState.units = room.gameState.units.map(unit => {
             if (unit.id === message.unitId) {
