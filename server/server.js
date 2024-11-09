@@ -91,27 +91,42 @@ const handleMessage = (bytes, uuid) => {
           })
           break
 
-        case 'END_TURN':
-          //logic to take into account rounds
-        const newTurn = message.nextTurn;
-                    const currentTurn = room.gameState.currentTurn + 1;
-                    let newRound = room.gameState.currentRound;
+        // In server.js, update the END_TURN case:
 
-                    // Check if we need to increment the round
-                    if (currentTurn % room.gameState.turnsPerRound === 1) {
-                        newRound += 1;
-                        console.log(`Starting round ${newRound}`);
-                    }
-          room.gameState = {
-            ...room.gameState,
-            units: message.updatedUnits,
-            turn: message.nextTurn,
-            currentTurn: room.gameState.currentTurn + 1,  // Increment turn counter
-            currentRound: newRound
-        };
-        
-        broadcastToRoom(player.currentRoom);
-          break
+case 'END_TURN':
+  const newTurn = message.nextTurn;
+  const currentTurn = room.gameState.currentTurn + 1;
+  let newRound = room.gameState.currentRound;
+
+  // Check if we need to increment the round
+  if (currentTurn % room.gameState.turnsPerRound === 1) {
+      newRound += 1;
+      console.log(`Starting round ${newRound}`);
+  }
+
+  // Preserve all unit data while updating movement and attack status
+  const updatedUnits = room.gameState.units.map(existingUnit => {
+      const updatedUnit = message.updatedUnits.find(u => u.id === existingUnit.id);
+      if (updatedUnit) {
+          return {
+              ...existingUnit,  // Keep all existing unit data
+              movementLeft: updatedUnit.movementRange, // Reset movement
+              hasAttacked: false, // Reset attack status
+          };
+      }
+      return existingUnit;
+  });
+
+  room.gameState = {
+      ...room.gameState,
+      units: updatedUnits,
+      turn: newTurn,
+      currentTurn: currentTurn,
+      currentRound: newRound
+  };
+  
+  broadcastToRoom(player.currentRoom);
+  break;
 
           case 'USE_SKILL':
     // Validate the action
@@ -170,20 +185,85 @@ const handleClose = (uuid) => {
   delete playerStates[uuid]
 }
 
-const broadcastToRoom = (roomId) => {
-  const room = rooms[roomId]
-  if (!room) return
+const calculateVisibleCells = (unit, gridSize = 11) => {
+  const visibleCells = new Set();
+  const visionRange = unit.visionRange || 3; // Default vision of 3 if not specified
 
-  Object.entries(room.gameState.players).forEach(([playerId, _]) => {
-    const connection = connections[playerId]
-    if (connection) {
-      connection.send(JSON.stringify({
-        type: 'GAME_STATE_UPDATE',
-        gameState: room.gameState
-      }))
-    }
-  })
-}
+  // Calculate Manhattan distance for vision
+  for (let x = Math.max(0, unit.x - visionRange); x <= Math.min(gridSize - 1, unit.x + visionRange); x++) {
+      for (let y = Math.max(0, unit.y - visionRange); y <= Math.min(gridSize - 1, unit.y + visionRange); y++) {
+          const distance = Math.abs(unit.x - x) + Math.abs(unit.y - y);
+          if (distance <= visionRange) {
+              visibleCells.add(`${x},${y}`);
+          }
+      }
+  }
+  return visibleCells;
+};
+
+const getVisibleUnits = (gameState, playerTeam) => {
+  // Get all cells visible to the player's units
+  const visibleCells = new Set();
+  gameState.units
+      .filter(unit => unit.team === playerTeam)
+      .forEach(unit => {
+          const unitVisibleCells = calculateVisibleCells(unit);
+          unitVisibleCells.forEach(cell => visibleCells.add(cell));
+      });
+
+  // Filter units based on visibility and Presence Concealment
+  const filteredUnits = gameState.units.map(unit => {
+      const isVisible = visibleCells.has(`${unit.x},${unit.y}`);
+      const isAlly = unit.team === playerTeam;
+      const hasPresenceConcealment = unit.effects?.some(
+          effect => effect.name === 'Presence Concealment' && 
+          effect.appliedAt + effect.duration > gameState.currentTurn
+      );
+      
+      // Always show allied units
+      if (isAlly) {
+          return unit;
+      }
+
+      // Hide enemy units that are either:
+      // 1. Outside vision range OR
+      // 2. Have active Presence Concealment
+      if (!isVisible || hasPresenceConcealment) {
+          return null;
+      }
+
+      // Return full info for visible enemy units without Presence Concealment
+      return unit;
+  }).filter(Boolean); // Remove null entries
+
+  return {
+      units: filteredUnits,
+      visibleCells: Array.from(visibleCells)
+  };
+};
+
+
+
+const broadcastToRoom = (roomId) => {
+  const room = rooms[roomId];
+  if (!room) return;
+
+  Object.entries(room.gameState.players).forEach(([playerId, playerInfo]) => {
+      const connection = connections[playerId];
+      if (connection) {
+          const { units, visibleCells } = getVisibleUnits(room.gameState, playerInfo.team);
+          
+          connection.send(JSON.stringify({
+              type: 'GAME_STATE_UPDATE',
+              gameState: {
+                  ...room.gameState,
+                  units,
+                  visibleCells
+              }
+          }));
+      }
+  });
+};
 
 wsServer.on("connection", (connection, request) => {
   const { username } = url.parse(request.url, true).query
