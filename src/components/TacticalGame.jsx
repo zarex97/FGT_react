@@ -58,6 +58,7 @@ const TacticalGame = ({ username, roomId }) => {
                         atk: 8, 
                         def: 5, 
                         movementRange: 5,
+                        visionRange: 4,
                         movementLeft: 5,
                         hasAttacked: false,
                         name: 'Anastasia',
@@ -838,6 +839,7 @@ const DetectionResults = ({ results }) => {
                         {result.wasDetected ? (
                             <span className="text-green-400 ml-2">Detected!</span>
                         ) : (
+
                             <span className="text-red-400 ml-2">Remained Hidden</span>
                         )}
                     </div>
