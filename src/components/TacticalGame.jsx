@@ -738,7 +738,11 @@ const TacticalGame = ({ username, roomId }) => {
         let bgColor = 'bg-green-100';
 
         if (!isVisible) {
-            bgColor = 'bg-gray-900'; // Dark fog
+            if (isInSkillPreview) {
+                bgColor = 'bg-gray-900 after:absolute after:inset-0 after:bg-red-500 after:opacity-30';
+            } else {
+                bgColor = 'bg-gray-900'; // Regular fog
+            }
         }
         else if (isInSkillPreview) {
         bgColor = 'bg-red-200'; // or different colors based on skill type
@@ -753,11 +757,24 @@ const TacticalGame = ({ username, roomId }) => {
             bgColor = 'bg-yellow-200';
         }
 
+        const canTargetNonVisibleCells = () => {
+            if (!skillTargetingMode || !activeSkill) return false;
+            const targetingType = activeSkill.impl.microActions[0]?.targetingType;
+            return targetingType === TargetingType.AOE_AROUND_SELF ||
+                   targetingType === TargetingType.AOE_CARDINAL_DIRECTION ||
+                   targetingType === TargetingType.AOE_FROM_POINT;
+        };
+
         return (
             <div
             key={`${x}-${y}`}
             className={`w-16 h-16 border border-gray-300 ${bgColor} flex items-center justify-center relative cursor-pointer`}
-            onClick={() => isVisible && handleCellClick(x, y)}
+            onClick={() => {
+                // Allow click if cell is visible OR if we're targeting with an AoE skill
+                if (isVisible || canTargetNonVisibleCells()) {
+                    handleCellClick(x, y);
+                }
+            }}
             //onMouseEnter is the addition for skill logic
             onMouseEnter={() => handleCellHover(x, y)}
             onMouseLeave={() => setHoveredCell(null)}
