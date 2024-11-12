@@ -142,7 +142,7 @@ export const AnastasiaAttributes = {
     baseAtk: 8,
     baseDef: 5,
     baseMovementRange: 5,
-    visionRange: 4,
+    visionRange: 5,
     sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp"
 };
 
