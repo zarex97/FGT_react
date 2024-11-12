@@ -1,0 +1,14 @@
+export const CombatResponseType = {
+    DEFEND: 'defend',
+    EVADE: 'evade',
+    NOTHING: 'nothing'
+};
+
+export const CombatEventType = {
+    COMBAT_START: 'COMBAT_START',
+    DEFENDER_CHOICE: 'DEFENDER_CHOICE',
+    EVASION_ATTEMPT: 'EVASION_ATTEMPT',
+    DAMAGE_CALCULATION: 'DAMAGE_CALCULATION',
+    COUNTER_OPPORTUNITY: 'COUNTER_OPPORTUNITY',
+    COMBAT_END: 'COMBAT_END'
+};

@@ -8,6 +8,10 @@ import { getSkillImplementation, isSkillOnCooldown, executeSkill, getSkillAffect
 import { TargetingType } from '../game/targeting/TargetingTypes';
 import { TargetingLogic } from '../game/targeting/TargetingLogic';
 import ServantSelector from './ServantSelector';
+import { Combat } from '../game/combat/Combat';
+import { CombatEventEmitter } from '../game/combat/CombatEventEmitter';
+import { CombatResponseType, CombatEventType } from '../game/combat/CombatTypes';
+import { CombatDialog, CombatResultsDialog } from './CombatDialog';
 
 const TacticalGame = ({ username, roomId }) => {
     console.log('TacticalGame props:', { username, roomId });
@@ -32,6 +36,11 @@ const TacticalGame = ({ username, roomId }) => {
     };
     const [detectionResults, setDetectionResults] = useState(null);
     const [detectionError, setDetectionError] = useState(null);
+    const [combatState, setCombatState] = useState(null);
+    const [showCombatDialog, setShowCombatDialog] = useState(false);
+    const [showCombatResults, setShowCombatResults] = useState(false);
+    const [combatResults, setCombatResults] = useState(null);
+
 
 
 
@@ -134,6 +143,39 @@ const TacticalGame = ({ username, roomId }) => {
     }, [lastJsonMessage]);
 
     useEffect(() => {
+        if (lastJsonMessage?.type === 'COMBAT_UPDATE') {
+            setCombatState(lastJsonMessage.combat);
+            if (lastJsonMessage.combat.defender.playerId === playerState.id) {
+                setShowCombatDialog(true);
+            }
+        }
+        else if (lastJsonMessage?.type === 'COMBAT_RESOLUTION') {
+            setGameState(lastJsonMessage.gameState);
+            setCombatResults(lastJsonMessage.combatResults);
+            setShowCombatDialog(false);
+            setShowCombatResults(true);
+        }
+    }, [lastJsonMessage]);
+
+    const handleCombatChoice = (choice) => {
+        sendJsonMessage({
+            type: 'COMBAT_CHOICE',
+            choice
+        });
+    };
+
+    const handleCounterAttack = (action, target) => {
+        sendJsonMessage({
+            type: 'INITIATE_COUNTER',
+            counterAction: action,
+            counterTarget: target
+        });
+    };
+
+
+
+
+    useEffect(() => {
         const handleClickOutside = (event) => {
             // Don't handle if no menus are open
             if (!contextMenu && !showProfile && !showSkillsMenu && !showNPMenu) {
@@ -162,6 +204,33 @@ const TacticalGame = ({ username, roomId }) => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, [contextMenu, showProfile, showSkillsMenu, showNPMenu]);
+
+
+    useEffect(() => {
+        const eventEmitter = new CombatEventEmitter();
+        
+        eventEmitter.on(CombatEventType.COMBAT_START, (data) => {
+            setCombatState(data);
+            setShowCombatDialog(true);
+        });
+
+        eventEmitter.on(CombatEventType.COMBAT_END, (data) => {
+            setCombatResults(data);
+            setShowCombatDialog(false);
+        });
+
+        // Attach to gameState
+        if (gameState) {
+            gameState.eventEmitter = eventEmitter;
+        }
+
+        return () => {
+            // Cleanup listeners
+            eventEmitter.off(CombatEventType.COMBAT_START);
+            eventEmitter.off(CombatEventType.COMBAT_END);
+        };
+    }, [gameState]);
+
 
     // Loading state
     if (isConnecting) {
@@ -249,37 +318,20 @@ const TacticalGame = ({ username, roomId }) => {
             ref: skillRef,
             impl: skillImpl
         });
-
- 
-
+    
+        // For self-targeting skills
         if (skillImpl.microActions[0]?.targetingType === TargetingType.SELF) {
-            const result = executeSkill(skillRef, gameState, unit, unit.x, unit.y);
-            if (result.success) {
-                const newCooldownUntil = gameState.currentTurn + skillImpl.cooldown;
-            
-
-                sendJsonMessage({
-                    type: 'GAME_ACTION',
-                    action: 'USE_SKILL',
-                    skillName: skillRef.name,
-                    casterId: unit.id,
-                    targetX: unit.x,
-                    targetY: unit.y,
-                    updatedGameState: result.updatedGameState,
-                    newCooldownUntil: newCooldownUntil
-                });
-            }
-            setActiveSkill(null);
-            setSkillTargetingMode(false);
-            
+            handleSkillUse(skillRef, skillImpl, unit, unit.x, unit.y);
             return;
         }
+    
+        // For other targeting types
         setSkillTargetingMode(true);
         setContextMenu(false);
         setShowSkillsMenu(false);
     
-        // For AOE_AROUND_SELF targeting type
-        if (skillImpl.microActions?.[0]?.targetingType === TargetingType.AOE_AROUND_SELF) {
+        // Show AOE preview if applicable
+        if (skillImpl.microActions[0]?.targetingType === TargetingType.AOE_AROUND_SELF) {
             const affectedCells = getSkillAffectedCells(
                 skillImpl,
                 unit,
@@ -291,6 +343,75 @@ const TacticalGame = ({ username, roomId }) => {
         }
     };
     // Your existing menu handling useEffect...
+
+
+    const handleSkillUse = (skillRef, skillImpl, caster, targetX, targetY) => {
+        // Execute the skill first to get affected units and state changes
+        const result = executeSkill(skillRef, gameState, caster, targetX, targetY);
+        
+        if (!result.success) return;
+    
+        const newCooldownUntil = gameState.currentTurn + skillImpl.cooldown;
+    
+        if (skillImpl.isAttack) {
+            // Get all units affected by the skill
+            const affectedCells = getSkillAffectedCells(
+                skillImpl,
+                caster,
+                targetX,
+                targetY,
+                11
+            );
+    
+            // Find all enemy units in affected cells
+            const affectedEnemies = gameState.units.filter(unit => {
+                return unit.team !== caster.team && 
+                       affectedCells.has(`${unit.x},${unit.y}`);
+            });
+    
+            // Start combat for each affected enemy
+            affectedEnemies.forEach((target, index) => {
+                setTimeout(() => { // Use timeout to sequence multiple combats
+                    sendJsonMessage({
+                        type: 'START_COMBAT',
+                        attackerId: caster.id,
+                        defenderId: target.id,
+                        attackType: 'skill',
+                        attackData: {
+                            skillId: skillRef.id,
+                            skillName: skillImpl.name,
+                            targetX,
+                            targetY,
+                            skillRef,
+                            skillImpl,
+                            isAttack: true,
+                            affectsAttackCount: skillImpl.affectsAttackCount
+                        },
+                        isCounter: false
+                    });
+                }, index * 100); // Stagger multiple combats by 100ms
+            });
+        }
+    
+        // Send regular skill update for state changes
+        sendJsonMessage({
+            type: 'GAME_ACTION',
+            action: 'USE_SKILL',
+            skillName: skillRef.id,
+            casterId: caster.id,
+            targetX,
+            targetY,
+            updatedGameState: result.updatedGameState,
+            newCooldownUntil: newCooldownUntil
+        });
+    
+        // Reset skill targeting state
+        setActiveSkill(null);
+        setSkillTargetingMode(false);
+        setPreviewCells(new Set());
+        setSelectedUnit(null);
+    };
+
 
     const handleContextMenu = (e, unit) => {
         e.preventDefault();
@@ -332,19 +453,16 @@ const TacticalGame = ({ username, roomId }) => {
         setHighlightedCells([]);
     };
 
-    const handleAttack = (attacker, target) => {
-        // Calculate damage
-        const damage = Math.max(1, attacker.atk - target.def);
-        const newHp = Math.max(0, target.hp - damage);
-
-        sendJsonMessage({
-            type: 'GAME_ACTION',
-            action: 'ATTACK',
-            attackerId: attacker.id,
-            targetId: target.id,
-            newHp
-        });
-    };
+        // Modified attack handling
+        const handleAttack = (attacker, target) => {
+            sendJsonMessage({
+                type: 'START_COMBAT',
+                attackerId: attacker.id,
+                defenderId: target.id,
+                attackType: 'basic',
+                isCounter: false
+            });
+        };
 
     const endTurn = () => {
         const updatedUnits = gameState.units.map(unit => ({
@@ -658,6 +776,8 @@ const TacticalGame = ({ username, roomId }) => {
     const handleCellClick = (x, y) => {
         setContextMenu(null);
         setActiveUnit(null);
+    
+        // Handle skill targeting mode
         if (skillTargetingMode && activeSkill) {
             const caster = selectedUnit;
             if (!caster) return;
@@ -670,53 +790,93 @@ const TacticalGame = ({ username, roomId }) => {
                 targetX: x,
                 targetY: y
             });
-
+    
             // Execute the skill using the implementation
             const result = executeSkill(ref, gameState, caster, x, y);
             if (result.success) {
-
                 const newCooldownUntil = gameState.currentTurn + impl.cooldown;
-
-                console.log('Skill execution result:', {
-                    success: result.success,
-                    updatedState: result.updatedGameState
-                });
-
-                // Create deep copy with preserved cooldowns
-            const updatedGameState = {
-                ...result.updatedGameState,
-                units: result.updatedGameState.units.map(updatedUnit => {
-                    if (updatedUnit.id === caster.id) {
-                        return {
-                            ...updatedUnit,
-                            skills: updatedUnit.skills.map(skill => {
-                                if (skill.id === ref.id) {
-                                    return {
-                                        ...skill,
-                                        onCooldownUntil: newCooldownUntil
-                                    };
-                                }
-                                return skill;
-                            })
-                        };
+    
+                if (impl.isAttack) {
+                    // Get affected cells and find enemy units in them
+                    const affectedCells = getSkillAffectedCells(
+                        impl,
+                        caster,
+                        x,
+                        y,
+                        11
+                    );
+    
+                    // Find all enemy units in affected cells
+                    const affectedEnemies = gameState.units.filter(unit => 
+                        unit.team !== caster.team && 
+                        affectedCells.has(`${unit.x},${unit.y}`)
+                    );
+    
+                    // Start combat for each affected enemy
+                    affectedEnemies.forEach((target, index) => {
+                        setTimeout(() => {
+                            sendJsonMessage({
+                                type: 'START_COMBAT',
+                                attackerId: caster.id,
+                                defenderId: target.id,
+                                attackType: 'skill',
+                                attackData: {
+                                    skillId: ref.id,
+                                    skillName: impl.name,
+                                    targetX: x,
+                                    targetY: y,
+                                    isAttack: true,
+                                    affectsAttackCount: impl.affectsAttackCount
+                                },
+                                isCounter: false
+                            });
+                        }, index * 100); // Stagger multiple combats
+                    });
+    
+                    // If skill affects attack count, mark unit as having attacked
+                    if (impl.affectsAttackCount) {
+                        result.updatedGameState.units = result.updatedGameState.units.map(unit => {
+                            if (unit.id === caster.id) {
+                                return {
+                                    ...unit,
+                                    hasAttacked: true
+                                };
+                            }
+                            return unit;
+                        });
                     }
-                    return updatedUnit;
-                })
-            };
-
-            console.log('Skill execution (deep copy):', {
-                success: result.success,
-                updatedState: result.updatedGameState
-            });
-                
+                }
+    
+                // Update game state with skill effects and cooldown
+                const updatedGameState = {
+                    ...result.updatedGameState,
+                    units: result.updatedGameState.units.map(updatedUnit => {
+                        if (updatedUnit.id === caster.id) {
+                            return {
+                                ...updatedUnit,
+                                skills: updatedUnit.skills.map(skill => {
+                                    if (skill.id === ref.id) {
+                                        return {
+                                            ...skill,
+                                            onCooldownUntil: newCooldownUntil
+                                        };
+                                    }
+                                    return skill;
+                                })
+                            };
+                        }
+                        return updatedUnit;
+                    })
+                };
+    
                 sendJsonMessage({
                     type: 'GAME_ACTION',
                     action: 'USE_SKILL',
-                    skillName: impl.name,
+                    skillName: ref.id,
                     casterId: caster.id,
                     targetX: x,
                     targetY: y,
-                    updatedGameState: result.updatedGameState,
+                    updatedGameState: updatedGameState,
                     newCooldownUntil: newCooldownUntil
                 });
             }
@@ -728,25 +888,52 @@ const TacticalGame = ({ username, roomId }) => {
             setSelectedUnit(null);
             return;
         }
-
-        //logic for clicking when trying to move
-        
+    
+        // Handle movement and basic attacks
         const clickedUnit = getUnitAt(x, y);
         const playerTeam = gameState.players[Object.keys(gameState.players).find(
             id => gameState.players[id].username === username
         )].team;
         
         if (selectedUnit) {
+            // Handle movement to empty cell
             if (!clickedUnit && highlightedCells.some(move => move.x === x && move.y === y)) {
                 moveUnit(selectedUnit, x, y);
-            } else {
+            } 
+            // Handle basic attack on enemy unit
+            else if (
+                clickedUnit && 
+                clickedUnit.team !== playerTeam && 
+                !selectedUnit.hasAttacked &&
+                calculateDistance(selectedUnit.x, selectedUnit.y, x, y) <= 1 // Assuming range of 1 for basic attacks
+            ) {
+                sendJsonMessage({
+                    type: 'START_COMBAT',
+                    attackerId: selectedUnit.id,
+                    defenderId: clickedUnit.id,
+                    attackType: 'basic',
+                    attackData: {
+                        isAttack: true,
+                        affectsAttackCount: true
+                    },
+                    isCounter: false
+                });
+                setSelectedUnit(null);
+                setHighlightedCells([]);
+            } 
+            // Deselect if clicking elsewhere
+            else {
                 setSelectedUnit(null);
                 setHighlightedCells([]);
             }
-        } else if (clickedUnit && clickedUnit.team === playerTeam && clickedUnit.team === gameState.turn) {
+        } 
+        // Select own unit during own turn
+        else if (clickedUnit && clickedUnit.team === playerTeam && clickedUnit.team === gameState.turn) {
             setSelectedUnit(clickedUnit);
+            setHighlightedCells(getPossibleMoves(clickedUnit));
         }
     };
+    
 
     // Add this function to handle mouse movement during targeting
     const handleCellHover = (x, y) => {
@@ -1007,6 +1194,34 @@ return (
                 gameState={gameState}
             />
         )}
+
+            {/* Add Combat UI components */}
+        <CombatDialog
+            isOpen={showCombatDialog}
+            attacker={combatState?.attacker}
+            defender={combatState?.defender}
+            onChoice={handleCombatChoice}
+            combatState={combatState}
+        />
+        
+        <CombatResultsDialog
+            isOpen={showCombatResults}
+            result={combatResults}
+            onClose={() => {
+                setShowCombatResults(false);
+                // If we can counter, show the counter options
+                if (combatResults?.defenderAlive && !combatState?.isCounter) {
+                    // Enable counter attack mode
+                    setContextMenu({
+                        x: window.innerWidth / 2,
+                        y: window.innerHeight / 2,
+                        isCounter: true
+                    });
+                    setActiveUnit(combatState?.defender);
+                }
+            }}
+        />
+
         {detectionResults && <DetectionResults results={detectionResults} />}
         {detectionError && <DetectionError message={detectionError} />}
     </div>

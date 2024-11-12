@@ -3,13 +3,15 @@ import { TargetingType } from '../game/targeting/TargetingTypes';
 
 
 export class Skill {
-    constructor(name, description, cooldown, range, microActions) {
+    constructor(name, description, cooldown, range, microActions, isAttack = false, affectsAttackCount = false) {
         this.name = name;
         this.description = description;
         this.cooldown = cooldown;
         this.range = range;
         this.microActions = microActions;
         this.onCooldownUntil = 0;
+        this.isAttack = isAttack;
+        this.affectsAttackCount = affectsAttackCount;
 
         this.isOnCooldown = this.isOnCooldown.bind(this);
         this.startCooldown = this.startCooldown.bind(this);
