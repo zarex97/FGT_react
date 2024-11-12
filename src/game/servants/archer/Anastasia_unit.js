@@ -59,6 +59,55 @@ const mahalaprayaMicroAction = new MicroAction({
     }
 });
 
+const selfBuffMicroAction = new MicroAction({
+    targetingType: TargetingType.SELF,
+    range: 0, // Not used for SELF targeting
+    effectLogic: (gameState, caster, affectedCells) => {
+        const updatedUnits = gameState.units.map(unit => {
+            if (unit.id === caster.id) {
+                return {
+                    ...unit,
+                    effects: [...(unit.effects || []), {
+                        name: 'PowerUp',
+                        duration: 3,
+                        appliedAt: gameState.currentTurn
+                    }]
+                };
+            }
+            return unit;
+        });
+
+        return {
+            ...gameState,
+            units: updatedUnits
+        };
+    }
+});
+
+// Example of AOE_FROM_POINT_WITHIN_RANGE
+const constrainedExplosionMicroAction = new MicroAction({
+    targetingType: TargetingType.AOE_FROM_POINT_WITHIN_RANGE,
+    range: 4,
+    dimensions: { width: 5, height: 5 },
+    effectLogic: (gameState, caster, affectedCells) => {
+        const updatedUnits = gameState.units.map(unit => {
+            if (unit.team !== caster.team && 
+                affectedCells.has(`${unit.x},${unit.y}`)) {
+                return {
+                    ...unit,
+                    hp: Math.max(0, unit.hp - 5)
+                };
+            }
+            return unit;
+        });
+
+        return {
+            ...gameState,
+            units: updatedUnits
+        };
+    }
+});
+
 // Define Anastasia's skills
 export const AnastasiaSkills = {
     Mahalapraya: new Skill(
@@ -67,6 +116,21 @@ export const AnastasiaSkills = {
         5, // cooldown
         6, // range
         [mahalaprayaMicroAction]
+    ),
+    selfBuff: new Skill(
+        "Self Buff",
+        "self_targeting test: buffs itself",
+        6, // cooldown
+        1, // range
+        [selfBuffMicroAction]
+    ), 
+
+    constrainedExplosion: new Skill(
+        "aoe within range",
+        "aoe from point test: ",
+        6, // cooldown
+        4, // range
+        [constrainedExplosionMicroAction]
     )
 };
 
@@ -78,6 +142,7 @@ export const AnastasiaAttributes = {
     baseAtk: 8,
     baseDef: 5,
     baseMovementRange: 5,
+    visionRange: 4,
     sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp"
 };
 
@@ -87,6 +152,14 @@ export const AnastasiaTemplate = {
     skills: [
         {
             id: "Mahalapraya",
+            onCooldownUntil: 0
+        },
+        {
+            id: "selfBuff",
+            onCooldownUntil: 0
+        },
+        {
+            id: "constrainedExplosion",
             onCooldownUntil: 0
         }
     ],

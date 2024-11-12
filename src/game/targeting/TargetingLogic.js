@@ -31,6 +31,11 @@ export class TargetingLogic {
         const affectedCells = new Set();
 
         switch (targetingType) {
+            case TargetingType.SELF:
+                // Only affect the caster's position
+                affectedCells.add(`${casterX},${casterY}`);
+                break;
+
             case TargetingType.SINGLE_TARGET:
                 if (targetX !== undefined && targetY !== undefined) {
                     const distance = this.calculateManhattanDistance(casterX, casterY, targetX, targetY);
@@ -93,6 +98,32 @@ export class TargetingLogic {
                                 if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
                                     if (!applyCornerRule || !this.isCornerCell(targetX, targetY, x, y, Math.max(halfWidth, halfHeight))) {
                                         affectedCells.add(`${x},${y}`);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+
+                case TargetingType.AOE_FROM_POINT_WITHIN_RANGE:
+                if (targetX !== undefined && targetY !== undefined && dimensions) {
+                    const { width, height } = dimensions;
+                    const halfWidth = Math.floor(width / 2);
+                    const halfHeight = Math.floor(height / 2);
+
+                    // Check if target point is within skill range
+                    const distanceToTarget = this.calculateManhattanDistance(casterX, casterY, targetX, targetY);
+                    if (distanceToTarget <= range) {
+                        // Add cells in the area that are within range of caster
+                        for (let x = targetX - halfWidth; x <= targetX + halfWidth; x++) {
+                            for (let y = targetY - halfHeight; y <= targetY + halfHeight; y++) {
+                                if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
+                                    const distanceToCaster = this.calculateManhattanDistance(casterX, casterY, x, y);
+                                    if (distanceToCaster <= range) { // Key difference: check distance to caster
+                                        if (!applyCornerRule || !this.isCornerCell(targetX, targetY, x, y, Math.max(halfWidth, halfHeight))) {
+                                            affectedCells.add(`${x},${y}`);
+                                        }
                                     }
                                 }
                             }
