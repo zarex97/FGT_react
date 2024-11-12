@@ -249,6 +249,27 @@ const TacticalGame = ({ username, roomId }) => {
             ref: skillRef,
             impl: skillImpl
         });
+
+        if (skillImpl.microActions[0]?.targetingType === TargetingType.SELF) {
+            const result = executeSkill(skillRef, gameState, unit, unit.x, unit.y);
+            if (result.success) {
+                const newCooldownUntil = gameState.currentTurn + skillImpl.cooldown;
+                
+                sendJsonMessage({
+                    type: 'GAME_ACTION',
+                    action: 'USE_SKILL',
+                    skillName: skillImpl.name,
+                    casterId: unit.id,
+                    targetX: unit.x,
+                    targetY: unit.y,
+                    updatedGameState: result.updatedGameState,
+                    newCooldownUntil: newCooldownUntil
+                });
+            }
+            setActiveSkill(null);
+            setSkillTargetingMode(false);
+            return;
+        }
         setSkillTargetingMode(true);
         setContextMenu(false);
         setShowSkillsMenu(false);
@@ -700,6 +721,11 @@ const TacticalGame = ({ username, roomId }) => {
     const handleCellHover = (x, y) => {
         if (skillTargetingMode && activeSkill && selectedUnit) {
             const { impl } = activeSkill;
+
+            // Don't show preview for SELF targeting
+        if (impl.microActions[0]?.targetingType === TargetingType.SELF) {
+            return;
+        }
             
             // Use the TargetingLogic class through our utility function
             const affectedCells = getSkillAffectedCells(
@@ -746,7 +772,14 @@ const TacticalGame = ({ username, roomId }) => {
             }
         }
         else if (isInSkillPreview) {
-        bgColor = 'bg-red-200'; // or different colors based on skill type
+        // Different colors for different targeting types
+        if (activeSkill?.impl.microActions[0]?.targetingType === TargetingType.SELF) {
+            bgColor = 'bg-blue-200'; // Self-targeting preview
+        } else if (activeSkill?.impl.microActions[0]?.targetingType === TargetingType.AOE_FROM_POINT_WITHIN_RANGE) {
+            bgColor = 'bg-purple-200'; // Constrained AOE preview
+        } else {
+            bgColor = 'bg-red-200'; // Standard AOE preview
+        }
         } else if (isSelected) {
         bgColor = 'bg-blue-300';
         } else if (isValidMove) {
