@@ -90,7 +90,7 @@ const handleMessage = (bytes, uuid) => {
             }
             return unit
           })
-          break
+          break;
 
         // In server.js, update the END_TURN case:
 
@@ -200,38 +200,37 @@ case 'END_TURN':
     broadcastToRoom(player.currentRoom);
     break;
 
-          case 'USE_SKILL':
-    // Validate the action
-    const caster = room.gameState.units.find(u => u.id === message.casterId);
-    if (!caster) return;
-
-    // Update the entire game state including effects and HP changes
-    room.gameState = {
-        ...message.updatedGameState,
-        units: message.updatedGameState.units.map(updatedUnit => {
-            // Preserve skill cooldowns while updating unit state
-            const existingUnit = room.gameState.units.find(u => u.id === updatedUnit.id);
-            if (existingUnit) {
-                return {
-                    ...updatedUnit,
-                    skills: existingUnit.skills.map(skill => {
-                        if (skill.id === message.skillName && updatedUnit.id === message.casterId) {
-                            return {
-                                ...skill,
-                                onCooldownUntil: message.newCooldownUntil
-                            };
-                        }
-                        return skill;
-                    })
-                };
-            }
-            return updatedUnit;
-        })
-    };
-    
-    console.log('Updated game state after skill:', room.gameState); // Debug log
-    broadcastToRoom(player.currentRoom);
-    break;
+    case 'USE_SKILL':
+      const caster = room.gameState.units.find(u => u.id === message.casterId);
+      if (!caster) return;
+      const skillName = message.skillName;
+      const casterId = message.casterId;
+      const newCooldownUntil = message.newCooldownUntil;
+      
+      room.gameState = {
+          ...message.updatedGameState,
+          units: message.updatedGameState.units.map(updatedUnit => {
+              if (updatedUnit.id === casterId) {
+                  return {
+                      ...updatedUnit,
+                      skills: updatedUnit.skills.map(skill => {
+                          if (skill.id === skillName) {
+                              return {
+                                  ...skill,
+                                  onCooldownUntil: newCooldownUntil
+                              };
+                          }
+                          return skill;
+                      })
+                  };
+              }
+              return updatedUnit;
+          })
+      };
+      
+      console.log('Updated game state after skill:', room.gameState);
+      broadcastToRoom(player.currentRoom);
+      break;
       
       }
       
@@ -260,16 +259,15 @@ const handleClose = (uuid) => {
 const calculateVisibleCells = (unit, gridSize = 11) => {
   const visibleCells = new Set();
   const visionRange = unit.visionRange || 3; // Default vision of 3 if not specified
-
   // Calculate Manhattan distance for vision
   for (let x = Math.max(0, unit.x - visionRange); x <= Math.min(gridSize - 1, unit.x + visionRange); x++) {
-      for (let y = Math.max(0, unit.y - visionRange); y <= Math.min(gridSize - 1, unit.y + visionRange); y++) {
-          const distance = Math.abs(unit.x - x) + Math.abs(unit.y - y);
-          if (distance <= visionRange) {
-              visibleCells.add(`${x},${y}`);
-          }
-      }
-  }
+    for (let y = Math.max(0, unit.y - visionRange); y <= Math.min(gridSize - 1, unit.y + visionRange); y++) {
+        const distance = Math.max(Math.abs(unit.x - x), Math.abs(unit.y - y));
+        if (distance <= visionRange) {
+            visibleCells.add(`${x},${y}`);
+        }
+    }
+}
   return visibleCells;
 };
 

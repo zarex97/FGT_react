@@ -87,8 +87,9 @@ const selfBuffMicroAction = new MicroAction({
 // Example of AOE_FROM_POINT_WITHIN_RANGE
 const constrainedExplosionMicroAction = new MicroAction({
     targetingType: TargetingType.AOE_FROM_POINT_WITHIN_RANGE,
-    range: 4,
-    dimensions: { width: 5, height: 5 },
+    range: 6,
+    dimensions: { width: 7, height: 7 },
+    // applyCornerRule: true,
     effectLogic: (gameState, caster, affectedCells) => {
         const updatedUnits = gameState.units.map(unit => {
             if (unit.team !== caster.team && 
@@ -120,7 +121,7 @@ export const AnastasiaSkills = {
     selfBuff: new Skill(
         "Self Buff",
         "self_targeting test: buffs itself",
-        6, // cooldown
+        3, // cooldown
         1, // range
         [selfBuffMicroAction]
     ), 
@@ -128,8 +129,8 @@ export const AnastasiaSkills = {
     constrainedExplosion: new Skill(
         "aoe within range",
         "aoe from point test: ",
-        6, // cooldown
-        4, // range
+        4, // cooldown
+        6, // range
         [constrainedExplosionMicroAction]
     )
 };

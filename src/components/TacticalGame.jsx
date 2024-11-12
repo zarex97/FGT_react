@@ -250,15 +250,18 @@ const TacticalGame = ({ username, roomId }) => {
             impl: skillImpl
         });
 
+ 
+
         if (skillImpl.microActions[0]?.targetingType === TargetingType.SELF) {
             const result = executeSkill(skillRef, gameState, unit, unit.x, unit.y);
             if (result.success) {
                 const newCooldownUntil = gameState.currentTurn + skillImpl.cooldown;
-                
+            
+
                 sendJsonMessage({
                     type: 'GAME_ACTION',
                     action: 'USE_SKILL',
-                    skillName: skillImpl.name,
+                    skillName: skillRef.name,
                     casterId: unit.id,
                     targetX: unit.x,
                     targetY: unit.y,
@@ -268,6 +271,7 @@ const TacticalGame = ({ username, roomId }) => {
             }
             setActiveSkill(null);
             setSkillTargetingMode(false);
+            
             return;
         }
         setSkillTargetingMode(true);
@@ -677,6 +681,33 @@ const TacticalGame = ({ username, roomId }) => {
                     success: result.success,
                     updatedState: result.updatedGameState
                 });
+
+                // Create deep copy with preserved cooldowns
+            const updatedGameState = {
+                ...result.updatedGameState,
+                units: result.updatedGameState.units.map(updatedUnit => {
+                    if (updatedUnit.id === caster.id) {
+                        return {
+                            ...updatedUnit,
+                            skills: updatedUnit.skills.map(skill => {
+                                if (skill.id === ref.id) {
+                                    return {
+                                        ...skill,
+                                        onCooldownUntil: newCooldownUntil
+                                    };
+                                }
+                                return skill;
+                            })
+                        };
+                    }
+                    return updatedUnit;
+                })
+            };
+
+            console.log('Skill execution (deep copy):', {
+                success: result.success,
+                updatedState: result.updatedGameState
+            });
                 
                 sendJsonMessage({
                     type: 'GAME_ACTION',

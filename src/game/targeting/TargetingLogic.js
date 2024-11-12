@@ -1,8 +1,8 @@
 import { TargetingType } from '../targeting/TargetingTypes';
 
 export class TargetingLogic {
-    static calculateManhattanDistance(x1, y1, x2, y2) {
-        return Math.abs(x1 - x2) + Math.abs(y1 - y2);
+    static calculateChebyshevDistance(x1, y1, x2, y2) {
+        return Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2));
     }
 
     static isCornerCell(originX, originY, cellX, cellY, range) {
@@ -38,7 +38,7 @@ export class TargetingLogic {
 
             case TargetingType.SINGLE_TARGET:
                 if (targetX !== undefined && targetY !== undefined) {
-                    const distance = this.calculateManhattanDistance(casterX, casterY, targetX, targetY);
+                    const distance = this.calculateChebyshevDistance(casterX, casterY, targetX, targetY);
                     if (distance <= range) {
                         affectedCells.add(`${targetX},${targetY}`);
                     }
@@ -48,7 +48,7 @@ export class TargetingLogic {
             case TargetingType.AOE_AROUND_SELF:
                 for (let x = Math.max(0, casterX - range); x <= Math.min(gridSize - 1, casterX + range); x++) {
                     for (let y = Math.max(0, casterY - range); y <= Math.min(gridSize - 1, casterY + range); y++) {
-                        const distance = this.calculateManhattanDistance(casterX, casterY, x, y);
+                        const distance = this.calculateChebyshevDistance(casterX, casterY, x, y);
                         if (distance <= range) {
                             if (!applyCornerRule || !this.isCornerCell(casterX, casterY, x, y, range)) {
                                 affectedCells.add(`${x},${y}`);
@@ -90,7 +90,7 @@ export class TargetingLogic {
                     const halfHeight = Math.floor(height / 2);
 
                     // Check if target point is within skill range
-                    const distanceToTarget = this.calculateManhattanDistance(casterX, casterY, targetX, targetY);
+                    const distanceToTarget = this.calculateChebyshevDistance(casterX, casterY, targetX, targetY);
                     if (distanceToTarget <= range) {
                         // Add all cells in the area
                         for (let x = targetX - halfWidth; x <= targetX + halfWidth; x++) {
@@ -113,13 +113,13 @@ export class TargetingLogic {
                     const halfHeight = Math.floor(height / 2);
 
                     // Check if target point is within skill range
-                    const distanceToTarget = this.calculateManhattanDistance(casterX, casterY, targetX, targetY);
+                    const distanceToTarget = this.calculateChebyshevDistance(casterX, casterY, targetX, targetY);
                     if (distanceToTarget <= range) {
                         // Add cells in the area that are within range of caster
                         for (let x = targetX - halfWidth; x <= targetX + halfWidth; x++) {
                             for (let y = targetY - halfHeight; y <= targetY + halfHeight; y++) {
                                 if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
-                                    const distanceToCaster = this.calculateManhattanDistance(casterX, casterY, x, y);
+                                    const distanceToCaster = this.calculateChebyshevDistance(casterX, casterY, x, y);
                                     if (distanceToCaster <= range) { // Key difference: check distance to caster
                                         if (!applyCornerRule || !this.isCornerCell(targetX, targetY, x, y, Math.max(halfWidth, halfHeight))) {
                                             affectedCells.add(`${x},${y}`);
