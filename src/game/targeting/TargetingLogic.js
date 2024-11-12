@@ -96,7 +96,7 @@ export class TargetingLogic {
                         for (let x = targetX - halfWidth; x <= targetX + halfWidth; x++) {
                             for (let y = targetY - halfHeight; y <= targetY + halfHeight; y++) {
                                 if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
-                                    if (!applyCornerRule || !this.isCornerCell(targetX, targetY, x, y, Math.max(halfWidth, halfHeight))) {
+                                    if (!applyCornerRule || !this.isCornerCell(targetX, targetY, x, y, range)) {
                                         affectedCells.add(`${x},${y}`);
                                     }
                                 }
@@ -121,8 +121,9 @@ export class TargetingLogic {
                                 if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
                                     const distanceToCaster = this.calculateChebyshevDistance(casterX, casterY, x, y);
                                     if (distanceToCaster <= range) { // Key difference: check distance to caster
-                                        if (!applyCornerRule || !this.isCornerCell(targetX, targetY, x, y, Math.max(halfWidth, halfHeight))) {
-                                            affectedCells.add(`${x},${y}`);
+                                        // Apply corner rule using range/2
+                                            if (!applyCornerRule || !this.isCornerCell(casterX, casterY, x, y, range)) {
+                                affectedCells.add(`${x},${y}`);
                                         }
                                     }
                                 }

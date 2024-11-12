@@ -89,7 +89,7 @@ const constrainedExplosionMicroAction = new MicroAction({
     targetingType: TargetingType.AOE_FROM_POINT_WITHIN_RANGE,
     range: 6,
     dimensions: { width: 7, height: 7 },
-    // applyCornerRule: true,
+     applyCornerRule: true,
     effectLogic: (gameState, caster, affectedCells) => {
         const updatedUnits = gameState.units.map(unit => {
             if (unit.team !== caster.team && 
