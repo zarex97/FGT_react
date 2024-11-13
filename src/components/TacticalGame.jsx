@@ -40,6 +40,8 @@ const TacticalGame = ({ username, roomId }) => {
     const [showCombatDialog, setShowCombatDialog] = useState(false);
     const [showCombatResults, setShowCombatResults] = useState(false);
     const [combatResults, setCombatResults] = useState(null);
+    const [isCounterSkillSelection, setIsCounterSkillSelection] = useState(false);
+const [isCounterNPSelection, setIsCounterNPSelection] = useState(false);
 
 
 
@@ -144,32 +146,80 @@ const TacticalGame = ({ username, roomId }) => {
 
     useEffect(() => {
         if (lastJsonMessage?.type === 'COMBAT_UPDATE') {
+            console.log('Received combat update:', lastJsonMessage.combat);
             setCombatState(lastJsonMessage.combat);
-            if (lastJsonMessage.combat.defender.playerId === playerState.id) {
+            // Show combat dialog to defender
+            const defenderId = lastJsonMessage.combat.defender.id;
+            const playerUnit = gameState.units.find(u => 
+                u.team === playerTeam
+            );
+            if (playerUnit && defenderId === playerUnit.id) {
                 setShowCombatDialog(true);
             }
         }
         else if (lastJsonMessage?.type === 'COMBAT_RESOLUTION') {
             setGameState(lastJsonMessage.gameState);
-            setCombatResults(lastJsonMessage.combatResults);
+            setCombatResults(lastJsonMessage.results);
             setShowCombatDialog(false);
             setShowCombatResults(true);
         }
     }, [lastJsonMessage]);
 
     const handleCombatChoice = (choice) => {
+        const combat = new Combat(combatState.attacker, combatState.defender, combatState.attack, gameState);
+        const result = combat.executeCombat(choice);
+        
+        // Send the results to server for synchronization
         sendJsonMessage({
-            type: 'COMBAT_CHOICE',
-            choice
+            type: 'COMBAT_RESOLUTION',
+            updatedGameState: result.updatedGameState,
+            results: result.results
         });
+    
+        // Show results in UI
+        setCombatResults(result.results);
+        
+        // If evaded or defender survived, offer counter opportunity
+        if ((result.evaded || result.results.defenderAlive) && !combat.isCounter) {
+            // Show counter options
+            setContextMenu({
+                x: window.innerWidth / 2,
+                y: window.innerHeight / 2,
+                isCounter: true
+            });
+            setActiveUnit(combatState.defender);
+        }
     };
 
     const handleCounterAttack = (action, target) => {
+        if (!combatState?.defender || !combatState?.attacker) return;
+    
+        const combat = new Combat(
+            combatState.defender, // Counter attacker
+            combatState.attacker, // Original attacker
+            action,
+            gameState
+        );
+    
+        if (!combat.validateCounterAction(action, target).valid) {
+            return;
+        }
+    
+        // Start new combat as counter
         sendJsonMessage({
-            type: 'INITIATE_COUNTER',
-            counterAction: action,
-            counterTarget: target
+            type: 'START_COMBAT',
+            attackerId: combatState.defender.id,
+            defenderId: combatState.attacker.id,
+            attackType: action.type,
+            attackData: {
+                ...action,
+                isCounter: true
+            }
         });
+    
+        // Clean up counter UI
+        setContextMenu(null);
+        setActiveUnit(null);
     };
 
 
@@ -319,15 +369,15 @@ const TacticalGame = ({ username, roomId }) => {
             impl: skillImpl
         });
     
-        // For self-targeting skills
         if (skillImpl.microActions[0]?.targetingType === TargetingType.SELF) {
             handleSkillUse(skillRef, skillImpl, unit, unit.x, unit.y);
             return;
         }
     
-        // For other targeting types
+        // For non-self targeting skills, enter targeting mode
         setSkillTargetingMode(true);
-        setContextMenu(false);
+        setSelectedUnit(unit); // Important: Set the selected unit for targeting
+        setContextMenu(null);
         setShowSkillsMenu(false);
     
         // Show AOE preview if applicable
@@ -345,8 +395,8 @@ const TacticalGame = ({ username, roomId }) => {
     // Your existing menu handling useEffect...
 
 
-    const handleSkillUse = (skillRef, skillImpl, caster, targetX, targetY) => {
-        // Execute the skill first to get affected units and state changes
+    const handleSkillUse = async (skillRef, skillImpl, caster, targetX, targetY) => {
+        // Execute the skill only for non-combat effects initially
         const result = executeSkill(skillRef, gameState, caster, targetX, targetY);
         
         if (!result.success) return;
@@ -354,7 +404,7 @@ const TacticalGame = ({ username, roomId }) => {
         const newCooldownUntil = gameState.currentTurn + skillImpl.cooldown;
     
         if (skillImpl.isAttack) {
-            // Get all units affected by the skill
+            // Get affected cells
             const affectedCells = getSkillAffectedCells(
                 skillImpl,
                 caster,
@@ -363,15 +413,16 @@ const TacticalGame = ({ username, roomId }) => {
                 11
             );
     
-            // Find all enemy units in affected cells
-            const affectedEnemies = gameState.units.filter(unit => {
-                return unit.team !== caster.team && 
-                       affectedCells.has(`${unit.x},${unit.y}`);
-            });
+            // Find affected enemy units
+            const affectedEnemies = gameState.units.filter(unit => 
+                unit.team !== caster.team && 
+                affectedCells.has(`${unit.x},${unit.y}`)
+            );
     
-            // Start combat for each affected enemy
-            affectedEnemies.forEach((target, index) => {
-                setTimeout(() => { // Use timeout to sequence multiple combats
+            // Process combats sequentially
+            for (const target of affectedEnemies) {
+                // Wait for each combat to complete before starting the next one
+                await new Promise((resolve) => {
                     sendJsonMessage({
                         type: 'START_COMBAT',
                         attackerId: caster.id,
@@ -382,30 +433,65 @@ const TacticalGame = ({ username, roomId }) => {
                             skillName: skillImpl.name,
                             targetX,
                             targetY,
-                            skillRef,
-                            skillImpl,
                             isAttack: true,
-                            affectsAttackCount: skillImpl.affectsAttackCount
+                            affectsAttackCount: skillImpl.affectsAttackCount,
+                            damageMultiplier: skillImpl.damageMultiplier || 1,
+                            flatDamageBonus: skillImpl.flatDamageBonus || 0,
+                            effects: skillImpl.effects || []
                         },
-                        isCounter: false
+                        onComplete: resolve // Server will call this when combat is done
                     });
-                }, index * 100); // Stagger multiple combats by 100ms
+                });
+            }
+    
+            // Update skill cooldown and attack status after all combats
+            const nonCombatGameState = {
+                ...result.updatedGameState,
+                units: result.updatedGameState.units.map(unit => {
+                    if (unit.id === caster.id) {
+                        return {
+                            ...unit,
+                            skills: unit.skills.map(skill => {
+                                if (skill.id === skillRef.id) {
+                                    return {
+                                        ...skill,
+                                        onCooldownUntil: newCooldownUntil
+                                    };
+                                }
+                                return skill;
+                            }),
+                            hasAttacked: skillImpl.affectsAttackCount
+                        };
+                    }
+                    return unit;
+                })
+            };
+    
+            sendJsonMessage({
+                type: 'GAME_ACTION',
+                action: 'USE_SKILL',
+                skillName: skillRef.id,
+                casterId: caster.id,
+                targetX,
+                targetY,
+                updatedGameState: nonCombatGameState,
+                newCooldownUntil: newCooldownUntil
+            });
+        } else {
+            // Non-attack skills proceed as before
+            sendJsonMessage({
+                type: 'GAME_ACTION',
+                action: 'USE_SKILL',
+                skillName: skillRef.id,
+                casterId: caster.id,
+                targetX,
+                targetY,
+                updatedGameState: result.updatedGameState,
+                newCooldownUntil: newCooldownUntil
             });
         }
     
-        // Send regular skill update for state changes
-        sendJsonMessage({
-            type: 'GAME_ACTION',
-            action: 'USE_SKILL',
-            skillName: skillRef.id,
-            casterId: caster.id,
-            targetX,
-            targetY,
-            updatedGameState: result.updatedGameState,
-            newCooldownUntil: newCooldownUntil
-        });
-    
-        // Reset skill targeting state
+        // Reset targeting state
         setActiveSkill(null);
         setSkillTargetingMode(false);
         setPreviewCells(new Set());
@@ -460,6 +546,11 @@ const TacticalGame = ({ username, roomId }) => {
                 attackerId: attacker.id,
                 defenderId: target.id,
                 attackType: 'basic',
+                attackData: {
+                    type: 'basic',
+                    isAttack: true,
+                    affectsAttackCount: true
+                },
                 isCounter: false
             });
         };
@@ -490,6 +581,87 @@ const TacticalGame = ({ username, roomId }) => {
     const ContextMenu = ({ position, unit }) => {
         if (!position) return null;
     
+        const isCounter = position.isCounter;
+    
+        // Helper function to close all menus
+        const closeAllMenus = () => {
+            setContextMenu(null);
+            setActiveUnit(null);
+            setShowSkillsMenu(false);
+            setShowNPMenu(false);
+        };
+    
+        // Counter attack menu
+        if (isCounter) {
+            return (
+                <div 
+                    className="fixed bg-white shadow-lg rounded-lg border border-gray-200 z-50 w-48 context-menu"
+                    style={{ 
+                        left: position.x, 
+                        top: position.y,
+                        transform: 'translate(-50%, -50%)'
+                    }}
+                >
+                    <div className="px-4 py-2 text-center font-bold border-b">
+                        Counter Attack
+                    </div>
+    
+                    <button 
+                        className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
+                            ${unit.hasAttacked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        onClick={() => {
+                            handleCounterAttack(
+                                { 
+                                    type: 'basic', 
+                                    isAttack: true, 
+                                    affectsAttackCount: true
+                                },
+                                combatState?.attacker
+                            );
+                            closeAllMenus();
+                        }}
+                        disabled={unit.hasAttacked}
+                    >
+                        <Sword size={16} /> Basic Attack
+                    </button>
+    
+                    <button 
+                        className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+                        onClick={() => {
+                            setShowSkillsMenu(true);
+                            setContextMenu(null);
+                            // Set counter skill selection mode
+                            setIsCounterSkillSelection(true);
+                        }}
+                    >
+                        <ScrollText size={16} /> Skills
+                    </button>
+    
+                    <button 
+                        className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+                        onClick={() => {
+                            setShowNPMenu(true);
+                            setContextMenu(null);
+                            // Set counter NP selection mode
+                            setIsCounterNPSelection(true);
+                        }}
+                    >
+                        <Star size={16} /> Noble Phantasms
+                    </button>
+    
+                    <button 
+                        className="w-full px-4 py-2 text-left hover:bg-gray-100 border-t text-center"
+                        onClick={() => {
+                            closeAllMenus();
+                        }}
+                    >
+                        Skip Counter
+                    </button>
+                </div>
+            );
+        }
+    
+        // Regular context menu
         return (
             <div 
                 className="fixed bg-white shadow-lg rounded-lg border border-gray-200 z-50 w-48 context-menu"
@@ -498,11 +670,17 @@ const TacticalGame = ({ username, roomId }) => {
                 <button 
                     className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
                         ${unit.hasAttacked ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    onClick={() => handleAction('attack', unit)}
+                    onClick={() => {
+                        if (!unit.hasAttacked) {
+                            setSelectedUnit(unit);
+                            closeAllMenus();
+                        }
+                    }}
                     disabled={unit.hasAttacked}
                 >
                     <Sword size={16} /> Basic Attack
                 </button>
+    
                 <button 
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
                     onClick={() => {
@@ -512,6 +690,7 @@ const TacticalGame = ({ username, roomId }) => {
                 >
                     <ScrollText size={16} /> Skills
                 </button>
+    
                 <button 
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
                     onClick={() => {
@@ -521,6 +700,7 @@ const TacticalGame = ({ username, roomId }) => {
                 >
                     <Star size={16} /> Noble Phantasms
                 </button>
+    
                 <button 
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
                     onClick={() => {
@@ -530,9 +710,13 @@ const TacticalGame = ({ username, roomId }) => {
                 >
                     <User size={16} /> Show Profile
                 </button>
+    
                 <button 
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-                    onClick={() => handleAction('move', unit)}
+                    onClick={() => {
+                        handleAction('move', unit);
+                        closeAllMenus();
+                    }}
                 >
                     <Move size={16} /> Move
                 </button>
@@ -555,10 +739,14 @@ const TacticalGame = ({ username, roomId }) => {
     const SkillsMenu = ({ unit }) => {
         if (!showSkillsMenu) return null;
     
+        const isCounter = isCounterSkillSelection;
+        
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white rounded-lg p-4 w-96 skills-menu" onClick={e => e.stopPropagation()}>
-                    <h3 className="text-xl font-bold mb-4">Skills</h3>
+                    <h3 className="text-xl font-bold mb-4">
+                        {isCounter ? "Select Counter Attack Skill" : "Skills"}
+                    </h3>
                     <div className="space-y-2">
                         {unit.skills?.map((skillRef, index) => {
                             const skillImpl = getSkillImplementation(skillRef.id);
@@ -568,12 +756,37 @@ const TacticalGame = ({ username, roomId }) => {
                             const turnsRemaining = isOnCd ? 
                                 skillRef.onCooldownUntil - gameState.currentTurn : 0;
     
+                            // For counter attacks, only show attacking skills
+                            if (isCounter && !skillImpl.isAttack) {
+                                return null;
+                            }
+    
                             return (
                                 <div 
                                     key={index}
                                     className={`p-2 border rounded hover:bg-gray-50 cursor-pointer 
-                                        ${isOnCd ? 'opacity-50' : ''}`}
-                                    onClick={() => !isOnCd && handleSkillSelect(skillRef, skillImpl, unit)}
+                                        ${isOnCd ? 'opacity-50' : ''}
+                                        ${isCounter && !skillImpl.isAttack ? 'hidden' : ''}`}
+                                    onClick={() => {
+                                        if (isOnCd) return;
+    
+                                        if (isCounter) {
+                                            handleCounterAttack(
+                                                {
+                                                    type: 'skill',
+                                                    skillRef,
+                                                    skillImpl,
+                                                    isAttack: true,
+                                                    affectsAttackCount: skillImpl.affectsAttackCount
+                                                },
+                                                combatState?.attacker
+                                            );
+                                            setShowSkillsMenu(false);
+                                            setIsCounterSkillSelection(false);
+                                        } else {
+                                            handleSkillSelect(skillRef, skillImpl, unit);
+                                        }
+                                    }}
                                 >
                                     <div className="font-bold flex justify-between">
                                         {skillImpl.name}
@@ -585,18 +798,49 @@ const TacticalGame = ({ username, roomId }) => {
                                     </div>
                                     <div className="text-sm text-gray-600">{skillImpl.description}</div>
                                     <div className="text-xs text-gray-500 mt-1">
-                                        Cooldown: {skillImpl.cooldown} turns
+                                        <span>Cooldown: {skillImpl.cooldown} turns</span>
+                                        {skillImpl.isAttack && (
+                                            <span className="ml-2 text-blue-500">
+                                                {skillImpl.affectsAttackCount ? '• Counts as Attack' : '• Free Action'}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             );
                         })}
                     </div>
-                    <button 
-                        className="mt-4 px-4 py-2 bg-gray-200 rounded"
-                        onClick={() => setShowSkillsMenu(false)}
-                    >
-                        Close
-                    </button>
+                    <div className="mt-4 flex justify-between">
+                        <button 
+                            className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                            onClick={() => {
+                                setShowSkillsMenu(false);
+                                setIsCounterSkillSelection(false);
+                                if (isCounter) {
+                                    // Restore counter menu
+                                    setContextMenu({
+                                        x: window.innerWidth / 2,
+                                        y: window.innerHeight / 2,
+                                        isCounter: true
+                                    });
+                                }
+                            }}
+                        >
+                            Back
+                        </button>
+                        {isCounter && (
+                            <button 
+                                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                                onClick={() => {
+                                    setShowSkillsMenu(false);
+                                    setIsCounterSkillSelection(false);
+                                    // Skip counter entirely
+                                    setContextMenu(null);
+                                }}
+                            >
+                                Skip Counter
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
         );
@@ -605,28 +849,105 @@ const TacticalGame = ({ username, roomId }) => {
 
     const NoblePhantasmMenu = ({ unit }) => {
         if (!showNPMenu) return null;
-
+    
+        const isCounter = isCounterNPSelection;
+    
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white rounded-lg p-4 w-96 np-menu" onClick={e => e.stopPropagation()}>
-                    <h3 className="text-xl font-bold mb-4">Noble Phantasms</h3>
+                    <h3 className="text-xl font-bold mb-4">
+                        {isCounter ? "Select Counter Attack Noble Phantasm" : "Noble Phantasms"}
+                    </h3>
                     <div className="space-y-2">
-                        {unit.noblePhantasms.map(np => (
-                            <div key={np.id} className="p-2 border rounded hover:bg-gray-50">
-                                <div className="font-bold flex justify-between">
-                                    {np.name}
-                                    <span className="text-sm text-gray-500">CD: {np.cooldown}</span>
+                        {unit.noblePhantasms.map(np => {
+                            // For counter attacks, only show attacking NPs
+                            if (isCounter && !np.isAttack) {
+                                return null;
+                            }
+    
+                            const isOnCd = (np.onCooldownUntil || 0) > gameState.currentTurn;
+                            const turnsRemaining = isOnCd ? 
+                                np.onCooldownUntil - gameState.currentTurn : 0;
+    
+                            return (
+                                <div 
+                                    key={np.id} 
+                                    className={`p-2 border rounded hover:bg-gray-50 cursor-pointer
+                                        ${isOnCd ? 'opacity-50' : ''}`}
+                                    onClick={() => {
+                                        if (isOnCd) return;
+    
+                                        if (isCounter) {
+                                            handleCounterAttack(
+                                                {
+                                                    type: 'noblePhantasm',
+                                                    npId: np.id,
+                                                    isAttack: true,
+                                                    affectsAttackCount: np.affectsAttackCount
+                                                },
+                                                combatState?.attacker
+                                            );
+                                            setShowNPMenu(false);
+                                            setIsCounterNPSelection(false);
+                                        } else {
+                                            // Handle regular NP use
+                                            handleNPSelect(np, unit);
+                                        }
+                                    }}
+                                >
+                                    <div className="font-bold flex justify-between">
+                                        {np.name}
+                                        <span className={`text-sm ${isOnCd ? 'text-red-500' : 'text-green-500'}`}>
+                                            {isOnCd 
+                                                ? `CD: ${turnsRemaining} turn${turnsRemaining !== 1 ? 's' : ''}`
+                                                : 'Ready'}
+                                        </span>
+                                    </div>
+                                    <div className="text-sm text-gray-600">{np.description}</div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                        <span>Cooldown: {np.cooldown} turns</span>
+                                        {np.isAttack && (
+                                            <span className="ml-2 text-blue-500">
+                                                {np.affectsAttackCount ? '• Counts as Attack' : '• Free Action'}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="text-sm text-gray-600">{np.description}</div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
-                    <button 
-                        className="mt-4 px-4 py-2 bg-gray-200 rounded"
-                        onClick={() => setShowNPMenu(false)}
-                    >
-                        Close
-                    </button>
+                    <div className="mt-4 flex justify-between">
+                        <button 
+                            className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                            onClick={() => {
+                                setShowNPMenu(false);
+                                setIsCounterNPSelection(false);
+                                if (isCounter) {
+                                    // Restore counter menu
+                                    setContextMenu({
+                                        x: window.innerWidth / 2,
+                                        y: window.innerHeight / 2,
+                                        isCounter: true
+                                    });
+                                }
+                            }}
+                        >
+                            Back
+                        </button>
+                        {isCounter && (
+                            <button 
+                                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                                onClick={() => {
+                                    setShowNPMenu(false);
+                                    setIsCounterNPSelection(false);
+                                    // Skip counter entirely
+                                    setContextMenu(null);
+                                }}
+                            >
+                                Skip Counter
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
         );
@@ -773,119 +1094,22 @@ const TacticalGame = ({ username, roomId }) => {
         }
     };
 
-    const handleCellClick = (x, y) => {
+    const handleCellClick = async (x, y) => {
         setContextMenu(null);
         setActiveUnit(null);
     
         // Handle skill targeting mode
-        if (skillTargetingMode && activeSkill) {
-            const caster = selectedUnit;
-            if (!caster) return;
-    
+        if (skillTargetingMode && activeSkill && selectedUnit) {
             const { ref, impl } = activeSkill;
             
             console.log('Executing skill:', {
                 skillName: impl.name,
-                caster: caster.name,
+                caster: selectedUnit.name,
                 targetX: x,
                 targetY: y
             });
     
-            // Execute the skill using the implementation
-            const result = executeSkill(ref, gameState, caster, x, y);
-            if (result.success) {
-                const newCooldownUntil = gameState.currentTurn + impl.cooldown;
-    
-                if (impl.isAttack) {
-                    // Get affected cells and find enemy units in them
-                    const affectedCells = getSkillAffectedCells(
-                        impl,
-                        caster,
-                        x,
-                        y,
-                        11
-                    );
-    
-                    // Find all enemy units in affected cells
-                    const affectedEnemies = gameState.units.filter(unit => 
-                        unit.team !== caster.team && 
-                        affectedCells.has(`${unit.x},${unit.y}`)
-                    );
-    
-                    // Start combat for each affected enemy
-                    affectedEnemies.forEach((target, index) => {
-                        setTimeout(() => {
-                            sendJsonMessage({
-                                type: 'START_COMBAT',
-                                attackerId: caster.id,
-                                defenderId: target.id,
-                                attackType: 'skill',
-                                attackData: {
-                                    skillId: ref.id,
-                                    skillName: impl.name,
-                                    targetX: x,
-                                    targetY: y,
-                                    isAttack: true,
-                                    affectsAttackCount: impl.affectsAttackCount
-                                },
-                                isCounter: false
-                            });
-                        }, index * 100); // Stagger multiple combats
-                    });
-    
-                    // If skill affects attack count, mark unit as having attacked
-                    if (impl.affectsAttackCount) {
-                        result.updatedGameState.units = result.updatedGameState.units.map(unit => {
-                            if (unit.id === caster.id) {
-                                return {
-                                    ...unit,
-                                    hasAttacked: true
-                                };
-                            }
-                            return unit;
-                        });
-                    }
-                }
-    
-                // Update game state with skill effects and cooldown
-                const updatedGameState = {
-                    ...result.updatedGameState,
-                    units: result.updatedGameState.units.map(updatedUnit => {
-                        if (updatedUnit.id === caster.id) {
-                            return {
-                                ...updatedUnit,
-                                skills: updatedUnit.skills.map(skill => {
-                                    if (skill.id === ref.id) {
-                                        return {
-                                            ...skill,
-                                            onCooldownUntil: newCooldownUntil
-                                        };
-                                    }
-                                    return skill;
-                                })
-                            };
-                        }
-                        return updatedUnit;
-                    })
-                };
-    
-                sendJsonMessage({
-                    type: 'GAME_ACTION',
-                    action: 'USE_SKILL',
-                    skillName: ref.id,
-                    casterId: caster.id,
-                    targetX: x,
-                    targetY: y,
-                    updatedGameState: updatedGameState,
-                    newCooldownUntil: newCooldownUntil
-                });
-            }
-    
-            // Reset targeting mode
-            setSkillTargetingMode(false);
-            setActiveSkill(null);
-            setPreviewCells(new Set());
-            setSelectedUnit(null);
+            await handleSkillUse(ref, impl, selectedUnit, x, y);
             return;
         }
     
@@ -913,6 +1137,7 @@ const TacticalGame = ({ username, roomId }) => {
                     defenderId: clickedUnit.id,
                     attackType: 'basic',
                     attackData: {
+                        type: 'basic',
                         isAttack: true,
                         affectsAttackCount: true
                     },

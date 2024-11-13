@@ -1,4 +1,3 @@
-
 // src/game/combat/Combat.js
 import { CombatResponseType, CombatEventType } from './CombatTypes';
 
@@ -7,39 +6,32 @@ export class Combat {
         this.attacker = attacker;
         this.defender = defender;
         this.attack = attack;
-        this.gameState = gameState;
+        this.gameState = { ...gameState }; // Create a local copy of gameState
         this.isCounter = false;
         this.damageDealt = 0;
     }
 
-    async executeCombat() {
-        this.gameState.emit(CombatEventType.COMBAT_START, {
-            attacker: this.attacker,
-            defender: this.defender,
-            attack: this.attack
-        });
-
-        // Step 1: Let defender choose response
-        const defenderChoice = await this.getDefenderChoice();
+    async executeCombat(defenderChoice) {
         let damageMultiplier = 1;
         let evaded = false;
+        let results = {};
 
-        // Step 2: Handle defender's choice
+        // Handle defender's choice
         switch (defenderChoice) {
             case CombatResponseType.DEFEND:
                 damageMultiplier = 0.7; // 30% damage reduction
                 break;
             
             case CombatResponseType.EVADE:
-                evaded = await this.handleEvasion();
+                const evasionResult = this.handleEvasion();
+                evaded = evasionResult.evaded;
                 if (evaded) {
-                    if (!this.isCounter) {
-                        await this.offerCounter();
-                    }
                     return {
                         success: false,
                         message: 'Attack evaded',
-                        evaded: true
+                        evaded: true,
+                        evasionDetails: evasionResult,
+                        updatedGameState: this.gameState
                     };
                 }
                 break;
@@ -51,86 +43,108 @@ export class Combat {
 
         // Only proceed with damage if attack wasn't evaded
         if (!evaded) {
-            // Step 3: Check for critical hit
-            const isCritical = await this.rollCritical();
+            // Check for critical hit
+            const isCritical = this.rollCritical();
             
-            // Step 4: Calculate and apply damage
+            // Calculate and apply damage
             this.damageDealt = this.calculateDamage(damageMultiplier, isCritical);
-            await this.applyDamage();
             
-            // Step 5: Handle agility reduction if applicable
-            if (this.damageDealt > 100) {
-                await this.reduceAgility();
-            }
+            // Update defender's HP in local gameState
+            this.gameState.units = this.gameState.units.map(unit => {
+                if (unit.id === this.defender.id) {
+                    const newHp = Math.max(0, unit.hp - this.damageDealt);
+                    let newAgility = unit.agility;
 
-            // Step 6: Offer counter if defender survived and this isn't already a counter
-            if (this.defender.hp > 0 && !this.isCounter) {
-                await this.offerCounter();
-            }
+                    // Handle agility reduction if applicable
+                    if (this.damageDealt > 100) {
+                        const injuryRoll = Math.floor(Math.random() * 4) + 1; // 1d4
+                        newAgility = Math.max(0, unit.agility - injuryRoll);
+                    }
+
+                    return {
+                        ...unit,
+                        hp: newHp,
+                        agility: newAgility
+                    };
+                }
+                if (unit.id === this.attacker.id && this.attack.affectsAttackCount) {
+                    return {
+                        ...unit,
+                        hasAttacked: true
+                    };
+                }
+                return unit;
+            });
+
+            results = {
+                damage: this.damageDealt,
+                critical: isCritical,
+                defenderAlive: this.gameState.units.find(u => u.id === this.defender.id).hp > 0,
+                agilityReduction: this.damageDealt > 100
+            };
         }
-
-        this.gameState.emit(CombatEventType.COMBAT_END, {
-            attacker: this.attacker,
-            defender: this.defender,
-            damageDealt: this.damageDealt,
-            evaded: evaded
-        });
 
         return {
             success: true,
-            damage: this.damageDealt,
-            evaded: evaded
+            results,
+            evaded,
+            updatedGameState: this.gameState
         };
     }
 
-    async getDefenderChoice() {
-        this.gameState.emit(CombatEventType.DEFENDER_CHOICE, {
-            defender: this.defender
-        });
-
-        return new Promise((resolve) => {
-            this.gameState.pendingDefenderChoice = {
-                defendingUnit: this.defender,
-                onChoice: (choice) => {
-                    resolve(choice);
-                }
-            };
-        });
-    }
-
-    async handleEvasion() {
-        this.gameState.emit(CombatEventType.EVASION_ATTEMPT, {
-            defender: this.defender
-        });
-
+    handleEvasion() {
         // Try Agility Evasion first
-        if (await this.tryAgilityEvasion()) {
-            return true;
+        const agilityResult = this.tryAgilityEvasion();
+        if (agilityResult.success) {
+            return {
+                evaded: true,
+                type: 'agility',
+                roll: agilityResult.roll,
+                threshold: agilityResult.threshold
+            };
         }
         
         // Try Luck Evasion if Agility failed
-        if (await this.tryLuckEvasion()) {
-            return true;
+        const luckResult = this.tryLuckEvasion();
+        if (luckResult.success) {
+            return {
+                evaded: true,
+                type: 'luck',
+                roll: luckResult.roll,
+                threshold: luckResult.threshold
+            };
         }
 
-        return false;
+        return { evaded: false };
     }
 
-    async tryAgilityEvasion() {
+    tryAgilityEvasion() {
         const agilityDiff = this.defender.agility - this.attacker.agility;
         const penalty = agilityDiff >= 0 ? 0 : 4;
         const roll = Math.floor(Math.random() * 20) + 1; // 1d20
-        return (roll - penalty) < this.defender.agility;
+        const threshold = this.defender.agility;
+        return {
+            success: (roll - penalty) < threshold,
+            roll,
+            threshold,
+            penalty
+        };
     }
 
-    async tryLuckEvasion() {
+    tryLuckEvasion() {
         const luckDiff = this.defender.luck - this.attacker.luck;
         const penalty = luckDiff >= 0 ? 0 : 4;
         const roll = Math.floor(Math.random() * 20) + 1; // 1d20
-        return (roll - penalty) < this.defender.luck;
+        const threshold = this.defender.luck;
+        return {
+            success: (roll - penalty) < threshold,
+            roll,
+            threshold,
+            penalty
+        };
     }
 
-    async rollCritical() {
+    rollCritical() {
         const baseCritChance = 50;
         const critModifier = this.getCritModifiers();
         const roll = Math.floor(Math.random() * 100) + 1;
@@ -146,58 +160,38 @@ export class Combat {
         return modifier;
     }
 
-    calculateCriticalDamage() {
-        let critDamage = 0;
-        for (let i = 0; i < 10; i++) {
-            critDamage += Math.floor(Math.random() * 20) + 1;
-        }
-        return critDamage;
-    }
-
     calculateDamage(damageMultiplier, isCritical) {
+        // Base damage calculation
         let damage = this.attacker.atk - this.defender.def;
         
+        // Critical hit calculation
+        let critDamage = 0;
         if (isCritical) {
-            damage += this.calculateCriticalDamage();
+            for (let i = 0; i < 10; i++) {
+                critDamage += Math.floor(Math.random() * 20) + 1;
+            }
         }
-        
-        return Math.floor(Math.max(0, damage * damageMultiplier));
-    }
-
-    async applyDamage() {
-        this.defender.hp = Math.max(0, this.defender.hp - this.damageDealt);
-        
-        this.gameState.emit(CombatEventType.DAMAGE_CALCULATION, {
-            target: this.defender,
-            damage: this.damageDealt
-        });
-    }
-
-    async reduceAgility() {
-        const injuryRoll = Math.floor(Math.random() * 4) + 1; // 1d4
-        this.defender.agility = Math.max(0, this.defender.agility - injuryRoll);
-    }
-
-    async offerCounter() {
-        this.gameState.emit(CombatEventType.COUNTER_OPPORTUNITY, {
-            defender: this.defender,
-            attacker: this.attacker
-        });
-
-        return new Promise((resolve) => {
-            this.gameState.pendingCounter = {
-                defendingUnit: this.defender,
-                attackingUnit: this.attacker,
-                onCounterAction: async (action, target) => {
-                    const validation = this.validateCounterAction(action, target);
-                    if (validation.valid) {
-                        await this.executeCounter(action);
-                        resolve();
-                    }
-                    return validation;
-                }
-            };
-        });
+    
+        // For skills/NPs, apply their specific damage formula
+        if (this.attack.type === 'skill' || this.attack.type === 'noblePhantasm') {
+            const {
+                damageMultiplier: skillMultiplier = 1,
+                flatDamageBonus = 0
+            } = this.attack.attackData;
+    
+            // Apply the full damage formula:
+            // [(Base + Crit) * (1 + Skill multiplier) + flat bonuses] * defender multiplier
+            damage = (
+                (damage + (isCritical ? critDamage : 0)) * 
+                (1 + skillMultiplier) + 
+                flatDamageBonus
+            ) * damageMultiplier;
+        } else {
+            // Basic attack formula
+            damage = (damage + (isCritical ? critDamage : 0)) * damageMultiplier;
+        }
+    
+        return Math.floor(Math.max(0, damage));
     }
 
     validateCounterAction(action, target) {
@@ -218,16 +212,5 @@ export class Combat {
         return {
             valid: true
         };
-    }
-
-    async executeCounter(counterAction) {
-        const counterCombat = new Combat(
-            this.defender,
-            this.attacker,
-            counterAction,
-            this.gameState
-        );
-        counterCombat.isCounter = true;
-        await counterCombat.executeCombat();
     }
 }

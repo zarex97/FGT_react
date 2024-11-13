@@ -231,60 +231,31 @@ case 'END_TURN':
       break;
 
       case 'START_COMBAT':
-        if (!player.currentRoom || !room) return;
-            const { attackerId, defenderId, attackType, attackData } = message;
-            const room = rooms[player.currentRoom];
-            
-            // Initialize combat state
-            room.currentCombat = {
-                attacker: room.gameState.units.find(u => u.id === attackerId),
-                defender: room.gameState.units.find(u => u.id === defenderId),
-                attackType,
-                attackData,
-                phase: 'DEFENDER_CHOICE',
-                isCounter: message.isCounter || false
-            };
+    const combatRoom = rooms[player.currentRoom];
+    if (!combatRoom) return;
+    
+    // Just broadcast that combat is starting
+    broadcastToRoom(player.currentRoom, {
+        type: 'COMBAT_UPDATE',
+        combat: {
+            attacker: message.attacker,
+            defender: message.defender,
+            attackType: message.attackType,
+            attackData: message.attackData
+        }
+    });
+    break;
 
-            // Broadcast combat start to all players
-            broadcastToRoom(player.currentRoom, {
-                type: 'COMBAT_UPDATE',
-                combat: room.currentCombat
-            });
-            break;
+case 'COMBAT_RESOLUTION':
+    const resolutionRoom = rooms[player.currentRoom];
+    if (!resolutionRoom) return;
 
-        case 'COMBAT_CHOICE':
-            const combatRoom = rooms[player.currentRoom];
-            if (!combatRoom.currentCombat) return;
-
-            const { choice } = message;
-            processCombatChoice(combatRoom, choice, (updatedGameState) => {
-                // Update game state with combat results
-                combatRoom.gameState = updatedGameState;
-                
-                // Broadcast updated state
-                broadcastToRoom(player.currentRoom, {
-                    type: 'COMBAT_RESOLUTION',
-                    gameState: updatedGameState,
-                    combatResults: combatRoom.currentCombat.results
-                });
-
-                // Clean up combat state if combat is finished
-                if (combatRoom.currentCombat.phase === 'COMPLETED') {
-                    delete combatRoom.currentCombat;
-                }
-            });
-            break;
-
-        case 'INITIATE_COUNTER':
-            const counterRoom = rooms[player.currentRoom];
-            if (!counterRoom.currentCombat?.results) return;
-
-            const { counterAction, counterTarget } = message;
-            processCounterAttack(counterRoom, counterAction, counterTarget, (updatedGameState) => {
-                counterRoom.gameState = updatedGameState;
-                broadcastToRoom(player.currentRoom);
-            });
-            break;
+    // Update game state with the resolved combat results
+    resolutionRoom.gameState = message.updatedGameState;
+    
+    // Broadcast the new state to all players
+    broadcastToRoom(player.currentRoom);
+    break;
       
       }
       
@@ -382,158 +353,8 @@ const getVisibleUnits = (gameState, playerTeam) => {
 };
 
 
-const processCombatChoice = (room, choice, callback) => {
-  const combat = room.currentCombat;
-  const { attacker, defender } = combat;
-
-  switch (choice) {
-      case 'defend':
-          combat.damageMultiplier = 0.7;
-          resolveCombatDamage(room, callback);
-          break;
-
-      case 'evade':
-          handleEvasionAttempt(room, callback);
-          break;
-
-      case 'nothing':
-          combat.damageMultiplier = 1;
-          resolveCombatDamage(room, callback);
-          break;
-  }
-};
-
-const handleEvasionAttempt = (room, callback) => {
-  const combat = room.currentCombat;
-  const { attacker, defender } = combat;
-
-  // Try agility evasion first
-  const agilityDiff = defender.agility - attacker.agility;
-  const agilityPenalty = agilityDiff >= 0 ? 0 : 4;
-  const agilityRoll = Math.floor(Math.random() * 20) + 1;
-
-  if ((agilityRoll - agilityPenalty) < defender.agility) {
-      // Successful evasion
-      combat.results = {
-          evaded: true,
-          type: 'agility',
-          roll: agilityRoll
-      };
-      combat.phase = 'AWAITING_COUNTER';
-      callback(room.gameState);
-      return;
-  }
-
-  // Try luck evasion if agility failed
-  const luckDiff = defender.luck - attacker.luck;
-  const luckPenalty = luckDiff >= 0 ? 0 : 4;
-  const luckRoll = Math.floor(Math.random() * 20) + 1;
-
-  if ((luckRoll - luckPenalty) < defender.luck) {
-      // Successful evasion
-      combat.results = {
-          evaded: true,
-          type: 'luck',
-          roll: luckRoll
-      };
-      combat.phase = 'AWAITING_COUNTER';
-      callback(room.gameState);
-      return;
-  }
-
-  // Failed to evade, resolve damage
-  combat.damageMultiplier = 1;
-  resolveCombatDamage(room, callback);
-};
-
-const resolveCombatDamage = (room, callback) => {
-  const combat = room.currentCombat;
-  const { attacker, defender } = combat;
-
-  // Calculate base damage
-  let damage = attacker.atk - defender.def;
-
-  // Check for critical hit
-  const critRoll = Math.floor(Math.random() * 100) + 1;
-  const criticalHit = critRoll <= 50; // Base 50% chance
-
-  if (criticalHit) {
-      let critDamage = 0;
-      for (let i = 0; i < 10; i++) {
-          critDamage += Math.floor(Math.random() * 20) + 1;
-      }
-      damage += critDamage;
-  }
-
-  // Apply defender's choice multiplier
-  damage = Math.floor(Math.max(0, damage * combat.damageMultiplier));
-
-  // Update defender's HP
-  const updatedGameState = {
-      ...room.gameState,
-      units: room.gameState.units.map(unit => {
-          if (unit.id === defender.id) {
-              const newHp = Math.max(0, unit.hp - damage);
-              
-              // Check for agility reduction
-              let agilityReduction = 0;
-              if (damage > 100) {
-                  agilityReduction = Math.floor(Math.random() * 4) + 1; // 1d4
-              }
-
-              return {
-                  ...unit,
-                  hp: newHp,
-                  agility: Math.max(0, unit.agility - agilityReduction)
-              };
-          }
-          return unit;
-      })
-  };
-
-  // Store combat results
-  combat.results = {
-      damage,
-      criticalHit,
-      defenderAlive: defender.hp > 0,
-      agilityReduction: damage > 100 ? agilityReduction : 0
-  };
-
-  combat.phase = 'AWAITING_COUNTER';
-  callback(updatedGameState);
-};
-
-const processCounterAttack = (room, counterAction, counterTarget, callback) => {
-  // Validate counter attack
-  if (!validateCounterAttack(room, counterAction, counterTarget)) {
-      return;
-  }
-
-  // Start new combat as counter attack
-  room.currentCombat = {
-      attacker: room.currentCombat.defender,
-      defender: room.currentCombat.attacker,
-      attackType: counterAction.type,
-      attackData: counterAction,
-      phase: 'DEFENDER_CHOICE',
-      isCounter: true
-  };
-
-  callback(room.gameState);
-};
 
 
-const validateCounterAttack = (room, action, target) => {
-  const combat = room.currentCombat;
-  
-  // Must target original attacker
-  if (target.id !== combat.attacker.id) return false;
-
-  // Action must be an attack
-  if (action.type === 'skill' && !action.isAttack) return false;
-
-  return true;
-};
 
 const broadcastToRoom = (roomId) => {
   const room = rooms[roomId];
