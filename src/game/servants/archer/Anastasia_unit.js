@@ -116,14 +116,18 @@ export const AnastasiaSkills = {
         "Hits a 7x7 panel area within 6 cells. Applies 'uwu' effect and deals 5x ATK damage.",
         5, // cooldown
         6, // range
-        [mahalaprayaMicroAction]
+        [mahalaprayaMicroAction],
+        true,  // isAttack
+        true //counts towards limit of attacks
     ),
     selfBuff: new Skill(
         "Self Buff",
         "self_targeting test: buffs itself",
         3, // cooldown
         1, // range
-        [selfBuffMicroAction]
+        [selfBuffMicroAction],
+        false,  // isAttack
+        false, //counts towards limit of attacks
     ), 
 
     constrainedExplosion: new Skill(
@@ -131,7 +135,9 @@ export const AnastasiaSkills = {
         "aoe from point test: ",
         4, // cooldown
         6, // range
-        [constrainedExplosionMicroAction]
+        [constrainedExplosionMicroAction],
+        true,  // isAttack
+        true, //counts towards limit of attacks
     )
 };
 
@@ -139,9 +145,11 @@ export const AnastasiaSkills = {
 export const AnastasiaAttributes = {
     name: 'Anastasia',
     class: 'Archer',
-    baseHp: 20,
-    baseAtk: 8,
-    baseDef: 5,
+    baseHp: 500,
+    baseAtk: 150,
+    baseDef: 1,
+    baseAgility: 16,  
+    baseLuck: 8,     
     baseMovementRange: 5,
     visionRange: 5,
     sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp"
@@ -153,15 +161,21 @@ export const AnastasiaTemplate = {
     skills: [
         {
             id: "Mahalapraya",
-            onCooldownUntil: 0
+            onCooldownUntil: 0,
+            isAttack: true,           // New property
+            affectsAttackCount: true  // New property
         },
         {
             id: "selfBuff",
-            onCooldownUntil: 0
+            onCooldownUntil: 0,
+            isAttack: false,
+            affectsAttackCount: false
         },
         {
             id: "constrainedExplosion",
-            onCooldownUntil: 0
+            onCooldownUntil: 0,
+            isAttack: true,
+            affectsAttackCount: true
         }
     ],
     noblePhantasms: [

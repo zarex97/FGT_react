@@ -8,3 +8,5 @@
   - [ ] Add NP Logic (Should be easy, most of the Skill logic can be copied)
   - [ ] Add logic to differentiate normal skills from attack skills (or NPs, although most of these count as the attack of this turn)
 - [x] Change how right button click works
+
+The idea to implement attacks is to do the following, when an skill or attack is done, instead of directly changing the gameState an object will be create called gameStateBackup, that will be saved inside gameState, and when the reaction is confirmed then the Backup can replace/overwrite the gameState. 
