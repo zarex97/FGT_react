@@ -34,6 +34,14 @@ export class Skill {
             };
         }
 
+                // Check if unit has already attacked this turn and this is an attack skill
+                if (this.isAttack && this.affectsAttackCount && caster.hasAttacked) {
+                    return {
+                        success: false,
+                        message: 'Unit has already attacked this turn'
+                    };
+                }
+
         let updatedGameState = { ...gameState };
         
         // Execute each microaction in sequence
@@ -41,6 +49,18 @@ export class Skill {
             const affectedCells = microAction.getAffectedCells(caster, targetX, targetY, 11);
             updatedGameState = microAction.execute(updatedGameState, caster, affectedCells);
         }
+
+                // Update hasAttacked status if this was an attack that affects attack count
+                if (this.isAttack && this.affectsAttackCount) {
+                    updatedGameState = {
+                        ...updatedGameState,
+                        units: updatedGameState.units.map(unit => 
+                            unit.id === caster.id 
+                                ? { ...unit, hasAttacked: true }
+                                : unit
+                        )
+                    };
+                }
 
         this.startCooldown(gameState.currentTurn);
 
@@ -52,6 +72,6 @@ export class Skill {
     }
 }
 
-export const createSkill = (name, description, cooldown, range, microActions) => {
-    return new Skill(name, description, cooldown, range, microActions);
+export const createSkill = (name, description, cooldown, range, microActions, isAttack = false, affectsAttackCount = false) => {
+    return new Skill(name, description, cooldown, range, microActions, isAttack, affectsAttackCount);
 };
