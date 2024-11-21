@@ -2,6 +2,7 @@
 import { MicroAction } from '../../MicroAction';
 import { Skill } from '../../Skill';
 import { TargetingType } from '../../targeting/TargetingTypes';
+import { Combat } from '../../Combat';
 
 // Define Anastasia's skills' MicroActions
 const mahalaprayaMicroAction = new MicroAction({
@@ -20,8 +21,32 @@ const mahalaprayaMicroAction = new MicroAction({
             if (unit.team !== caster.team && 
                 affectedCells.has(`${unit.x},${unit.y}`)) {
                 
-                const newHp = Math.max(0, unit.hp - (5 * caster.atk));
-                const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
+                    // Create a copy of the unit for statusIfHit
+                const modifiedUnit = JSON.parse(JSON.stringify(unit));
+
+                const backUpUnit = modifiedUnit;
+                    // Create modified attributes for the copy
+
+                
+                // const newHp = Math.max(0, modifiedUnit.hp - (5 * caster.atk));
+
+                const combat = new Combat({
+                    typeOfAttackCausingIt: 'Skill',
+                    proportionOfMagicUsed: 1,  // 30% of magic
+                    proportionOfStrengthUsed: 0, // 120% of strength
+                    attacker: caster,
+                    defender: modifiedUnit,
+                    gameState: gameState,
+                    integratedAttackMultiplier: 5,
+                    integratedAttackFlatBonus: 0
+                });
+                const initiationResults = combat.initiateCombat();
+                // Store only the necessary combat data, avoiding circular references
+                caster.combatSent = JSON.parse(JSON.stringify(combat.combatResults));
+                console.log(caster.combatSent);
+                modifiedUnit.combatReceived = JSON.parse(JSON.stringify(combat.combatResults));
+
+                const currentEffects = Array.isArray(modifiedUnit.effects) ? modifiedUnit.effects : [];
                 const newEffect = {
                     name: 'uwu',
                     duration: 7,
@@ -29,17 +54,20 @@ const mahalaprayaMicroAction = new MicroAction({
                     description: 'Under the effect of Mahalapraya'
                 };
 
+                // Modify the copy
+                // modifiedUnit.hp = newHp;
+                modifiedUnit.effects = [...currentEffects, newEffect];
+
                 console.log('Applying effect to unit:', {
                     unitName: unit.name,
-                    oldHp: unit.hp,
-                    newHp,
+                    current: unit.hp,
                     newEffect
                 });
 
                 return {
                     ...unit,
-                    hp: newHp,
-                    effects: [...currentEffects, newEffect]
+                    statusIfHit: modifiedUnit,
+                    backUpStatus: backUpUnit
                 };
             }
             return unit;
@@ -145,19 +173,37 @@ export const AnastasiaSkills = {
 export const AnastasiaAttributes = {
     name: 'Anastasia',
     class: 'Archer',
+    // Base Stats
     baseHp: 500,
-    baseAtk: 150,
+    maxHp: 500,
     baseDef: 1,
-    baseAgility: 16,  
-    baseLuck: 8,     
     baseMovementRange: 5,
+    rangeOfBasicAttack: 2,
+    // Combat Stats
+    strength: 80,  // Physical attack power
+    magic: 120,    // Magical attack power
+    // Vision and Targeting
     visionRange: 5,
-    sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp"
+    // Agility Stats
+    baseAgility: 16,
+    maxAgility: 20,
+    // Luck Stats
+    baseLuck: 8,
+    maxLuck: 12,
+    // Sustainability
+    sustainability: "4",
+    // Visual 
+    sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp",
+    combatSent: {},
+    combatReceived: {}
 };
 
 // Export complete Anastasia unit template
 export const AnastasiaTemplate = {
     ...AnastasiaAttributes,
+    // These will be populated by UnitUtils methods when needed
+    statusIfHit: null,
+    backUpStatus: null,
     skills: [
         {
             id: "Mahalapraya",

@@ -8,6 +8,7 @@ import { getSkillImplementation, isSkillOnCooldown, executeSkill, getSkillAffect
 import { TargetingType } from '../game/targeting/TargetingTypes';
 import { TargetingLogic } from '../game/targeting/TargetingLogic';
 import ServantSelector from './ServantSelector';
+import { Combat } from '../game/Combat';
 
 const TacticalGame = ({ username, roomId }) => {
     console.log('TacticalGame props:', { username, roomId });
@@ -74,7 +75,9 @@ const TacticalGame = ({ username, roomId }) => {
                         ],
                         reactions: [
                             { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
-                        ]
+                        ],
+                        combatSent: {},
+                        combatReceived: {}
                     },
                     // Add other initial units here
 
@@ -102,7 +105,9 @@ const TacticalGame = ({ username, roomId }) => {
                           ],
                           reactions: [
                             { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
-                          ]
+                          ],
+                          combatSent: {},
+                          combatReceived: {}
                       }
                 ]
             });
@@ -222,6 +227,55 @@ const TacticalGame = ({ username, roomId }) => {
             </button>
         );
     };
+
+    
+    // const ReceiveAttackButton = ({ unit }) => {
+    //     if (!unit.combatReceived || Object.keys(unit.combatReceived).length === 0) {
+    //         return null;
+    //     }
+    
+    //     const handleReceiveAttack = () => {
+    //         // Recreate combat from stored results
+    //         const combat = new Combat({
+    //             typeOfAttackCausingIt: unit.combatReceived.typeOfAttackCausingIt, //e.g: skill, np, basic attack
+    //             proportionOfMagicUsed: unit.combatReceived.proportionOfMagicUsed,  // e.g: 30% of magic
+    //             proportionOfStrengthUsed: unit.combatReceived.proportionOfStrengthUsed, //e.g: 120% of strength
+    //             attacker: unit.combatReceived.attacker,
+    //             defender: unit.combatReceived.defender,
+    //             gameState: unit.combatReceived.gameState,
+    //             integratedAttackMultiplier: unit.combatReceived.integratedAttackMultiplier, //e.g: multiplier bonus on np/skill description
+    //             integratedAttackFlatBonus: unit.combatReceived.integratedAttackFlatBonus // e.g: flat bonus on np/skill description
+    //         });
+            
+    //         combat.combatResults = unit.combatReceived.combatResults;
+    //         // Recalculate with current defender state
+    //         const finalResults = combat.receiveCombat();
+            
+    //         // Update the unit's stored combat results
+    //         unit.combatReceived = finalResults;
+            
+    //         // Apply the damage
+    //         const updatedUnit = combat.applyDamageToDefender();
+            
+    //         // Send update to server
+    //         sendJsonMessage({
+    //             type: 'GAME_ACTION',
+    //             action: 'RECEIVE_ATTACK',
+    //             unitId: unit.id,
+    //             newHp: updatedUnit.hp,
+    //             combatResults: finalResults
+    //         });
+    //     };
+    
+    //     return (
+    //         <button 
+    //             onClick={handleReceiveAttack}
+    //             className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+    //         >
+    //             Receive Attack
+    //         </button>
+    //     );
+    // };
 
     const handleDetection = () => {
         sendJsonMessage({
