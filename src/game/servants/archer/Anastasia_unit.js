@@ -41,10 +41,10 @@ const mahalaprayaMicroAction = new MicroAction({
                     integratedAttackFlatBonus: 0
                 });
                 const initiationResults = combat.initiateCombat();
-                combat.storeCombatResults();
-                caster.combatSent = initiationResults;
+                // Store only the necessary combat data, avoiding circular references
+                caster.combatSent = JSON.parse(JSON.stringify(combat.combatResults));
                 console.log(caster.combatSent);
-                modifiedUnit.combatReceived = combat.combatResults;
+                modifiedUnit.combatReceived = JSON.parse(JSON.stringify(combat.combatResults));
 
                 const currentEffects = Array.isArray(modifiedUnit.effects) ? modifiedUnit.effects : [];
                 const newEffect = {

@@ -220,6 +220,32 @@ export class Combat {
             this.combatResults.finalDamage.physical;
     }
 
+    getSanitizedResults() {
+        return {
+            initialForces: this.combatResults.initialForces,
+            attackComposition: this.combatResults.attackComposition,
+            criticals: this.combatResults.criticals,
+            modifiers: this.combatResults.modifiers,
+            finalDamage: this.combatResults.finalDamage,
+            attackerInfo: {
+                id: this.attacker.id,
+                name: this.attacker.name,
+                strength: this.attacker.strength,
+                magic: this.attacker.magic
+            },
+            defenderInfo: {
+                id: this.defender.id,
+                name: this.defender.name
+            },
+            typeOfAttackCausingIt: this.type,
+            proportionOfMagicUsed: this.proportionOfMagicUsed,
+            proportionOfStrengthUsed: this.proportionOfStrengthUsed,
+            integratedAttackMultiplier: this.integratedAttackMultiplier,
+            integratedAttackFlatBonus: this.integratedAttackFlatBonus
+        };
+    }
+
+
     // Method to store combat results in units
     storeCombatResults() {
         // Store in attacker
