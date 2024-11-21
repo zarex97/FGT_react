@@ -2,6 +2,7 @@
 import { MicroAction } from '../../MicroAction';
 import { Skill } from '../../Skill';
 import { TargetingType } from '../../targeting/TargetingTypes';
+import { Combat } from '../../Combat';
 
 // Define Anastasia's skills' MicroActions
 const mahalaprayaMicroAction = new MicroAction({
@@ -25,7 +26,26 @@ const mahalaprayaMicroAction = new MicroAction({
 
                 const backUpUnit = modifiedUnit;
                     // Create modified attributes for the copy
-                const newHp = Math.max(0, modifiedUnit.hp - (5 * caster.atk));
+
+                
+                // const newHp = Math.max(0, modifiedUnit.hp - (5 * caster.atk));
+
+                const combat = new Combat({
+                    typeOfAttackCausingIt: 'Skill',
+                    proportionOfMagicUsed: 1,  // 30% of magic
+                    proportionOfStrengthUsed: 0, // 120% of strength
+                    attacker: caster,
+                    defender: modifiedUnit,
+                    gameState: gameState,
+                    integratedAttackMultiplier: 5,
+                    integratedAttackFlatBonus: 0
+                });
+                const initiationResults = combat.initiateCombat();
+                combat.storeCombatResults();
+                caster.combatSent = initiationResults;
+                console.log(caster.combatSent);
+                modifiedUnit.combatReceived = combat.combatResults;
+
                 const currentEffects = Array.isArray(modifiedUnit.effects) ? modifiedUnit.effects : [];
                 const newEffect = {
                     name: 'uwu',
@@ -35,13 +55,12 @@ const mahalaprayaMicroAction = new MicroAction({
                 };
 
                 // Modify the copy
-                modifiedUnit.hp = newHp;
+                // modifiedUnit.hp = newHp;
                 modifiedUnit.effects = [...currentEffects, newEffect];
 
                 console.log('Applying effect to unit:', {
                     unitName: unit.name,
                     current: unit.hp,
-                    projectedHpIfHit: newHp,
                     newEffect
                 });
 
@@ -174,7 +193,9 @@ export const AnastasiaAttributes = {
     // Sustainability
     sustainability: "4",
     // Visual 
-    sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp"
+    sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp",
+    combatSent: {},
+    combatReceived: {}
 };
 
 // Export complete Anastasia unit template

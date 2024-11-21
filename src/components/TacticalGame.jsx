@@ -8,6 +8,7 @@ import { getSkillImplementation, isSkillOnCooldown, executeSkill, getSkillAffect
 import { TargetingType } from '../game/targeting/TargetingTypes';
 import { TargetingLogic } from '../game/targeting/TargetingLogic';
 import ServantSelector from './ServantSelector';
+import { Combat } from '../game/Combat';
 
 const TacticalGame = ({ username, roomId }) => {
     console.log('TacticalGame props:', { username, roomId });
@@ -74,7 +75,9 @@ const TacticalGame = ({ username, roomId }) => {
                         ],
                         reactions: [
                             { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
-                        ]
+                        ],
+                        combatSent: {},
+                        combatReceived: {}
                     },
                     // Add other initial units here
 
@@ -102,7 +105,9 @@ const TacticalGame = ({ username, roomId }) => {
                           ],
                           reactions: [
                             { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
-                          ]
+                          ],
+                          combatSent: {},
+                          combatReceived: {}
                       }
                 ]
             });
@@ -222,6 +227,9 @@ const TacticalGame = ({ username, roomId }) => {
             </button>
         );
     };
+
+    
+
 
     const handleDetection = () => {
         sendJsonMessage({
