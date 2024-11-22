@@ -1,6 +1,6 @@
 //TacticalGame.jsx
 import React, { useState, useEffect } from 'react';
-import { Sword, Shield, Heart, Move, ScrollText, Star, User } from 'lucide-react';
+import { Sword, Shield, Heart, Move, ScrollText, Star, User, MoreHorizontal } from 'lucide-react';
 import useWebSocket, { ReadyState } from 'react-use-websocket';
 import { createMahalapraya } from '../game/skills/Mahalapraya';
 import { Skill } from '../game/Skill';
@@ -109,7 +109,8 @@ const TacticalGame = ({ username, roomId }) => {
                           combatSent: {},
                           combatReceived: {},
                           effects:[],
-                          statusIfHit: null
+                          statusIfHit: null,
+                          canCounter: false
                       }
                 ]
             });
@@ -377,7 +378,7 @@ const TacticalGame = ({ username, roomId }) => {
         )]?.team;
         
         // Close menu if unit is not owned by player or not their turn
-        if (!unit || unit.team !== playerTeam || unit.team !== gameState.turn) {
+        if (!unit || unit.team !== playerTeam) {
             setContextMenu(null);
             setActiveUnit(null);
             return;
@@ -446,6 +447,14 @@ const TacticalGame = ({ username, roomId }) => {
 
 
     const ContextMenu = ({ position, unit }) => {
+        const isPlayerTurn = gameState.turn === unit.team;
+        console.log('isPlayerTurn:', isPlayerTurn); 
+        console.log('unit.hasAttacked:', unit.hasAttacked); 
+        console.log('current gameState:', gameState);
+        const canUseSkill = (skill) => {
+        return skill.isReactionary || unit.canCounter || isPlayerTurn;
+    };
+
         if (!position) return null;
     
         return (
@@ -455,9 +464,9 @@ const TacticalGame = ({ username, roomId }) => {
             >
                 <button 
                     className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
-                        ${unit.hasAttacked ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    onClick={() => handleAction('attack', unit)}
-                    disabled={unit.hasAttacked}
+                        ${unit.hasAttacked || !isPlayerTurn ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    onClick={() => handleAction('basic-attack', unit)}
+                    disabled={unit.hasAttacked || !isPlayerTurn } 
                 >
                     <Sword size={16} /> Basic Attack
                 </button>
@@ -489,8 +498,19 @@ const TacticalGame = ({ username, roomId }) => {
                     <User size={16} /> Show Profile
                 </button>
                 <button 
-                    className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+                className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+                onClick={() => {
+                    setShowOtherActions(true);
+                    setContextMenu(null);
+                }}
+            >
+                <MoreHorizontal size={16} /> Other Actions
+            </button>
+                <button 
+                    className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
+                    ${!isPlayerTurn ? 'opacity-50 cursor-not-allowed' : ''}`}
                     onClick={() => handleAction('move', unit)}
+                    disabled={!isPlayerTurn} 
                 >
                     <Move size={16} /> Move
                 </button>
@@ -511,6 +531,8 @@ const TacticalGame = ({ username, roomId }) => {
 
 
     const SkillsMenu = ({ unit }) => {
+
+        const isPlayerTurn = gameState.turn === playerTeam;
         if (!showSkillsMenu) return null;
     
         return (
@@ -523,6 +545,7 @@ const TacticalGame = ({ username, roomId }) => {
                             if (!skillImpl) return null;
     
                             const isOnCd = isSkillOnCooldown(skillRef, gameState.currentTurn);
+                            const canUse = skillImpl.isReactionary || unit.canCounter || isPlayerTurn;
                             const turnsRemaining = isOnCd ? 
                                 skillRef.onCooldownUntil - gameState.currentTurn : 0;
     
@@ -531,19 +554,21 @@ const TacticalGame = ({ username, roomId }) => {
                                     key={index}
                                     className={`p-2 border rounded hover:bg-gray-50 cursor-pointer 
                                         ${isOnCd ? 'opacity-50' : ''}`}
-                                    onClick={() => !isOnCd && handleSkillSelect(skillRef, skillImpl, unit)}
+                                    onClick={() => !isOnCd && canUse && handleSkillSelect(skillRef, skillImpl, unit)}
                                 >
                                     <div className="font-bold flex justify-between">
                                         {skillImpl.name}
                                         <span className={`text-sm ${isOnCd ? 'text-red-500' : 'text-green-500'}`}>
                                             {isOnCd 
                                                 ? `CD: ${turnsRemaining} turn${turnsRemaining !== 1 ? 's' : ''}`
-                                                : 'Ready'}
+                                                : canUse ? 'Ready' : 'Not Available'}
                                         </span>
                                     </div>
                                     <div className="text-sm text-gray-600">{skillImpl.description}</div>
                                     <div className="text-xs text-gray-500 mt-1">
                                         Cooldown: {skillImpl.cooldown} turns
+                                        {skillImpl.isReactionary && 
+                                        <span className="ml-2 text-blue-500">(Reactionary)</span>}
                                     </div>
                                 </div>
                             );
@@ -552,6 +577,38 @@ const TacticalGame = ({ username, roomId }) => {
                     <button 
                         className="mt-4 px-4 py-2 bg-gray-200 rounded"
                         onClick={() => setShowSkillsMenu(false)}
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
+    const OtherActionsMenu = ({ unit, onClose }) => {
+        if (!showOtherActions) return null;
+    
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-4 w-96" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold mb-4">Other Actions</h3>
+                    <div className="space-y-2">
+                        <button 
+                            className="w-full p-3 text-left bg-gray-50 hover:bg-gray-100 rounded"
+                            onClick={() => setShowUniqueActions(true)}
+                        >
+                            Unique Actions
+                        </button>
+                        <button 
+                            className="w-full p-3 text-left bg-gray-50 hover:bg-gray-100 rounded"
+                            onClick={() => setShowCommonActions(true)}
+                        >
+                            Common Actions
+                        </button>
+                    </div>
+                    <button 
+                        className="mt-4 px-4 py-2 bg-gray-200 rounded"
+                        onClick={onClose}
                     >
                         Close
                     </button>
@@ -723,7 +780,7 @@ const TacticalGame = ({ username, roomId }) => {
         if (action === 'move') {
             setHighlightedCells(getPossibleMoves(unit));
             setContextMenu(null);
-        } else if (action === 'attack') {
+        } else if (action === 'basic-attack') {
             // Handle attack action
             setContextMenu(null);
             // You could set a state to indicate attack mode and highlight possible targets
@@ -945,9 +1002,9 @@ const TacticalGame = ({ username, roomId }) => {
                         />
                         {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
                     {/* Add ReceiveAttackButton if unit has pending combat */}
-                    <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2">
+                    {/* <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2">
                         <ReceiveAttackButton unit={unit} />
-                    </div>
+                    </div> */}
                     </div>
                 )}
             </div>

@@ -3,7 +3,7 @@ import { TargetingType } from '../game/targeting/TargetingTypes';
 
 
 export class Skill {
-    constructor(name, description, cooldown, range, microActions, isAttack = false, affectsAttackCount = false) {
+    constructor(name, description, cooldown, range, microActions, isAttack = false, affectsAttackCount = false, isReactionary=false) {
         this.name = name;
         this.description = description;
         this.cooldown = cooldown;
@@ -12,6 +12,7 @@ export class Skill {
         this.onCooldownUntil = 0;
         this.isAttack = isAttack;
         this.affectsAttackCount = affectsAttackCount;
+        this.isReactionary = false;
 
         this.isOnCooldown = this.isOnCooldown.bind(this);
         this.startCooldown = this.startCooldown.bind(this);
@@ -72,6 +73,6 @@ export class Skill {
     }
 }
 
-export const createSkill = (name, description, cooldown, range, microActions, isAttack = false, affectsAttackCount = false) => {
-    return new Skill(name, description, cooldown, range, microActions, isAttack, affectsAttackCount);
+export const createSkill = (name, description, cooldown, range, microActions, isAttack = false, affectsAttackCount = false, isReactionary=false ) => {
+    return new Skill(name, description, cooldown, range, microActions, isAttack, affectsAttackCount, isReactionary);
 };

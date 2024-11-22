@@ -28,7 +28,7 @@ const mahalaprayaMicroAction = new MicroAction({
                     // Create modified attributes for the copy
 
                 const currentEffects = Array.isArray(modifiedUnit.effects) ? modifiedUnit.effects : [];
-                
+
                 // const newHp = Math.max(0, modifiedUnit.hp - (5 * caster.atk));
 
                 const combat = new Combat({
@@ -147,7 +147,8 @@ export const AnastasiaSkills = {
         6, // range
         [mahalaprayaMicroAction],
         true,  // isAttack
-        true //counts towards limit of attacks
+        true, //counts towards limit of attacks
+        true
     ),
     selfBuff: new Skill(
         "Self Buff",
@@ -196,7 +197,8 @@ export const AnastasiaAttributes = {
     // Visual 
     sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp",
     combatSent: {},
-    combatReceived: {}
+    combatReceived: {},
+    canCounter: false
 };
 
 // Export complete Anastasia unit template
