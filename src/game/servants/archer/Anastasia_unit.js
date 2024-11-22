@@ -27,6 +27,7 @@ const mahalaprayaMicroAction = new MicroAction({
                 const backUpUnit = modifiedUnit;
                     // Create modified attributes for the copy
 
+                const currentEffects = Array.isArray(modifiedUnit.effects) ? modifiedUnit.effects : [];
                 
                 // const newHp = Math.max(0, modifiedUnit.hp - (5 * caster.atk));
 
@@ -46,7 +47,7 @@ const mahalaprayaMicroAction = new MicroAction({
                 console.log(caster.combatSent);
                 modifiedUnit.combatReceived = JSON.parse(JSON.stringify(combat.combatResults));
 
-                const currentEffects = Array.isArray(modifiedUnit.effects) ? modifiedUnit.effects : [];
+
                 const newEffect = {
                     name: 'uwu',
                     duration: 7,
