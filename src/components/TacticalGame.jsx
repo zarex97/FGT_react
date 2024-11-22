@@ -107,7 +107,9 @@ const TacticalGame = ({ username, roomId }) => {
                             { id: 1, name: 'Instinct', description: 'May evade incoming attacks' }
                           ],
                           combatSent: {},
-                          combatReceived: {}
+                          combatReceived: {},
+                          effects:[],
+                          statusIfHit: null
                       }
                 ]
             });
@@ -229,53 +231,70 @@ const TacticalGame = ({ username, roomId }) => {
     };
 
     
-    // const ReceiveAttackButton = ({ unit }) => {
-    //     if (!unit.combatReceived || Object.keys(unit.combatReceived).length === 0) {
-    //         return null;
-    //     }
+    const ReceiveAttackButton = ({ unit }) => {
+
     
-    //     const handleReceiveAttack = () => {
-    //         // Recreate combat from stored results
-    //         const combat = new Combat({
-    //             typeOfAttackCausingIt: unit.combatReceived.typeOfAttackCausingIt, //e.g: skill, np, basic attack
-    //             proportionOfMagicUsed: unit.combatReceived.proportionOfMagicUsed,  // e.g: 30% of magic
-    //             proportionOfStrengthUsed: unit.combatReceived.proportionOfStrengthUsed, //e.g: 120% of strength
-    //             attacker: unit.combatReceived.attacker,
-    //             defender: unit.combatReceived.defender,
-    //             gameState: unit.combatReceived.gameState,
-    //             integratedAttackMultiplier: unit.combatReceived.integratedAttackMultiplier, //e.g: multiplier bonus on np/skill description
-    //             integratedAttackFlatBonus: unit.combatReceived.integratedAttackFlatBonus // e.g: flat bonus on np/skill description
-    //         });
+        const handleReceiveAttack = () => {
+            const currentAttacker = gameState.units.find(u => 
+                u.id === unit.statusIfHit.combatReceived.attacker.id
+            );
+            const currentDefender = gameState.units.find(u => 
+                u.id === unit.statusIfHit.combatReceived.defender.id
+            );
+        
+            if (!currentAttacker || !currentDefender) {
+                console.error("Could not find current units");
+                return;
+            }
+            // Recreate combat from stored results
+            const combat = new Combat({
+                typeOfAttackCausingIt: unit.statusIfHit.combatReceived.typeOfAttackCausingIt, //e.g: skill, np, basic attack
+                proportionOfMagicUsed: unit.statusIfHit.combatReceived.proportionOfMagicUsed,  // e.g: 30% of magic
+                proportionOfStrengthUsed: unit.statusIfHit.combatReceived.proportionOfStrengthUsed, //e.g: 120% of strength
+                attacker: currentAttacker,
+                defender: currentDefender,
+                gameState: gameState,
+                integratedAttackMultiplier: unit.statusIfHit.combatReceived.integratedAttackMultiplier, //e.g: multiplier bonus on np/skill description
+                integratedAttackFlatBonus: unit.statusIfHit.combatReceived.integratedAttackFlatBonus // e.g: flat bonus on np/skill description
+            });
             
-    //         combat.combatResults = unit.combatReceived.combatResults;
-    //         // Recalculate with current defender state
-    //         const finalResults = combat.receiveCombat();
+            combat.combatResults = unit.statusIfHit.combatReceived;
+            // Recalculate with current defender state
+            const finalResults = combat.receiveCombat();
             
-    //         // Update the unit's stored combat results
-    //         unit.combatReceived = finalResults;
+            // Update the unit's stored combat results
+            unit.combatReceived = finalResults;
+            unit.statusIfHit.combatReceived = finalResults;
             
-    //         // Apply the damage
-    //         const updatedUnit = combat.applyDamageToDefender();
-            
-    //         // Send update to server
-    //         sendJsonMessage({
-    //             type: 'GAME_ACTION',
-    //             action: 'RECEIVE_ATTACK',
-    //             unitId: unit.id,
-    //             newHp: updatedUnit.hp,
-    //             combatResults: finalResults
-    //         });
-    //     };
+            // Apply the damage to the copy of the defender (statusIfHit)
+            unit.statusIfHit.hp = unit.statusIfHit.hp - finalResults.finalDamage.total;
+
+            //update the unit with the values of the copy (statusIfHit)
+            unit = JSON.parse(JSON.stringify(unit.statusIfHit));
+
+            const updatedUnit = {
+                ...unit,
+                hp: Math.max(0, unit.hp - finalResults.finalDamage.total)
+            };
+
+            // Send update to server
+            sendJsonMessage({
+                type: 'GAME_ACTION',
+                action: 'RECEIVE_ATTACK',
+                updatedUnit,
+                combatResults: finalResults
+            });
+        };
     
-    //     return (
-    //         <button 
-    //             onClick={handleReceiveAttack}
-    //             className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-    //         >
-    //             Receive Attack
-    //         </button>
-    //     );
-    // };
+        return (
+            <button 
+                onClick={handleReceiveAttack}
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+            >
+                Receive Attack
+            </button>
+        );
+    };
 
     const handleDetection = () => {
         sendJsonMessage({
@@ -344,6 +363,9 @@ const TacticalGame = ({ username, roomId }) => {
             setPreviewCells(affectedCells);
         }
     };
+
+
+    
     // Your existing menu handling useEffect...
 
     const handleContextMenu = (e, unit) => {
@@ -922,6 +944,10 @@ const TacticalGame = ({ username, roomId }) => {
                             className="w-16 h-16 object-contain"
                         />
                         {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
+                    {/* Add ReceiveAttackButton if unit has pending combat */}
+                    <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2">
+                        <ReceiveAttackButton unit={unit} />
+                    </div>
                     </div>
                 )}
             </div>

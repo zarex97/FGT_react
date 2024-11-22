@@ -200,6 +200,23 @@ case 'END_TURN':
     broadcastToRoom(player.currentRoom);
     break;
 
+
+    case 'RECEIVE_ATTACK':
+    room.gameState = {
+        ...room.gameState,
+        units: room.gameState.units.map(existingUnit => {
+            if (existingUnit.id === message.updatedUnit.id) { 
+                return {
+                    ...message.updatedUnit
+                };
+            }
+            return existingUnit;
+        })
+    };
+    
+    broadcastToRoom(player.currentRoom);
+    break;
+
     case 'USE_SKILL':
       const caster = room.gameState.units.find(u => u.id === message.casterId);
       if (!caster) return;
