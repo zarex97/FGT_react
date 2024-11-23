@@ -30,6 +30,7 @@ import {
   isNPOnCooldown,
   executeNP,
   getNPAffectedCells,
+  canUseNPOnThisRound,
 } from "../game/noblePhantasms/registry_np";
 import { TargetingType } from "../game/targeting/TargetingTypes";
 import { TargetingLogic } from "../game/targeting/TargetingLogic";
@@ -555,7 +556,9 @@ const TacticalGame = ({ username, roomId }) => {
     if (npImpl.microActions[0]?.targetingType === TargetingType.SELF) {
       const result = executeNP(npRef, gameState, unit, unit.x, unit.y);
       if (result.success) {
-        const newCooldownUntil = gameState.currentTurn + npImpl.cooldown;
+        const newCooldownUntil =
+          gameState.currentTurn +
+          Math.floor(impl.cooldown * gameState.turnsPerRound);
 
         sendJsonMessage({
           type: "GAME_ACTION",
@@ -603,7 +606,9 @@ const TacticalGame = ({ username, roomId }) => {
     if (skillImpl.microActions[0]?.targetingType === TargetingType.SELF) {
       const result = executeSkill(skillRef, gameState, unit, unit.x, unit.y);
       if (result.success) {
-        const newCooldownUntil = gameState.currentTurn + skillImpl.cooldown;
+        const newCooldownUntil =
+          gameState.currentTurn +
+          Math.floor(impl.cooldown * gameState.turnsPerRound);
 
         sendJsonMessage({
           type: "GAME_ACTION",
@@ -904,6 +909,42 @@ const TacticalGame = ({ username, roomId }) => {
         unit.y
       );
       if (result.success) {
+        const newCooldownUntil =
+          gameState.currentTurn +
+          Math.floor(actionImpl.cooldown * gameState.turnsPerRound);
+
+        // Create deep copy of game state with updated cooldowns
+        const updatedGameState = {
+          ...result.updatedGameState,
+          units: result.updatedGameState.units.map((updatedUnit) => {
+            if (updatedUnit.id === unit.id) {
+              return {
+                ...updatedUnit,
+                actions: {
+                  ...updatedUnit.actions,
+                  [actionImpl.type]: updatedUnit.actions[actionImpl.type].map(
+                    (action) => {
+                      if (action.id === actionRef.id) {
+                        console.log("Updating action cooldown:", {
+                          actionId: action.id,
+                          newCooldownUntil,
+                          currentTurn: gameState.currentTurn,
+                        });
+                        return {
+                          ...action,
+                          onCooldownUntil: newCooldownUntil,
+                        };
+                      }
+                      return action;
+                    }
+                  ),
+                },
+              };
+            }
+            return updatedUnit;
+          }),
+        };
+
         sendJsonMessage({
           type: "GAME_ACTION",
           action: "USE_ACTION",
@@ -912,7 +953,8 @@ const TacticalGame = ({ username, roomId }) => {
           casterId: unit.id,
           targetX: unit.x,
           targetY: unit.y,
-          updatedGameState: result.updatedGameState,
+          updatedGameState: updatedGameState,
+          newCooldownUntil: newCooldownUntil,
         });
       }
       setActiveAction(null);
@@ -968,6 +1010,7 @@ const TacticalGame = ({ username, roomId }) => {
   };
 
   const NoblePhantasmMenu = ({ unit }) => {
+    const isPlayerTurn = gameState.turn === playerTeam;
     if (!showNPMenu) return null;
 
     return (
@@ -978,17 +1021,66 @@ const TacticalGame = ({ username, roomId }) => {
         >
           <h3 className="text-xl font-bold mb-4">Noble Phantasms</h3>
           <div className="space-y-2">
-            {unit.noblePhantasms.map((np) => (
-              <div key={np.id} className="p-2 border rounded hover:bg-gray-50">
-                <div className="font-bold flex justify-between">
-                  {np.name}
-                  <span className="text-sm text-gray-500">
-                    CD: {np.cooldown}
-                  </span>
+            {unit.noblePhantasms?.map((npRef, index) => {
+              const npImpl = getNPImplementation(npRef.id);
+              if (!npImpl) return null;
+
+              const isOnCd = isNPOnCooldown(npRef, gameState.currentTurn);
+              const roundCheck = canUseNPOnThisRound(
+                npRef,
+                npImpl,
+                gameState.currentRound
+              );
+              const canUse =
+                roundCheck.canUse &&
+                (npImpl.isReactionary || unit.canCounter || isPlayerTurn);
+              const turnsRemaining = isOnCd
+                ? npRef.onCooldownUntil - gameState.currentTurn
+                : 0;
+
+              return (
+                <div
+                  key={index}
+                  className={`p-2 border rounded hover:bg-gray-50 cursor-pointer 
+                                    ${isOnCd || !canUse ? "opacity-50" : ""}`}
+                  onClick={() =>
+                    !isOnCd && canUse && handleNPSelect(npRef, npImpl, unit)
+                  }
+                >
+                  <div className="font-bold flex justify-between">
+                    {npImpl.name}
+                    <span
+                      className={`text-sm ${
+                        isOnCd
+                          ? "text-red-500"
+                          : !roundCheck.canUse
+                          ? "text-yellow-500"
+                          : "text-green-500"
+                      }`}
+                    >
+                      {isOnCd
+                        ? `CD: ${turnsRemaining} turn${
+                            turnsRemaining !== 1 ? "s" : ""
+                          }`
+                        : !roundCheck.canUse
+                        ? `Available Round ${npImpl.usableFromRound}`
+                        : canUse
+                        ? "Ready"
+                        : "Not Available"}
+                    </span>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {npImpl.description}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Cooldown: {npImpl.cooldown} turns
+                    {npImpl.isReactionary && (
+                      <span className="ml-2 text-blue-500">(Reactionary)</span>
+                    )}
+                  </div>
                 </div>
-                <div className="text-sm text-gray-600">{np.description}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <button
             className="mt-4 px-4 py-2 bg-gray-200 rounded"
@@ -1179,7 +1271,9 @@ const TacticalGame = ({ username, roomId }) => {
       // Execute the skill using the implementation
       const result = executeSkill(ref, gameState, caster, x, y);
       if (result.success) {
-        const newCooldownUntil = gameState.currentTurn + impl.cooldown;
+        const newCooldownUntil =
+          gameState.currentTurn +
+          Math.floor(impl.cooldown * gameState.turnsPerRound);
 
         console.log("Skill execution result:", {
           success: result.success,
@@ -1241,7 +1335,9 @@ const TacticalGame = ({ username, roomId }) => {
       const { ref, impl } = activeAction;
       const result = executeAction(ref, impl.type, gameState, caster, x, y);
       if (result.success) {
-        const newCooldownUntil = gameState.currentTurn + impl.cooldown;
+        const newCooldownUntil =
+          gameState.currentTurn +
+          Math.floor(impl.cooldown * gameState.turnsPerRound);
         const updatedGameState = {
           ...result.updatedGameState,
           units: result.updatedGameState.units.map((updatedUnit) => {
@@ -1269,7 +1365,7 @@ const TacticalGame = ({ username, roomId }) => {
         sendJsonMessage({
           type: "GAME_ACTION",
           action: "USE_ACTION",
-          actionId: ref.id,
+          actionId: impl.name,
           actionType: impl.type,
           casterId: caster.id,
           targetX: x,
@@ -1281,6 +1377,57 @@ const TacticalGame = ({ username, roomId }) => {
 
       setActionTargetingMode(false);
       setActiveAction(null);
+      setPreviewCells(new Set());
+      setSelectedUnit(null);
+      return;
+    }
+
+    if (npTargetingMode && activeNP) {
+      const caster = selectedUnit;
+      if (!caster) return;
+
+      const { ref, impl } = activeNP;
+      const result = executeNP(ref, gameState, caster, x, y);
+      if (result.success) {
+        const newCooldownUntil =
+          gameState.currentTurn +
+          Math.floor(impl.cooldown * gameState.turnsPerRound);
+        const updatedGameState = {
+          ...result.updatedGameState,
+          units: result.updatedGameState.units.map((updatedUnit) => {
+            if (updatedUnit.id === caster.id) {
+              return {
+                ...updatedUnit,
+                noblePhantasms: updatedUnit.noblePhantasms.map((np) => {
+                  if (np.id === ref.id) {
+                    return {
+                      ...np,
+                      onCooldownUntil: newCooldownUntil,
+                    };
+                  }
+                  return np;
+                }),
+              };
+            }
+            return updatedUnit;
+          }),
+        };
+
+        sendJsonMessage({
+          type: "GAME_ACTION",
+          action: "USE_NP",
+          npName: impl.name,
+          casterId: caster.id,
+          targetX: x,
+          targetY: y,
+          updatedGameState: updatedGameState,
+          newCooldownUntil: newCooldownUntil,
+          roundUsed: gameState.currentRound,
+        });
+      }
+
+      setNPTargetingMode(false);
+      setActiveNP(null);
       setPreviewCells(new Set());
       setSelectedUnit(null);
       return;
@@ -1414,7 +1561,7 @@ const TacticalGame = ({ username, roomId }) => {
         ) {
           bgColor = "bg-purple-200"; // Constrained AOE preview
         } else {
-          bgColor = "bg-red-200"; // Standard AOE preview
+          bgColor = "bg-blue-300"; // Standard AOE preview
         }
       } else if (actionTargetingMode) {
         // Action targeting colors (you can customize these)
@@ -1429,7 +1576,23 @@ const TacticalGame = ({ username, roomId }) => {
         ) {
           bgColor = "bg-yellow-200";
         } else {
-          bgColor = "bg-orange-200";
+          bgColor = "bg-green-300";
+        }
+      } else if (npTargetingMode) {
+        // Noble Phantasm targeting colors (golds/reds)
+        if (
+          activeNP?.impl.microActions[0]?.targetingType === TargetingType.SELF
+        ) {
+          bgColor = "bg-amber-300 bg-opacity-70"; // Golden glow for self-targeting NPs
+        } else if (
+          activeNP?.impl.microActions[0]?.targetingType ===
+          TargetingType.AOE_FROM_POINT_WITHIN_RANGE
+        ) {
+          bgColor = "bg-red-400 bg-opacity-60"; // Intense red for constrained AoE NPs
+        } else {
+          // For standard NP targeting, create a pulsing effect with multiple colors
+          bgColor = `bg-gradient-to-br from-amber-300 to-red-500 bg-opacity-60
+                      animate-pulse`;
         }
       }
     } else if (isSelected) {
@@ -1460,13 +1623,33 @@ const TacticalGame = ({ username, roomId }) => {
           targetingType === TargetingType.AOE_FROM_POINT
         );
       }
+      if (npTargetingMode && activeNP) {
+        const targetingType = activeNP.impl.microActions[0]?.targetingType;
+        return (
+          targetingType === TargetingType.AOE_AROUND_SELF ||
+          targetingType === TargetingType.AOE_CARDINAL_DIRECTION ||
+          targetingType === TargetingType.AOE_FROM_POINT
+        );
+      }
       return false;
     };
+
+    // Add special effects for NP targeting
+    let additionalClasses = "";
+    if (npTargetingMode && isInPreview) {
+      additionalClasses = "ring-2 ring-amber-400 ring-opacity-50"; // Add a golden ring
+    }
 
     return (
       <div
         key={`${x}-${y}`}
-        className={`w-16 h-16 border border-gray-300 ${bgColor} flex items-center justify-center relative cursor-pointer`}
+        className={`w-16 h-16 border border-gray-300 ${bgColor} ${additionalClasses} 
+                       flex items-center justify-center relative cursor-pointer 
+                       ${
+                         npTargetingMode && isInPreview
+                           ? "transform transition-transform hover:scale-105"
+                           : ""
+                       }`}
         onClick={() => {
           // Allow click if cell is visible OR if we're targeting with an AoE skill
           if (isVisible || canTargetNonVisibleCells()) {
@@ -1487,6 +1670,10 @@ const TacticalGame = ({ username, roomId }) => {
           }
         }}
       >
+        {/* Add special effects for NP targeting */}
+        {npTargetingMode && isInPreview && (
+          <div className="absolute inset-0 bg-amber-500 opacity-20 animate-pulse" />
+        )}
         {unit && isVisible && (
           <div
             className={`absolute inset-0 flex items-center justify-center 
@@ -1502,7 +1689,9 @@ const TacticalGame = ({ username, roomId }) => {
             <img
               src={unit.sprite}
               alt={unit.name}
-              className="w-16 h-16 object-contain"
+              className={`w-16 h-16 object-contain ${
+                npTargetingMode && isInPreview ? "filter brightness-110" : ""
+              }`}
             />
             {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
             {/* Add ReceiveAttackButton if unit has pending combat */}
