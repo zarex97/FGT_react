@@ -217,9 +217,43 @@ case 'END_TURN':
     broadcastToRoom(player.currentRoom);
     break;
 
+    
+    case 'USE_ACTION':
+      const actionCaster  = room.gameState.units.find(u => u.id === message.casterId);
+      if (!actionCaster ) return;
+  
+      room.gameState = {
+          ...message.updatedGameState,
+          units: message.updatedGameState.units.map(updatedUnit => {
+              if (updatedUnit.id === message.casterId) {
+                  return {
+                      ...updatedUnit,
+                      actions: {
+                          ...updatedUnit.actions,
+                          [message.actionType]: updatedUnit.actions[message.actionType].map(action => {
+                              if (action.id === message.actionId) {
+                                  return {
+                                      ...action,
+                                      onCooldownUntil: message.newCooldownUntil
+                                  };
+                              }
+                              return action;
+                          })
+                      }
+                  };
+              }
+              return updatedUnit;
+          })
+      };
+  
+      console.log('Updated game state after action:', room.gameState);
+      broadcastToRoom(player.currentRoom);
+      break;
+
+
     case 'USE_SKILL':
-      const caster = room.gameState.units.find(u => u.id === message.casterId);
-      if (!caster) return;
+      const skillCaster  = room.gameState.units.find(u => u.id === message.casterId);
+      if (!skillCaster ) return;
       const skillName = message.skillName;
       const casterId = message.casterId;
       const newCooldownUntil = message.newCooldownUntil;

@@ -3,6 +3,9 @@ import { MicroAction } from '../../MicroAction';
 import { Skill } from '../../Skill';
 import { TargetingType } from '../../targeting/TargetingTypes';
 import { Combat } from '../../Combat';
+import { Action } from '../../actions/Action';
+import { ActionType } from '../../actions/ActionTypes'; 
+
 
 // Define Anastasia's skills' MicroActions
 const mahalaprayaMicroAction = new MicroAction({
@@ -138,6 +141,52 @@ const constrainedExplosionMicroAction = new MicroAction({
     }
 });
 
+const dodgeMicroAction = new MicroAction({
+    targetingType: TargetingType.SELF,
+    range: 0,
+    effectLogic: (gameState, caster, affectedCells) => {
+        const updatedUnits = gameState.units.map(unit => {
+            if (unit.id === caster.id) {
+                return {
+                    ...unit,
+                    effects: [...(unit.effects || []), {
+                        name: 'Dodge',
+                        type: 'DefenseUp',
+                        duration: 1,
+                        appliedAt: gameState.currentTurn,
+                        value: 50,
+                        flatOrMultiplier: 'multiplier'
+                    }]
+                };
+            }
+            return unit;
+        });
+
+        return {
+            ...gameState,
+            units: updatedUnits
+        };
+    }
+});
+export const AnastasiaActions = {
+    common: {
+        dodge: new Action(
+            "Dodge",
+            "Increases defense by 50% until next turn",
+            3, // cooldown
+            0, // self-targeting
+            [dodgeMicroAction],
+            ActionType.common,
+            true,  // is reactionary
+            false,
+            false
+        )
+    },
+    unique: {
+        
+    }
+};
+
 // Define Anastasia's skills
 export const AnastasiaSkills = {
     Mahalapraya: new Skill(
@@ -241,5 +290,19 @@ export const AnastasiaTemplate = {
             name: 'Instinct', 
             description: 'May evade incoming attacks' 
         }
-    ]
+    ],
+    actions: {
+        common: [
+            {
+                id: "dodge",
+                onCooldownUntil: 0
+            }
+        ],
+        unique: [
+            {
+                id: "winterEscape",
+                onCooldownUntil: 0
+            }
+        ]
+    }
 };
