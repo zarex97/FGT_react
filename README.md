@@ -1,12 +1,13 @@
-
-- [ ] Implement fog of war
 - [ ] Complete Character Attributes (Array of Traits, True name, Concealed name, team color, Alignment)
 - [ ] Add team color to players
-  - [x] Add Targeting Logic
-    - [ ] "AOE_FROM_POINT" is like a bomb that explodes from the origin point selected and expands until it fills its full measures (like Morgana's tp attack, but most the attacks expand up until the constrains of range (like the Arjuna_berserker's Mahalapraya)). Add a new boolean like the "cornerRule" to this targeting logic or create another one "AOE_FROM_POINT_WITHIN_RANGE"
-  - [x] Add Skill Logic
-  - [ ] Add NP Logic (Should be easy, most of the Skill logic can be copied)
-  - [ ] Add logic to differentiate normal skills from attack skills (or NPs, although most of these count as the attack of this turn)
-- [x] Change how right button click works
+- [ ] Add NP Logic (Should be easy, most of the Skill logic can be copied, same as what I did with Actions)
+- [ ] Fix Profile Sheet
+- [ ] Add save/load function
+  - [ ] Make that every "sendJsonMessage" that is sent to the server causes the game state to be saved in a json file that will have an array of gameStates, up to a limit (e.g:100) 
 
-The idea to implement attacks is to do the following, when an skill or attack is done, instead of directly changing the gameState an object will be create called gameStateBackup, that will be saved inside gameState, and when the reaction is confirmed then the Backup can replace/overwrite the gameState. 
+
+
+Last Session Short term Goals:
+- [ ] Finish logic of Actions (done, review chat (specially part about registry_character.js and registry.js))
+- [ ] Complete UI for Actions
+- [ ] Configurate important common Actions like "Evade"

@@ -4,7 +4,8 @@ import { Sword, Shield, Heart, Move, ScrollText, Star, User, MoreHorizontal } fr
 import useWebSocket, { ReadyState } from 'react-use-websocket';
 import { createMahalapraya } from '../game/skills/Mahalapraya';
 import { Skill } from '../game/Skill';
-import { getSkillImplementation, isSkillOnCooldown, executeSkill, getSkillAffectedCells  } from '../game/skills/registry';
+import { getSkillImplementation, isSkillOnCooldown, executeSkill, getSkillAffectedCells  } from '../game/skills/registry_skills';
+import { getActionImplementation, isActionOnCooldown, executeAction, getActionAffectedCells  } from '../game/actions/registry_actions';
 import { TargetingType } from '../game/targeting/TargetingTypes';
 import { TargetingLogic } from '../game/targeting/TargetingLogic';
 import ServantSelector from './ServantSelector';
@@ -33,6 +34,11 @@ const TacticalGame = ({ username, roomId }) => {
     };
     const [detectionResults, setDetectionResults] = useState(null);
     const [detectionError, setDetectionError] = useState(null);
+    const [showOtherActions, setShowOtherActions] = useState(false);
+    const [showUniqueActions, setShowUniqueActions] = useState(false);
+    const [showCommonActions, setShowCommonActions] = useState(false);
+    const [activeAction, setActiveAction] = useState(null);
+    const [actionTargetingMode, setActionTargetingMode] = useState(false);
 
 
 
@@ -302,6 +308,112 @@ const TacticalGame = ({ username, roomId }) => {
             type: 'GAME_ACTION',
             action: 'ATTEMPT_DETECTION'
         });
+    };
+
+    const UniqueActionsMenu = ({ unit, onClose }) => {
+        const isPlayerTurn = gameState.turn === playerTeam;
+    
+        if (!showUniqueActions) return null;
+    
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-4 w-96" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold mb-4">Unique Actions</h3>
+                    <div className="space-y-2">
+                        {unit.actions?.unique?.map((actionRef, index) => {
+                            const actionImpl = getActionImplementation(actionRef.id, 'unique');
+                            if (!actionImpl) return null;
+    
+                            const isOnCd = isActionOnCooldown(actionRef, gameState.currentTurn);
+                            const canUse = actionImpl.isReactionary || unit.canCounter || isPlayerTurn;
+                            const turnsRemaining = isOnCd ? 
+                                actionRef.onCooldownUntil - gameState.currentTurn : 0;
+    
+                            return (
+                                <div 
+                                    key={index}
+                                    className={`p-2 border rounded hover:bg-gray-50 cursor-pointer 
+                                        ${isOnCd || !canUse ? 'opacity-50' : ''}`}
+                                    onClick={() => !isOnCd && canUse && handleActionSelect(actionRef, actionImpl, unit)}
+                                >
+                                    <div className="font-bold flex justify-between">
+                                        {actionImpl.name}
+                                        <span className={`text-sm ${isOnCd ? 'text-red-500' : 'text-green-500'}`}>
+                                            {isOnCd 
+                                                ? `CD: ${turnsRemaining} turn${turnsRemaining !== 1 ? 's' : ''}`
+                                                : canUse ? 'Ready' : 'Not Available'}
+                                        </span>
+                                    </div>
+                                    <div className="text-sm text-gray-600">{actionImpl.description}</div>
+                                    {actionImpl.isReactionary && 
+                                        <span className="text-xs text-blue-500 ml-2">(Reactionary)</span>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <button 
+                        className="mt-4 px-4 py-2 bg-gray-200 rounded"
+                        onClick={onClose}
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        );
+    };
+    
+
+
+    const CommonActionsMenu = ({ unit, onClose }) => {
+        const isPlayerTurn = gameState.turn === playerTeam;
+    
+        if (!showCommonActions) return null;
+    
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-4 w-96" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold mb-4">Common Actions</h3>
+                    <div className="space-y-2">
+                        {unit.actions?.common?.map((actionRef, index) => {
+                            const actionImpl = getActionImplementation(actionRef.id, 'common');
+                            if (!actionImpl) return null;
+    
+                            const isOnCd = isActionOnCooldown(actionRef, gameState.currentTurn);
+                            const canUse = actionImpl.isReactionary || unit.canCounter || isPlayerTurn;
+                            const turnsRemaining = isOnCd ? 
+                                actionRef.onCooldownUntil - gameState.currentTurn : 0;
+    
+                            return (
+                                <div 
+                                    key={index}
+                                    className={`p-2 border rounded hover:bg-gray-50 cursor-pointer 
+                                        ${isOnCd || !canUse ? 'opacity-50' : ''}`}
+                                    onClick={() => !isOnCd && canUse && handleActionSelect(actionRef, actionImpl, unit)}
+                                >
+                                    <div className="font-bold flex justify-between">
+                                        {actionImpl.name}
+                                        <span className={`text-sm ${isOnCd ? 'text-red-500' : 'text-green-500'}`}>
+                                            {isOnCd 
+                                                ? `CD: ${turnsRemaining} turn${turnsRemaining !== 1 ? 's' : ''}`
+                                                : canUse ? 'Ready' : 'Not Available'}
+                                        </span>
+                                    </div>
+                                    <div className="text-sm text-gray-600">{actionImpl.description}</div>
+                                    {actionImpl.isReactionary && 
+                                        <span className="text-xs text-blue-500 ml-2">(Reactionary)</span>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <button 
+                        className="mt-4 px-4 py-2 bg-gray-200 rounded"
+                        onClick={onClose}
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        );
     };
 
     const handleAddServant = (newUnit) => {
@@ -585,7 +697,44 @@ const TacticalGame = ({ username, roomId }) => {
         );
     };
 
-    const OtherActionsMenu = ({ unit, onClose }) => {
+
+    const handleActionSelect = (actionRef, actionImpl, unit) => {
+        if (isActionOnCooldown(actionRef, gameState.currentTurn)) {
+            return;
+        }
+        
+        setActiveAction({
+            ref: actionRef,
+            impl: actionImpl
+        });
+    
+        if (actionImpl.microActions[0]?.targetingType === TargetingType.SELF) {
+            const result = executeAction(actionRef, actionImpl.type, gameState, unit, unit.x, unit.y);
+            if (result.success) {
+                sendJsonMessage({
+                    type: 'GAME_ACTION',
+                    action: 'USE_ACTION',
+                    actionId: actionRef.id,
+                    actionType: actionImpl.type,
+                    casterId: unit.id,
+                    targetX: unit.x,
+                    targetY: unit.y,
+                    updatedGameState: result.updatedGameState
+                });
+            }
+            setActiveAction(null);
+            setActionTargetingMode(false);
+            return;
+        }
+    
+        setActionTargetingMode(true);
+        setShowCommonActions(false);
+        setShowUniqueActions(false);
+        setShowOtherActions(false);
+    };
+
+
+    const OtherActionsMenu = ({ unit }) => {
         if (!showOtherActions) return null;
     
         return (
@@ -595,20 +744,26 @@ const TacticalGame = ({ username, roomId }) => {
                     <div className="space-y-2">
                         <button 
                             className="w-full p-3 text-left bg-gray-50 hover:bg-gray-100 rounded"
-                            onClick={() => setShowUniqueActions(true)}
+                            onClick={() => {
+                                setShowUniqueActions(true);
+                                setShowOtherActions(false);
+                            }}
                         >
                             Unique Actions
                         </button>
                         <button 
                             className="w-full p-3 text-left bg-gray-50 hover:bg-gray-100 rounded"
-                            onClick={() => setShowCommonActions(true)}
+                            onClick={() => {
+                                setShowCommonActions(true);
+                                setShowOtherActions(false);
+                            }}
                         >
                             Common Actions
                         </button>
                     </div>
                     <button 
                         className="mt-4 px-4 py-2 bg-gray-200 rounded"
-                        onClick={onClose}
+                        onClick={() => setShowOtherActions(false)}
                     >
                         Close
                     </button>
@@ -616,7 +771,6 @@ const TacticalGame = ({ username, roomId }) => {
             </div>
         );
     };
-    
 
     const NoblePhantasmMenu = ({ unit }) => {
         if (!showNPMenu) return null;
@@ -791,6 +945,8 @@ const TacticalGame = ({ username, roomId }) => {
     const handleCellClick = (x, y) => {
         setContextMenu(null);
         setActiveUnit(null);
+
+
         if (skillTargetingMode && activeSkill) {
             const caster = selectedUnit;
             if (!caster) return;
@@ -862,6 +1018,59 @@ const TacticalGame = ({ username, roomId }) => {
             return;
         }
 
+        // Handle action targeting
+    if (actionTargetingMode && activeAction) {
+        const caster = selectedUnit;
+        if (!caster) return;
+
+        const { ref, impl } = activeAction;
+        const result = executeAction(ref, impl.type, gameState, caster, x, y);
+        if (result.success) {
+            const newCooldownUntil = gameState.currentTurn + impl.cooldown;
+            const updatedGameState = {
+                ...result.updatedGameState,
+                units: result.updatedGameState.units.map(updatedUnit => {
+                    if (updatedUnit.id === caster.id) {
+                        return {
+                            ...updatedUnit,
+                            actions: {
+                                ...updatedUnit.actions,
+                                [impl.type]: updatedUnit.actions[impl.type].map(action => {
+                                    if (action.id === ref.id) {
+                                        return {
+                                            ...action,
+                                            onCooldownUntil: newCooldownUntil
+                                        };
+                                    }
+                                    return action;
+                                })
+                            }
+                        };
+                    }
+                    return updatedUnit;
+                })
+            };
+
+            sendJsonMessage({
+                type: 'GAME_ACTION',
+                action: 'USE_ACTION',
+                actionId: ref.id,
+                actionType: impl.type,
+                casterId: caster.id,
+                targetX: x,
+                targetY: y,
+                updatedGameState: updatedGameState,
+                newCooldownUntil: newCooldownUntil
+            });
+        }
+
+        setActionTargetingMode(false);
+        setActiveAction(null);
+        setPreviewCells(new Set());
+        setSelectedUnit(null);
+        return;
+    }
+
         //logic for clicking when trying to move
         
         const clickedUnit = getUnitAt(x, y);
@@ -881,25 +1090,35 @@ const TacticalGame = ({ username, roomId }) => {
         }
     };
 
-    // Add this function to handle mouse movement during targeting
+    // Add this function to handle mouse movement during targeting of Skills and Actions
     const handleCellHover = (x, y) => {
+        // For skills
         if (skillTargetingMode && activeSkill && selectedUnit) {
             const { impl } = activeSkill;
-
-            // Don't show preview for SELF targeting
-        if (impl.microActions[0]?.targetingType === TargetingType.SELF) {
-            return;
+            if (impl.microActions[0]?.targetingType !== TargetingType.SELF) {
+                const affectedCells = getSkillAffectedCells(
+                    impl,
+                    selectedUnit,
+                    x,
+                    y,
+                    11
+                );
+                setPreviewCells(affectedCells);
+            }
         }
-            
-            // Use the TargetingLogic class through our utility function
-            const affectedCells = getSkillAffectedCells(
-                impl,
-                selectedUnit,
-                x,
-                y,
-                11 // gridSize
-            );
-            setPreviewCells(affectedCells);
+        // For actions
+        else if (actionTargetingMode && activeAction && selectedUnit) {
+            const { impl } = activeAction;
+            if (impl.microActions[0]?.targetingType !== TargetingType.SELF) {
+                const affectedCells = getActionAffectedCells(
+                    impl,
+                    selectedUnit,
+                    x,
+                    y,
+                    11
+                );
+                setPreviewCells(affectedCells);
+            }
         }
     };
     
@@ -922,20 +1141,21 @@ const TacticalGame = ({ username, roomId }) => {
         const isSelected = selectedUnit && selectedUnit.id === unit?.id;
         const isValidMove = highlightedCells.some(move => move.x === x && move.y === y);
         //addition for skill use logic
-        const isInSkillPreview = previewCells.has(`${x},${y}`);
+        const isInPreview = previewCells.has(`${x},${y}`);
         //addition for visibility
         const isVisible = isCellVisible(x, y);
         
         let bgColor = 'bg-green-100';
 
         if (!isVisible) {
-            if (isInSkillPreview) {
+            if (isInPreview) {
                 bgColor = 'bg-gray-900 after:absolute after:inset-0 after:bg-red-500 after:opacity-30';
             } else {
-                bgColor = 'bg-gray-900'; // Regular fog
+                bgColor = 'bg-gray-900';
             }
         }
-        else if (isInSkillPreview) {
+        else if (isInPreview) {
+            if (skillTargetingMode) {  
         // Different colors for different targeting types
         if (activeSkill?.impl.microActions[0]?.targetingType === TargetingType.SELF) {
             bgColor = 'bg-blue-200'; // Self-targeting preview
@@ -944,6 +1164,17 @@ const TacticalGame = ({ username, roomId }) => {
         } else {
             bgColor = 'bg-red-200'; // Standard AOE preview
         }
+            } 
+        else if (actionTargetingMode) {
+            // Action targeting colors (you can customize these)
+            if (activeAction?.impl.microActions[0]?.targetingType === TargetingType.SELF) {
+                bgColor = 'bg-green-200';
+            } else if (activeAction?.impl.microActions[0]?.targetingType === TargetingType.AOE_FROM_POINT_WITHIN_RANGE) {
+                bgColor = 'bg-yellow-200';
+            } else {
+                bgColor = 'bg-orange-200';
+            }
+            }  
         } else if (isSelected) {
         bgColor = 'bg-blue-300';
         } else if (isValidMove) {
@@ -956,12 +1187,21 @@ const TacticalGame = ({ username, roomId }) => {
         }
 
         const canTargetNonVisibleCells = () => {
-            if (!skillTargetingMode || !activeSkill) return false;
-            const targetingType = activeSkill.impl.microActions[0]?.targetingType;
-            return targetingType === TargetingType.AOE_AROUND_SELF ||
-                   targetingType === TargetingType.AOE_CARDINAL_DIRECTION ||
-                   targetingType === TargetingType.AOE_FROM_POINT;
+            if (skillTargetingMode && activeSkill) {
+                const targetingType = activeSkill.impl.microActions[0]?.targetingType;
+                return targetingType === TargetingType.AOE_AROUND_SELF ||
+                       targetingType === TargetingType.AOE_CARDINAL_DIRECTION ||
+                       targetingType === TargetingType.AOE_FROM_POINT;
+            }
+            if (actionTargetingMode && activeAction) {
+                const targetingType = activeAction.impl.microActions[0]?.targetingType;
+                return targetingType === TargetingType.AOE_AROUND_SELF ||
+                       targetingType === TargetingType.AOE_CARDINAL_DIRECTION ||
+                       targetingType === TargetingType.AOE_FROM_POINT;
+            }
+            return false;
         };
+    
 
         return (
             <div
@@ -1136,6 +1376,22 @@ return (
         {showProfile && activeUnit && (
             <ProfileSheet unit={activeUnit} />
         )}
+
+{showOtherActions && activeUnit && (
+    <OtherActionsMenu unit={activeUnit} />
+)}
+{showUniqueActions && activeUnit && (
+    <UniqueActionsMenu 
+        unit={activeUnit} 
+        onClose={() => setShowUniqueActions(false)} 
+    />
+)}
+{showCommonActions && activeUnit && (
+    <CommonActionsMenu 
+        unit={activeUnit} 
+        onClose={() => setShowCommonActions(false)} 
+    />
+)}
         {showServantSelector && (
             <ServantSelector
                 onClose={() => setShowServantSelector(false)}

@@ -18,3 +18,10 @@ export const getServantTemplate = (servantClass, servantName) => {
 export const getServantSkills = (servantClass, servantName) => {
     return ServantRegistry[servantClass]?.[servantName]?.skills;
 };
+
+export const getServantActions = (servantClass, servantName) => {
+    return {
+        common: ServantRegistry[servantClass]?.[servantName]?.actions?.common,
+        unique: ServantRegistry[servantClass]?.[servantName]?.actions?.unique
+    };
+};
