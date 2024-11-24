@@ -161,6 +161,8 @@ const TacticalGame = ({ username, roomId }) => {
               effects: [],
               statusIfHit: null,
               canCounter: false,
+              agilityChecks: null,
+              luckChecks: null,
             },
           ],
         });

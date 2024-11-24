@@ -387,6 +387,8 @@ export const AnastasiaAttributes = {
   combatSent: {},
   combatReceived: {},
   canCounter: false,
+  agilityChecks: null,
+  luckChecks: null,
 };
 
 // Export complete Anastasia unit template
