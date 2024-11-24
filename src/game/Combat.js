@@ -10,7 +10,7 @@ export class Combat {
     integratedAttackMultiplier,
     integratedAttackFlatBonus,
   }) {
-    this.type = typeOfAttackCausingIt;
+    this.typeOfAttackCausingIt = typeOfAttackCausingIt;
     this.proportionOfMagicUsed = proportionOfMagicUsed;
     this.proportionOfStrengthUsed = proportionOfStrengthUsed;
     this.attacker = attacker;
