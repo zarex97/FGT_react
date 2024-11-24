@@ -232,6 +232,58 @@ const handleMessage = (bytes, uuid) => {
           broadcastToRoom(player.currentRoom);
           break;
 
+        case "UPDATE_COMBAT_RESPONSE":
+          const { attackerId, defenderId, response } = message;
+
+          // Update both attacker and defender's combat information
+          room.gameState.units = room.gameState.units.map((unit) => {
+            if (unit.id === attackerId) {
+              return {
+                ...unit,
+                combatSent: {
+                  ...unit.combatSent,
+                  response,
+                },
+              };
+            }
+            if (unit.id === defenderId) {
+              return {
+                ...unit,
+                combatReceived: {
+                  ...unit.combatReceived,
+                  response,
+                },
+              };
+            }
+            return unit;
+          });
+
+          broadcastToRoom(player.currentRoom);
+          break;
+
+        case "COMBAT_FAILED":
+          const { unitId, usedCommandSeal } = message;
+
+          room.gameState.units = room.gameState.units.map((unit) => {
+            if (unit.id === unitId) {
+              return {
+                ...unit,
+                combatReceived: null,
+                statusIfHit: null,
+                backUpStatus: null,
+              };
+            }
+            return unit;
+          });
+
+          if (usedCommandSeal) {
+            // Handle command seal usage
+            // You'll need to implement command seal tracking
+          }
+
+          broadcastToRoom(player.currentRoom);
+          break;
+
         case "USE_ACTION":
           const actionCaster = room.gameState.units.find(
             (u) => u.id === message.casterId

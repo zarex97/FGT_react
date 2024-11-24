@@ -137,15 +137,14 @@ const mahalaprayaMicroAction = new MicroAction({
         unit.team !== caster.team &&
         affectedCells.has(`${unit.x},${unit.y}`)
       ) {
-        // Create a copy of the unit for statusIfHit
-        const modifiedUnit = JSON.parse(JSON.stringify(unit));
-
-        const backUpUnit = modifiedUnit;
+        const backUpUnit = JSON.parse(JSON.stringify(unit));
         // Create modified attributes for the copy
 
-        const currentEffects = Array.isArray(modifiedUnit.effects)
-          ? modifiedUnit.effects
-          : [];
+        const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
+
+        const casterDeepCopy = JSON.parse(JSON.stringify(caster));
+
+        const unitDeepCopy = JSON.parse(JSON.stringify(unit));
 
         // const newHp = Math.max(0, modifiedUnit.hp - (5 * caster.atk));
 
@@ -153,8 +152,8 @@ const mahalaprayaMicroAction = new MicroAction({
           typeOfAttackCausingIt: "Skill",
           proportionOfMagicUsed: 1, // 30% of magic
           proportionOfStrengthUsed: 0, // 120% of strength
-          attacker: caster,
-          defender: modifiedUnit,
+          attacker: casterDeepCopy,
+          defender: unitDeepCopy,
           gameState: gameState,
           integratedAttackMultiplier: 5,
           integratedAttackFlatBonus: 0,
@@ -162,10 +161,14 @@ const mahalaprayaMicroAction = new MicroAction({
         const initiationResults = combat.initiateCombat();
         // Store only the necessary combat data, avoiding circular references
         caster.combatSent = JSON.parse(JSON.stringify(combat.combatResults));
-        console.log(caster.combatSent);
-        modifiedUnit.combatReceived = JSON.parse(
-          JSON.stringify(combat.combatResults)
-        );
+        console.log("Sent combat:", caster.combatSent);
+
+        unit.combatReceived = JSON.parse(JSON.stringify(combat.combatResults));
+        console.log("received combat:", unit.combatReceived);
+
+        // modifiedUnit.combatReceived = JSON.parse(
+        //   JSON.stringify(combat.combatResults)
+        // );
 
         const newEffect = {
           name: "uwu",
@@ -176,13 +179,16 @@ const mahalaprayaMicroAction = new MicroAction({
 
         // Modify the copy
         // modifiedUnit.hp = newHp;
-        modifiedUnit.effects = [...currentEffects, newEffect];
+        unit.effectsReceived = [...currentEffects, newEffect];
 
         console.log("Applying effect to unit:", {
           unitName: unit.name,
           current: unit.hp,
           newEffect,
         });
+
+        // Create a copy of the unit for statusIfHit
+        const modifiedUnit = JSON.parse(JSON.stringify(unit));
 
         return {
           ...unit,
