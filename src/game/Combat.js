@@ -57,6 +57,27 @@ export class Combat {
         physical: 0,
         total: 0,
       },
+      response: {
+        hitWithLuck_attacker: {
+          done: false,
+          success: false,
+        },
+        evadeWithLuck_defender: {
+          done: false,
+          success: false,
+        },
+        AgiEvasion_defender: {
+          done: false,
+          success: false,
+        },
+        evadeWithCS_defender: {
+          done: false,
+          success: false,
+        },
+        currentStep: 1,
+        readyToConfirm: false,
+        awaitingAttacker: false,
+      },
       typeOfAttackCausingIt: this.typeOfAttackCausingIt,
       proportionOfMagicUsed: this.proportionOfMagicUsed,
       attacker: this.attacker,

@@ -242,19 +242,26 @@ const handleMessage = (bytes, uuid) => {
                 ...unit,
                 combatSent: {
                   ...unit.combatSent,
-                  response,
+                  response: message.response,
                 },
               };
             }
+            console.log("Loading in server response for Attacker:", {
+              response: message.response,
+            });
+
             if (unit.id === defenderId) {
               return {
                 ...unit,
                 combatReceived: {
                   ...unit.combatReceived,
-                  response,
+                  response: message.response,
                 },
               };
             }
+            console.log("Loading in server response for Defender:", {
+              response: message.response,
+            });
             return unit;
           });
 
