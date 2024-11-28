@@ -72,6 +72,12 @@ const TacticalGame = ({ username, roomId }) => {
   const [showLuckCheckOption, setShowLuckCheckOption] = useState(false);
   const [checkHistory, setCheckHistory] = useState(null);
   const [currentCombatResponse, setCurrentCombatResponse] = useState(null);
+  const [activeCheck, setActiveCheck] = useState(null);
+  const [checkResult, setCheckResult] = useState(null);
+  const [showLuckOption, setShowLuckOption] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [awaitingAttacker, setAwaitingAttacker] = useState(false);
+  const [readyToConfirm, setReadyToConfirm] = useState(false);
 
   const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
@@ -369,17 +375,6 @@ const TacticalGame = ({ username, roomId }) => {
   };
 
   const CombatManagementMenu = ({ unit, onClose }) => {
-    const [activeCheck, setActiveCheck] = useState(null);
-    const [checkResult, setCheckResult] = useState(null);
-    const [showLuckOption, setShowLuckOption] = useState(false);
-    const [currentStep, setCurrentStep] = useState(
-      unit.combatReceived?.currentStep || 1
-    );
-    const [awaitingAttacker, setAwaitingAttacker] = useState(
-      unit.combatReceived?.awaitingAttacker || false
-    );
-    const [readyToConfirm, setReadyToConfirm] = useState(false);
-
     useEffect(() => {
       console.log("Current step changed:", currentStep);
       console.log("Awaiting attacker:", awaitingAttacker);
@@ -504,6 +499,9 @@ const TacticalGame = ({ username, roomId }) => {
         currentStep: currentStep,
         awaitingAttacker: awaitingAttacker,
       });
+      setAwaitingAttacker(updatedResponse.awaitingAttacker);
+      setCurrentStep(updatedResponse.currentStep);
+      setReadyToConfirm(updatedResponse.readyToConfirm);
     };
 
     const handleDoNothing = () => {
@@ -691,19 +689,29 @@ const TacticalGame = ({ username, roomId }) => {
           done: true,
           success: agilityCheck.success,
         },
+        currentStep: 2,
+        readyToConfirm: false,
+        awaitingAttacker: false,
       };
+
       console.log("Updating combat response:", updatedResponse);
-      updateCombatResponse(updatedResponse);
+
       if (!agilityCheck.success) {
         console.log("Failed agility check, moving to step 2");
         setCurrentStep(2);
         setReadyToConfirm(false);
         setAwaitingAttacker(false);
+        updateCombatResponse(updatedResponse);
       } else {
         console.log("Successful agility check, awaiting attacker");
         setAwaitingAttacker(true);
         setCurrentStep(2);
         setReadyToConfirm(false);
+        const updatedResponse2 = {
+          ...updatedResponse,
+          awaitingAttacker: true,
+        };
+        updateCombatResponse(updatedResponse2);
       }
     };
 
