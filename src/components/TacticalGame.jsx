@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Swords,
   Send,
+  Target,
 } from "lucide-react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import { createMahalapraya } from "../game/skills/Mahalapraya";
@@ -82,6 +83,8 @@ const TacticalGame = ({ username, roomId }) => {
   const [showCombatSelection, setShowCombatSelection] = useState(false);
   const [showSentCombatManagement, setShowSentCombatManagement] =
     useState(false);
+  const [showCombatTargets, setShowCombatTargets] = useState(false);
+  const [selectedCombatTarget, setSelectedCombatTarget] = useState(null);
 
   const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
@@ -909,6 +912,72 @@ const TacticalGame = ({ username, roomId }) => {
               <CheckHistoryDisplay checks={unit.luckChecks} type="Luck" />
             </div>
           )}
+        </div>
+      </div>
+    );
+  };
+
+  const CombatTargetsMenu = ({ unit, onClose, onSelectTarget }) => {
+    // Get array of all combats from combatSent
+    const sentCombats = Object.values(unit.combatSent || {});
+
+    // Function to find the actual defender unit from gameState
+    const getDefenderUnit = (defenderId) => {
+      return gameState.units.find((u) => u.id === defenderId);
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-[800px]">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">Select Combat Target</h3>
+            <button className="p-2 hover:bg-gray-100 rounded" onClick={onClose}>
+              ✕
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
+            {sentCombats.map((combat) => {
+              const defender = getDefenderUnit(combat.defender.id);
+
+              return (
+                <button
+                  key={combat.defender.id}
+                  onClick={() => onSelectTarget(combat)}
+                  className="border-2 border-green-500 rounded-lg p-4 flex flex-col items-center justify-center gap-4 
+                            hover:bg-green-50 transition-all h-48"
+                >
+                  <div className="relative">
+                    <User size={48} className="text-green-500" />
+                    <Target
+                      size={24}
+                      className="text-red-500 absolute -bottom-2 -right-2"
+                    />
+                  </div>
+                  <div className="text-center">
+                    <h4 className="text-lg font-semibold mb-2">
+                      {defender?.name || `Target ${combat.defender.id}`}
+                    </h4>
+                    <p className="text-sm text-gray-600">
+                      Attack Composition:
+                      {combat.attackComposition.magicalPortion > 0 &&
+                        " Magical"}
+                      {combat.attackComposition.magicalPortion > 0 &&
+                        combat.attackComposition.physicalPortion > 0 &&
+                        " +"}
+                      {combat.attackComposition.physicalPortion > 0 &&
+                        " Physical"}
+                    </p>
+                    {combat.criticals && (
+                      <p className="text-sm text-gray-600">
+                        Crit Chance: {combat.criticals.chance}%
+                      </p>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
@@ -2542,6 +2611,21 @@ const TacticalGame = ({ username, roomId }) => {
           }}
           onSelectSent={() => {
             setShowCombatSelection(false);
+            setShowCombatTargets(true);
+          }}
+        />
+      )}
+
+      {showCombatTargets && activeUnit && (
+        <CombatTargetsMenu
+          unit={activeUnit}
+          onClose={() => {
+            setShowCombatTargets(false);
+            setSelectedCombatTarget(null);
+          }}
+          onSelectTarget={(combat) => {
+            setShowCombatTargets(false);
+            setSelectedCombatTarget(combat);
             setShowSentCombatManagement(true);
           }}
         />
@@ -2554,10 +2638,14 @@ const TacticalGame = ({ username, roomId }) => {
         />
       )}
 
-      {showSentCombatManagement && activeUnit && (
+      {showSentCombatManagement && activeUnit && selectedCombatTarget && (
         <CombatManagementMenuForSent
           unit={activeUnit}
-          onClose={() => setShowSentCombatManagement(false)}
+          combat={selectedCombatTarget}
+          onClose={() => {
+            setShowSentCombatManagement(false);
+            setSelectedCombatTarget(null);
+          }}
         />
       )}
 
