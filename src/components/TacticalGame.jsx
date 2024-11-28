@@ -10,6 +10,7 @@ import {
   User,
   MoreHorizontal,
   Swords,
+  Send,
 } from "lucide-react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import { createMahalapraya } from "../game/skills/Mahalapraya";
@@ -78,6 +79,9 @@ const TacticalGame = ({ username, roomId }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [awaitingAttacker, setAwaitingAttacker] = useState(false);
   const [readyToConfirm, setReadyToConfirm] = useState(false);
+  const [showCombatSelection, setShowCombatSelection] = useState(false);
+  const [showSentCombatManagement, setShowSentCombatManagement] =
+    useState(false);
 
   const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
@@ -910,6 +914,81 @@ const TacticalGame = ({ username, roomId }) => {
     );
   };
 
+  const CombatSelectionMenu = ({
+    unit,
+    onClose,
+    onSelectReceived,
+    onSelectSent,
+  }) => {
+    const hasCombatSent = Object.keys(unit.combatSent || {}).length > 0;
+    const hasCombatReceived = Object.keys(unit.combatReceived || {}).length > 0;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-[800px]">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">Combat Management</h3>
+            <button className="p-2 hover:bg-gray-100 rounded" onClick={onClose}>
+              ✕
+            </button>
+          </div>
+
+          <div className="flex gap-6 h-64">
+            {/* Received Combat Square */}
+            <button
+              onClick={hasCombatReceived ? onSelectReceived : undefined}
+              className={`flex-1 border-2 rounded-lg p-4 flex flex-col items-center justify-center gap-4 transition-all
+                ${
+                  hasCombatReceived
+                    ? "border-blue-500 hover:bg-blue-50 cursor-pointer"
+                    : "border-gray-200 opacity-50 cursor-not-allowed"
+                }`}
+            >
+              <Shield
+                size={48}
+                className={
+                  hasCombatReceived ? "text-blue-500" : "text-gray-400"
+                }
+              />
+              <div className="text-center">
+                <h4 className="text-lg font-semibold mb-2">Received Combat</h4>
+                <p className="text-sm text-gray-600">
+                  {hasCombatReceived
+                    ? "Click to manage incoming combat"
+                    : "No incoming combat to manage"}
+                </p>
+              </div>
+            </button>
+
+            {/* Sent Combat Square */}
+            <button
+              onClick={hasCombatSent ? onSelectSent : undefined}
+              className={`flex-1 border-2 rounded-lg p-4 flex flex-col items-center justify-center gap-4 transition-all
+                ${
+                  hasCombatSent
+                    ? "border-green-500 hover:bg-green-50 cursor-pointer"
+                    : "border-gray-200 opacity-50 cursor-not-allowed"
+                }`}
+            >
+              <Send
+                size={48}
+                className={hasCombatSent ? "text-green-500" : "text-gray-400"}
+              />
+              <div className="text-center">
+                <h4 className="text-lg font-semibold mb-2">Sent Combat</h4>
+                <p className="text-sm text-gray-600">
+                  {hasCombatSent
+                    ? "Click to manage outgoing combat"
+                    : "No outgoing combat to manage"}
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const ReceiveAttackButton = ({ unit }) => {
     const handleReceiveAttack = () => {
       const currentAttacker = gameState.units.find(
@@ -1421,7 +1500,7 @@ const TacticalGame = ({ username, roomId }) => {
         <button
           className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
           onClick={() => {
-            setShowCombatManagement(true);
+            setShowCombatSelection(true);
             setContextMenu(null);
           }}
         >
@@ -2453,10 +2532,32 @@ const TacticalGame = ({ username, roomId }) => {
       {showNPMenu && activeUnit && <NoblePhantasmMenu unit={activeUnit} />}
       {showProfile && activeUnit && <ProfileSheet unit={activeUnit} />}
 
+      {showCombatSelection && activeUnit && (
+        <CombatSelectionMenu
+          unit={activeUnit}
+          onClose={() => setShowCombatSelection(false)}
+          onSelectReceived={() => {
+            setShowCombatSelection(false);
+            setShowCombatManagement(true);
+          }}
+          onSelectSent={() => {
+            setShowCombatSelection(false);
+            setShowSentCombatManagement(true);
+          }}
+        />
+      )}
+
       {showCombatManagement && activeUnit && (
         <CombatManagementMenu
           unit={activeUnit}
           onClose={() => setShowCombatManagement(false)}
+        />
+      )}
+
+      {showSentCombatManagement && activeUnit && (
+        <CombatManagementMenuForSent
+          unit={activeUnit}
+          onClose={() => setShowSentCombatManagement(false)}
         />
       )}
 
