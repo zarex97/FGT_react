@@ -104,6 +104,7 @@ const CombatManagementMenu = ({ unit, onClose }) => {
     setAwaitingAttacker(updatedResponse.awaitingAttacker);
     setCurrentStep(updatedResponse.currentStep);
     setReadyToConfirm(updatedResponse.readyToConfirm);
+    setAwaitingDefender(updatedResponse.awaitingDefender);
   };
 
   const handleDoNothing = () => {
@@ -286,6 +287,7 @@ const CombatManagementMenu = ({ unit, onClose }) => {
       currentStep: 2,
       readyToConfirm: false,
       awaitingAttacker: false,
+      awaitingDefender: true,
     };
 
     console.log("Updating combat response:", updatedResponse);
@@ -295,15 +297,18 @@ const CombatManagementMenu = ({ unit, onClose }) => {
       setCurrentStep(2);
       setReadyToConfirm(false);
       setAwaitingAttacker(false);
+      setAwaitingDefender(true);
       updateCombatResponse(updatedResponse);
     } else {
       console.log("Successful agility check, awaiting attacker");
       setAwaitingAttacker(true);
       setCurrentStep(2);
       setReadyToConfirm(false);
+      setAwaitingDefender(false);
       const updatedResponse2 = {
         ...updatedResponse,
         awaitingAttacker: true,
+        awaitingDefender: false,
       };
       updateCombatResponse(updatedResponse2);
     }
@@ -328,9 +333,10 @@ const CombatManagementMenu = ({ unit, onClose }) => {
         done: true,
         success: luckCheck.success,
       },
-      currentStep: 2,
-      awaitingAttacker: true,
-      readyToConfirm: false,
+      currentStep: 3,
+      awaitingAttacker: false,
+      readyToConfirm: true,
+      awaitingDefender: true,
     };
 
     console.log(
@@ -338,8 +344,28 @@ const CombatManagementMenu = ({ unit, onClose }) => {
       unit.combatReceived.response
     );
 
-    setAwaitingAttacker(true);
-    updateCombatResponse(updatedResponse);
+    if (!luckCheck.success) {
+      console.log("Failed luck check, moving to step 3");
+      setCurrentStep(3);
+      setReadyToConfirm(true);
+      setAwaitingAttacker(false);
+      setAwaitingDefender(true);
+      updateCombatResponse(updatedResponse);
+    } else {
+      console.log("Successful luck check, awaiting attacker");
+      setAwaitingAttacker(true);
+      setCurrentStep(2);
+      setReadyToConfirm(false);
+      setAwaitingDefender(false);
+      const updatedResponse2 = {
+        ...updatedResponse,
+        currentStep: 2,
+        awaitingAttacker: true,
+        awaitingDefender: false,
+        readyToConfirm: false,
+      };
+      updateCombatResponse(updatedResponse2);
+    }
   };
 
   const handleCommandSeal = () => {

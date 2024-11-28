@@ -1,5 +1,5 @@
 //TacticalGame.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Sword,
   Shield,
@@ -183,6 +183,8 @@ const TacticalGame = ({ username, roomId }) => {
               canCounter: false,
               agilityChecks: null,
               luckChecks: null,
+              baseAgility: 8,
+              baseLuck: 18,
             },
           ],
         });
@@ -488,6 +490,7 @@ const TacticalGame = ({ username, roomId }) => {
       setAwaitingAttacker(updatedResponse.awaitingAttacker);
       setCurrentStep(updatedResponse.currentStep);
       setReadyToConfirm(updatedResponse.readyToConfirm);
+      setAwaitingDefender(updatedResponse.awaitingDefender);
     };
 
     const handleDoNothing = () => {
@@ -678,6 +681,7 @@ const TacticalGame = ({ username, roomId }) => {
         currentStep: 2,
         readyToConfirm: false,
         awaitingAttacker: false,
+        awaitingDefender: true,
       };
 
       console.log("Updating combat response:", updatedResponse);
@@ -687,15 +691,18 @@ const TacticalGame = ({ username, roomId }) => {
         setCurrentStep(2);
         setReadyToConfirm(false);
         setAwaitingAttacker(false);
+        setAwaitingDefender(true);
         updateCombatResponse(updatedResponse);
       } else {
         console.log("Successful agility check, awaiting attacker");
         setAwaitingAttacker(true);
         setCurrentStep(2);
         setReadyToConfirm(false);
+        setAwaitingDefender(false);
         const updatedResponse2 = {
           ...updatedResponse,
           awaitingAttacker: true,
+          awaitingDefender: false,
         };
         updateCombatResponse(updatedResponse2);
       }
@@ -720,9 +727,10 @@ const TacticalGame = ({ username, roomId }) => {
           done: true,
           success: luckCheck.success,
         },
-        currentStep: 2,
-        awaitingAttacker: true,
-        readyToConfirm: false,
+        currentStep: 3,
+        awaitingAttacker: false,
+        readyToConfirm: true,
+        awaitingDefender: true,
       };
 
       console.log(
@@ -730,8 +738,28 @@ const TacticalGame = ({ username, roomId }) => {
         unit.combatReceived.response
       );
 
-      setAwaitingAttacker(true);
-      updateCombatResponse(updatedResponse);
+      if (!luckCheck.success) {
+        console.log("Failed luck check, moving to step 3");
+        setCurrentStep(3);
+        setReadyToConfirm(true);
+        setAwaitingAttacker(false);
+        setAwaitingDefender(true);
+        updateCombatResponse(updatedResponse);
+      } else {
+        console.log("Successful luck check, awaiting attacker");
+        setAwaitingAttacker(true);
+        setCurrentStep(2);
+        setReadyToConfirm(false);
+        setAwaitingDefender(false);
+        const updatedResponse2 = {
+          ...updatedResponse,
+          currentStep: 2,
+          awaitingAttacker: true,
+          awaitingDefender: false,
+          readyToConfirm: false,
+        };
+        updateCombatResponse(updatedResponse2);
+      }
     };
 
     const handleCommandSeal = () => {
@@ -981,28 +1009,108 @@ const TacticalGame = ({ username, roomId }) => {
       </div>
     );
   };
-  const CombatManagementMenuForSent = ({ unit, combat, onClose }) => {
+
+  const CombatManagementMenuForSent = ({ unit, defenderId, onClose }) => {
+    // // Get fresh combat data from unit's combatSent array
+    // const comba1 = useMemo(() => {
+    //   return unit.combatSent.find((c) => c.defender.id === defenderId);
+    // }, [unit.combatSent, defenderId]);
+    const defender = gameState.units.find((u) => u.id === defenderId);
+    const combat = defender?.combatReceived;
+
+    console.log("combat obtained on MenuForSent:", combat);
+
     // Effect to watch for defender's initial response
     useEffect(() => {
+      if (!combat) return;
+      console.log("Effect triggered. Combat response:", combat.response);
+
       if (combat.response?.AgiEvasion_defender?.done) {
-        setAwaitingDefender(false);
         if (combat.response.AgiEvasion_defender.success) {
+          // If defender succeeds agility check, show attacker luck hit options
+          console.log(
+            "Defender succeeded agility check - showing luck hit options"
+          );
+          setAwaitingDefender(false);
+          setAwaitingAttacker(true);
           setCurrentStep(2);
+          setReadyToConfirm(false);
         } else {
+          // If defender fails agility check, wait for their luck evade attempt
+          console.log("Defender failed agility check - waiting for luck evade");
+          setAwaitingDefender(true);
+          setAwaitingAttacker(false);
+          setCurrentStep(1);
+          setReadyToConfirm(false);
+        }
+      }
+    }, [combat.response?.AgiEvasion_defender]);
+
+    // Second useEffect - Handle defender's luck evade after failed agility
+    useEffect(() => {
+      if (!combat) return;
+      if (
+        combat.response?.evadeWithLuck_defender?.done &&
+        !combat.response?.AgiEvasion_defender?.success
+      ) {
+        if (combat.response.evadeWithLuck_defender.success) {
+          // If defender succeeds luck evade after failed agility, show attacker options
+          console.log(
+            "Defender succeeded luck evade after failed agility - showing luck hit options"
+          );
+          setAwaitingDefender(false);
+          setAwaitingAttacker(true);
+          setCurrentStep(2);
+          setReadyToConfirm(false);
+        } else {
+          // If defender fails luck evade after failed agility, move to confirmation
+          console.log(
+            "Defender failed luck evade after failed agility - moving to confirmation"
+          );
+          setAwaitingDefender(false);
+          setAwaitingAttacker(false);
           setCurrentStep(3);
           setReadyToConfirm(true);
         }
       }
-    }, [combat.response?.AgiEvasion_defender?.done]);
+    }, [
+      combat.response?.evadeWithLuck_defender,
+      combat.response?.AgiEvasion_defender,
+    ]);
 
-    // Effect to watch for defender's luck response
+    // Third useEffect - Handle defender's luck evade after attacker's luck hit
     useEffect(() => {
-      if (combat.response?.evadeWithLuck_defender?.done) {
+      if (!combat) return;
+      if (
+        combat.response?.hitWithLuck_attacker?.success &&
+        combat.response?.evadeWithLuck_defender?.done
+      ) {
+        // After defender responds to our luck hit, always move to confirmation
+        console.log("Defender responded to luck hit - moving to confirmation");
         setAwaitingDefender(false);
+        setAwaitingAttacker(false);
         setCurrentStep(3);
         setReadyToConfirm(true);
       }
-    }, [combat.response?.evadeWithLuck_defender?.done]);
+    }, [
+      combat.response?.hitWithLuck_attacker,
+      combat.response?.evadeWithLuck_defender,
+    ]);
+    // fourth useEffect - Handle defender's luck evade after attacker's luck hit
+    useEffect(() => {
+      if (!combat) return;
+      if (
+        !combat.response?.hitWithLuck_attacker?.success &&
+        combat.response?.hitWithLuck_attacker?.done
+      ) {
+        // If the luck hits fails, there is nothing else to do on the attacker part,  move to confirmation
+        console.log("Luck hit failed - moving to confirmation");
+        setAwaitingDefender(false);
+        setAwaitingAttacker(false);
+        setCurrentStep(3);
+        setReadyToConfirm(true);
+      }
+    }, [combat.response?.hitWithLuck_attacker]);
 
     const performCheck = (type) => {
       const baseRoll = Math.floor(Math.random() * 20) + 1;
@@ -1047,17 +1155,35 @@ const TacticalGame = ({ username, roomId }) => {
         },
         currentStep: 2,
         awaitingDefender: true,
-        readyToConfirm: false,
+        awaitingAttacker: false,
       };
 
       if (luckCheck.success) {
-        setAwaitingDefender(true);
-        setCurrentStep(2);
-        setReadyToConfirm(false);
-        updateCombatResponse(updatedResponse);
+        //if the luck hit succeeds but the luck evasion also succeeded we should go straight to the confirmation view
+        if (updatedResponse.evadeWithLuck_defender.success) {
+          setCurrentStep(3);
+          setReadyToConfirm(true);
+          setAwaitingDefender(false);
+          const updatedResponse2 = {
+            ...updatedResponse,
+            currentStep: 3,
+            awaitingDefender: false,
+            readyToConfirm: true,
+          };
+          updateCombatResponse(updatedResponse2);
+        }
+        //instead, if the luck hit succeeds but the luck evasion has not been done yet, then the defender should have a chance to try it
+        if (!updatedResponse.evadeWithLuck_defender.done) {
+          setAwaitingDefender(true);
+          setAwaitingAttacker(false);
+          setCurrentStep(2);
+          updateCombatResponse(updatedResponse);
+        }
       } else {
+        // if the lucky hit failed it goes straight into step 3, as there is nothing else the attacker may do (hit with CS in the future, maybe?) nor anything else the defender must
         setCurrentStep(3);
         setReadyToConfirm(true);
+        setAwaitingDefender(false);
         const updatedResponse2 = {
           ...updatedResponse,
           currentStep: 3,
@@ -1086,9 +1212,10 @@ const TacticalGame = ({ username, roomId }) => {
         response: updatedResponse,
       });
 
-      setAwaitingAttacker(updatedResponse.awaitingAttacker);
       setCurrentStep(updatedResponse.currentStep);
       setReadyToConfirm(updatedResponse.readyToConfirm);
+      setAwaitingDefender(updatedResponse.awaitingDefender);
+      setAwaitingAttacker(updatedResponse.awaitingAttacker);
     };
 
     const handleDoNothing = () => {
@@ -1205,7 +1332,7 @@ const TacticalGame = ({ username, roomId }) => {
             )}
 
             {/* Step 2: After Defender's Evasion */}
-            {currentStep === 2 && !awaitingDefender && (
+            {currentStep === 2 && (!awaitingDefender || awaitingAttacker) && (
               <div className="flex gap-2 mt-4">
                 <button
                   onClick={handleLuckHit}
@@ -2956,7 +3083,7 @@ const TacticalGame = ({ username, roomId }) => {
       {showSentCombatManagement && activeUnit && selectedCombatTarget && (
         <CombatManagementMenuForSent
           unit={activeUnit}
-          combat={selectedCombatTarget}
+          defenderId={selectedCombatTarget.defender.id}
           onClose={() => {
             setShowSentCombatManagement(false);
             setSelectedCombatTarget(null);
