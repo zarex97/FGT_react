@@ -2,15 +2,35 @@ const CombatManagementMenuForSent = ({ unit, combat, onClose }) => {
   // Effect to watch for defender's initial response
   useEffect(() => {
     if (combat.response?.AgiEvasion_defender?.done) {
-      setAwaitingDefender(false);
       if (combat.response.AgiEvasion_defender.success) {
+        setAwaitingDefender(false);
         setCurrentStep(2);
       } else {
-        setCurrentStep(3);
-        setReadyToConfirm(true);
+        setAwaitingDefender(true);
+        setCurrentStep(2);
       }
     }
   }, [combat.response?.AgiEvasion_defender?.done]);
+
+  // useEffect(() => {
+  //   // If we have a successful agility evasion and attacker tries a luck hit
+  //   if (
+  //     combat.response?.AgiEvasion_defender?.success &&
+  //     combat.response?.hitWithLuck_attacker?.done
+  //   ) {
+  //     setAwaitingAttacker(false);
+  //     // If attacker succeeded with luck hit, show luck evade option
+  //     if (
+  //       combat.response?.hitWithLuck_attacker.success &&
+  //       !combat.response?.evadeWithLuck_defender?.done
+  //     ) {
+  //       setCurrentStep(2);
+  //     } else {
+  //       setCurrentStep(3);
+  //       setReadyToConfirm(true);
+  //     }
+  //   }
+  // }, [unit.combatReceived?.response]);
 
   // Effect to watch for defender's luck response
   useEffect(() => {
@@ -64,17 +84,18 @@ const CombatManagementMenuForSent = ({ unit, combat, onClose }) => {
       },
       currentStep: 2,
       awaitingDefender: true,
-      readyToConfirm: false,
+      awaitingAttacker: false,
     };
 
     if (luckCheck.success) {
       setAwaitingDefender(true);
+      setAwaitingAttacker(false);
       setCurrentStep(2);
-      setReadyToConfirm(false);
       updateCombatResponse(updatedResponse);
     } else {
       setCurrentStep(3);
       setReadyToConfirm(true);
+      setAwaitingDefender(false);
       const updatedResponse2 = {
         ...updatedResponse,
         currentStep: 3,
@@ -103,9 +124,10 @@ const CombatManagementMenuForSent = ({ unit, combat, onClose }) => {
       response: updatedResponse,
     });
 
-    setAwaitingAttacker(updatedResponse.awaitingAttacker);
     setCurrentStep(updatedResponse.currentStep);
     setReadyToConfirm(updatedResponse.readyToConfirm);
+    setAwaitingDefender(updatedResponse.awaitingDefender);
+    setAwaitingAttacker(updatedResponse.awaitingAttacker);
   };
 
   const handleDoNothing = () => {
@@ -218,7 +240,7 @@ const CombatManagementMenuForSent = ({ unit, combat, onClose }) => {
           )}
 
           {/* Step 2: After Defender's Evasion */}
-          {currentStep === 2 && !awaitingDefender && (
+          {currentStep === 2 && (!awaitingDefender || awaitingAttacker) && (
             <div className="flex gap-2 mt-4">
               <button
                 onClick={handleLuckHit}
