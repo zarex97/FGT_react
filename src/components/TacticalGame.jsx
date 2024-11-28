@@ -372,9 +372,72 @@ const TacticalGame = ({ username, roomId }) => {
     const [activeCheck, setActiveCheck] = useState(null);
     const [checkResult, setCheckResult] = useState(null);
     const [showLuckOption, setShowLuckOption] = useState(false);
+    const [currentStep, setCurrentStep] = useState(
+      unit.combatReceived?.currentStep || 1
+    );
+    const [awaitingAttacker, setAwaitingAttacker] = useState(
+      unit.combatReceived?.awaitingAttacker || false
+    );
+    const [readyToConfirm, setReadyToConfirm] = useState(false);
+
+    useEffect(() => {
+      console.log("Current step changed:", currentStep);
+      console.log("Awaiting attacker:", awaitingAttacker);
+      console.log("Combat response:", unit.combatReceived?.response);
+    }, [currentStep, awaitingAttacker, unit.combatReceived?.response]);
+
+    // Add effect to watch for attacker's response
+    useEffect(() => {
+      if (unit.combatReceived?.response?.hitWithLuck_attacker?.done) {
+        setAwaitingAttacker(false);
+        setCurrentStep(3);
+      }
+    }, [unit.combatReceived?.response?.hitWithLuck_attacker?.done]);
+
+    useEffect(() => {
+      // If we have a successful agility evasion and attacker tries a luck hit
+      if (
+        unit.combatReceived?.response?.AgiEvasion_defender?.success &&
+        unit.combatReceived?.response?.hitWithLuck_attacker?.done
+      ) {
+        setAwaitingAttacker(false);
+        // If attacker succeeded with luck hit, show luck evade option
+        if (
+          unit.combatReceived.response.hitWithLuck_attacker.success &&
+          !unit.combatReceived.response.evadeWithLuck_defender?.done
+        ) {
+          setCurrentStep(2);
+        } else {
+          setCurrentStep(3);
+          setReadyToConfirm(true);
+        }
+      }
+    }, [unit.combatReceived?.response]);
+
+    useEffect(() => {
+      // When combat state changes, preserve our current step
+      if (unit.combatReceived?.response) {
+        // Don't reset to step 1 if we're already in a later step
+        if (currentStep === 1) {
+          if (unit.combatReceived.response.AgiEvasion_defender?.done) {
+            if (!unit.combatReceived.response.AgiEvasion_defender.success) {
+              setCurrentStep(2);
+            } else {
+              setAwaitingAttacker(true);
+              setCurrentStep(2);
+            }
+          }
+        }
+      }
+    }, [unit.combatReceived?.response]);
+
+    // And add a state to track if we've processed the initial response
+    const [hasProcessedResponse, setHasProcessedResponse] = useState(false);
 
     // Add safety checks for required properties
-    const hasCombat = Boolean(unit.combatReceived);
+    const hasCombat =
+      Object.keys(unit.combatReceived).length > 0 ||
+      Object.keys(unit.combatSent).length > 0;
 
     if (!hasCombat) {
       return (
@@ -394,6 +457,54 @@ const TacticalGame = ({ username, roomId }) => {
         </div>
       );
     }
+
+    const determineOutcome = (response) => {
+      // Command Seal auto-wins
+      if (response.evadeWithCS_defender?.success) {
+        return "evade";
+      }
+
+      // Check Luck tier
+      const attackerLuckSuccess = response.hitWithLuck_attacker?.success;
+      const defenderLuckSuccess = response.evadeWithLuck_defender?.success;
+
+      if (attackerLuckSuccess && !defenderLuckSuccess) {
+        return "hit";
+      }
+      if (!attackerLuckSuccess && defenderLuckSuccess) {
+        return "evade";
+      }
+      if (attackerLuckSuccess && defenderLuckSuccess) {
+        // Luck cancels out, check Agility
+        return response.AgiEvasion_defender?.success ? "evade" : "hit";
+      }
+
+      // No luck checks or both failed, check Agility
+      return response.AgiEvasion_defender?.success ? "evade" : "hit";
+    };
+
+    const updateCombatResponse = (updatedResponse) => {
+      const attackerId = unit.combatReceived.attacker.id;
+      const defenderId = unit.id;
+
+      console.log("Sending combat response update:", {
+        attackerId,
+        defenderId,
+        response: updatedResponse,
+      });
+
+      // Update both attacker and defender combat information
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "UPDATE_COMBAT_RESPONSE",
+        attackerId,
+        defenderId,
+        response: updatedResponse,
+        // Add current state to preserve it
+        currentStep: currentStep,
+        awaitingAttacker: awaitingAttacker,
+      });
+    };
 
     const handleDoNothing = () => {
       const currentAttacker = gameState.units.find(
@@ -443,6 +554,13 @@ const TacticalGame = ({ username, roomId }) => {
       const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
       const newEffect = unit.effectsReceived;
 
+      //if existing, remove the blockdefense effect
+      if (currentDefender.effects) {
+        currentDefender.effects = currentDefender.effects.filter(
+          (e) => e.name !== "BlockDefense"
+        );
+      }
+
       const updatedUnit = {
         ...unit,
         hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
@@ -487,11 +605,27 @@ const TacticalGame = ({ username, roomId }) => {
         blockEffect,
       ];
 
-      // Proceed with combat resolution
-      handleDoNothing();
+      // Proceed with combat resolution - commented out after combat steps implementation
+      // handleDoNothing();
 
-      // Remove block effect
-      // Safely remove block effect
+      // Safely remove block effect - commented out and moved to removeBlockDefenseEffect after combat steps implementation
+      // if (currentDefender.effects) {
+      //   currentDefender.effects = currentDefender.effects.filter(
+      //     (e) => e.name !== "BlockDefense"
+      //   );
+      // }
+
+      setCurrentStep(3);
+      setReadyToConfirm(true);
+    };
+
+    const removeBlockDefenseEffect = () => {
+      const currentDefender = gameState.units.find(
+        (u) => u.id === unit.combatReceived.defender.id
+      );
+
+      if (!currentDefender) return;
+
       if (currentDefender.effects) {
         currentDefender.effects = currentDefender.effects.filter(
           (e) => e.name !== "BlockDefense"
@@ -537,21 +671,39 @@ const TacticalGame = ({ username, roomId }) => {
     };
 
     const handleEvade = async () => {
+      setHasProcessedResponse(true); // Add this line
+      console.log("Starting handleEvade");
       setActiveCheck("agility");
       const agilityCheck = performCheck("agility");
+      console.log("Agility check result:", agilityCheck);
 
       const updatedResponse = {
         ...(unit.combatReceived.response || {}),
+        hitWithLuck_attacker: {
+          done: false,
+          success: false,
+        },
+        evadeWithLuck_defender: {
+          done: false,
+          success: false,
+        },
         AgiEvasion_defender: {
           done: true,
           success: agilityCheck.success,
         },
       };
-
+      console.log("Updating combat response:", updatedResponse);
       updateCombatResponse(updatedResponse);
-
       if (!agilityCheck.success) {
-        setShowLuckOption(true);
+        console.log("Failed agility check, moving to step 2");
+        setCurrentStep(2);
+        setReadyToConfirm(false);
+        setAwaitingAttacker(false);
+      } else {
+        console.log("Successful agility check, awaiting attacker");
+        setAwaitingAttacker(true);
+        setCurrentStep(2);
+        setReadyToConfirm(false);
       }
     };
 
@@ -560,7 +712,7 @@ const TacticalGame = ({ username, roomId }) => {
       const luckCheck = performCheck("luck");
 
       const updatedResponse = {
-        ...unit.combatReceived.response,
+        ...(unit.combatReceived.response || {}),
         evadeWithLuck_defender: {
           done: true,
           success: luckCheck.success,
@@ -568,25 +720,21 @@ const TacticalGame = ({ username, roomId }) => {
       };
 
       updateCombatResponse(updatedResponse);
+      setAwaitingAttacker(true);
     };
 
     const handleCommandSeal = () => {
       const updatedResponse = {
-        AgiEvasion_defender: { done: true, success: true },
-        hitWithLuck_attacker: { done: false, success: false },
-        evadeWithLuck_defender: { done: false, success: false },
+        ...(unit.combatReceived.response || {}),
+        evadeWithCS_defender: {
+          done: true,
+          success: true,
+        },
       };
 
       updateCombatResponse(updatedResponse);
-
-      sendJsonMessage({
-        type: "GAME_ACTION",
-        action: "USE_COMMAND_SEAL",
-        unitId: unit.id,
-        purpose: "evade",
-      });
-
-      onClose();
+      setCurrentStep(3);
+      setReadyToConfirm(true);
     };
 
     return (
@@ -599,35 +747,47 @@ const TacticalGame = ({ username, roomId }) => {
             </button>
           </div>
 
-          {unit.combatReceived && (
+          {!hasCombat ? (
+            <p className="text-gray-600">No active combat to manage.</p>
+          ) : (
             <div className="space-y-4">
-              <div className="p-3 border rounded">
-                <h4 className="font-bold mb-2">Incoming Combat</h4>
-                <p>From: {unit.combatReceived.attacker.name}</p>
-                <p>Type: {unit.combatReceived.typeOfAttackCausingIt}</p>
-                <p>
-                  Potential Damage:{" "}
-                  {/* {unit.combatReceived.combatResults.finalDamage.total} */}
-                </p>
+              {/* Combat info - Always shown */}
+              {unit.combatReceived && (
+                <div className="p-3 border rounded">
+                  <h4 className="font-bold mb-2">Incoming Combat</h4>
+                  <p>From: {unit.combatReceived.attacker.name}</p>
+                  <p>Type: {unit.combatReceived.typeOfAttackCausingIt}</p>
+                  <p>
+                    Potential Damage: {unit.combatReceived.finalDamage.total}
+                  </p>
 
-                {unit.combatReceived.response && (
-                  <CombatResponse
-                    response={unit.combatReceived.response}
-                    combat={unit.combatReceived}
-                  />
-                )}
-              </div>
+                  {unit.combatReceived.response && (
+                    <CombatResponse
+                      response={unit.combatReceived.response}
+                      combat={unit.combatReceived}
+                    />
+                  )}
+                </div>
+              )}
 
-              {!unit.combatReceived.response && (
+              {/* Step 1: Initial Choice */}
+              {currentStep === 1 && !hasProcessedResponse && (
                 <div className="flex gap-2">
                   <button
-                    onClick={handleDoNothing}
+                    onClick={() => {
+                      setCurrentStep(3);
+                      setReadyToConfirm(true);
+                    }}
                     className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
                   >
                     Do Nothing
                   </button>
                   <button
-                    onClick={handleBlock}
+                    onClick={() => {
+                      handleBlock();
+                      setCurrentStep(3);
+                      setReadyToConfirm(true);
+                    }}
                     className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                   >
                     Block
@@ -641,23 +801,80 @@ const TacticalGame = ({ username, roomId }) => {
                 </div>
               )}
 
-              {showLuckOption && (
-                <div className="mt-4">
+              {/* Step 2: After Agility Check */}
+              {currentStep === 2 && !awaitingAttacker && (
+                <div className="flex gap-2 mt-4">
                   <button
                     onClick={handleLuckEvade}
                     className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+                    disabled={
+                      unit.combatReceived.response?.evadeWithLuck_defender?.done
+                    }
                   >
                     Try Luck Evasion
                   </button>
                   <button
                     onClick={handleCommandSeal}
-                    className="ml-2 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
                   >
                     Use Command Seal
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCurrentStep(3);
+                      setReadyToConfirm(true);
+                    }}
+                    className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                  >
+                    Skip
                   </button>
                 </div>
               )}
 
+              {/* Awaiting Attacker Response */}
+              {awaitingAttacker && (
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-center">
+                  <p className="text-yellow-700 font-semibold">
+                    Awaiting response from Attacker...
+                  </p>
+                  {unit.combatReceived.response?.evadeWithLuck_defender
+                    ?.done && (
+                    <button
+                      onClick={() => {
+                        setCurrentStep(3);
+                        setReadyToConfirm(true);
+                        setAwaitingAttacker(false);
+                      }}
+                      className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Continue
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Step 3: Confirmation */}
+              {currentStep === 3 && readyToConfirm && (
+                <div className="mt-4">
+                  <button
+                    onClick={() => {
+                      const outcome = determineOutcome(
+                        unit.combatReceived.response
+                      );
+                      if (outcome === "hit") {
+                        handleDoNothing();
+                      } else {
+                        onClose();
+                      }
+                    }}
+                    className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  >
+                    Confirm Results of Combat
+                  </button>
+                </div>
+              )}
+
+              {/* Check Result Display */}
               {checkResult && (
                 <div className="p-3 bg-gray-100 rounded">
                   <h4 className="font-bold">Check Result</h4>
@@ -679,6 +896,7 @@ const TacticalGame = ({ username, roomId }) => {
                 </div>
               )}
 
+              {/* History Displays */}
               <CheckHistoryDisplay checks={unit.agilityChecks} type="Agility" />
               <CheckHistoryDisplay checks={unit.luckChecks} type="Luck" />
             </div>
