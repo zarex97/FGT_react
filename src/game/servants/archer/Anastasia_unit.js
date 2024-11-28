@@ -132,6 +132,9 @@ const mahalaprayaMicroAction = new MicroAction({
       currentGameState: gameState,
     });
 
+    // Initialize combatSent as an array if it doesn't exist
+    caster.combatSent = [];
+
     const updatedUnits = gameState.units.map((unit) => {
       if (
         unit.team !== caster.team &&
@@ -160,7 +163,9 @@ const mahalaprayaMicroAction = new MicroAction({
         });
         const initiationResults = combat.initiateCombat();
         // Store only the necessary combat data, avoiding circular references
-        caster.combatSent = JSON.parse(JSON.stringify(combat.combatResults));
+        caster.combatSent.push(
+          JSON.parse(JSON.stringify(combat.combatResults))
+        );
         console.log("Sent combat:", caster.combatSent);
 
         unit.combatReceived = JSON.parse(JSON.stringify(combat.combatResults));
@@ -390,7 +395,7 @@ export const AnastasiaAttributes = {
   sustainability: "4",
   // Visual
   sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp",
-  combatSent: {},
+  combatSent: [],
   combatReceived: {},
   canCounter: false,
   agilityChecks: null,

@@ -238,17 +238,22 @@ const handleMessage = (bytes, uuid) => {
           // Update both attacker and defender's combat information
           room.gameState.units = room.gameState.units.map((unit) => {
             if (unit.id === attackerId) {
+              // Find the specific combat in the combatSent array that matches this defender
+              const updatedCombatSent = unit.combatSent.map((combat) => {
+                if (combat.defender.id === defenderId) {
+                  return {
+                    ...combat,
+                    response: message.response,
+                  };
+                }
+                return combat;
+              });
+
               return {
                 ...unit,
-                combatSent: {
-                  ...unit.combatSent,
-                  response: message.response,
-                },
+                combatSent: updatedCombatSent,
               };
             }
-            console.log("Loading in server response for Attacker:", {
-              response: message.response,
-            });
 
             if (unit.id === defenderId) {
               return {
@@ -259,9 +264,7 @@ const handleMessage = (bytes, uuid) => {
                 },
               };
             }
-            console.log("Loading in server response for Defender:", {
-              response: message.response,
-            });
+
             return unit;
           });
 
