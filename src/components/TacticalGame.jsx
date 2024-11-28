@@ -430,28 +430,9 @@ const TacticalGame = ({ username, roomId }) => {
     const [hasProcessedResponse, setHasProcessedResponse] = useState(false);
 
     // Add safety checks for required properties
-    const hasCombat =
-      Object.keys(unit.combatReceived).length > 0 ||
-      Object.keys(unit.combatSent).length > 0;
+    const hasCombatSent = Object.keys(unit.combatSent).length > 0;
 
-    if (!hasCombat) {
-      return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-4 w-[500px]">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold">Combat Management</h3>
-              <button
-                className="p-2 hover:bg-gray-100 rounded"
-                onClick={onClose}
-              >
-                ✕
-              </button>
-            </div>
-            <p className="text-gray-600">No active combat to manage.</p>
-          </div>
-        </div>
-      );
-    }
+    const hasCombatReceived = Object.keys(unit.combatReceived).length > 0;
 
     const determineOutcome = (response) => {
       // Command Seal auto-wins
@@ -495,9 +476,6 @@ const TacticalGame = ({ username, roomId }) => {
         attackerId,
         defenderId,
         response: updatedResponse,
-        // Add current state to preserve it
-        currentStep: currentStep,
-        awaitingAttacker: awaitingAttacker,
       });
       setAwaitingAttacker(updatedResponse.awaitingAttacker);
       setCurrentStep(updatedResponse.currentStep);
@@ -719,16 +697,33 @@ const TacticalGame = ({ username, roomId }) => {
       setActiveCheck("luck");
       const luckCheck = performCheck("luck");
 
+      console.log(
+        "Current combat response before updateResponseCreation (handleLuck):",
+        unit.combatReceived.response
+      );
+
+      const currentDefender = gameState.units.find(
+        (u) => u.id === unit.combatReceived.defender.id
+      );
+
       const updatedResponse = {
-        ...(unit.combatReceived.response || {}),
+        ...currentDefender.combatReceived.response,
         evadeWithLuck_defender: {
           done: true,
           success: luckCheck.success,
         },
+        currentStep: 2,
+        awaitingAttacker: true,
+        readyToConfirm: false,
       };
 
-      updateCombatResponse(updatedResponse);
+      console.log(
+        "Current combat response after updateResponseCreation (handleLuck):",
+        unit.combatReceived.response
+      );
+
       setAwaitingAttacker(true);
+      updateCombatResponse(updatedResponse);
     };
 
     const handleCommandSeal = () => {
@@ -755,7 +750,7 @@ const TacticalGame = ({ username, roomId }) => {
             </button>
           </div>
 
-          {!hasCombat ? (
+          {!hasCombatReceived ? (
             <p className="text-gray-600">No active combat to manage.</p>
           ) : (
             <div className="space-y-4">
@@ -779,35 +774,37 @@ const TacticalGame = ({ username, roomId }) => {
               )}
 
               {/* Step 1: Initial Choice */}
-              {currentStep === 1 && !hasProcessedResponse && (
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      setCurrentStep(3);
-                      setReadyToConfirm(true);
-                    }}
-                    className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-                  >
-                    Do Nothing
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleBlock();
-                      setCurrentStep(3);
-                      setReadyToConfirm(true);
-                    }}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  >
-                    Block
-                  </button>
-                  <button
-                    onClick={handleEvade}
-                    className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                  >
-                    Evade
-                  </button>
-                </div>
-              )}
+              {currentStep === 1 &&
+                !hasProcessedResponse &&
+                !awaitingAttacker && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setCurrentStep(3);
+                        setReadyToConfirm(true);
+                      }}
+                      className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                    >
+                      Do Nothing
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleBlock();
+                        setCurrentStep(3);
+                        setReadyToConfirm(true);
+                      }}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Block
+                    </button>
+                    <button
+                      onClick={handleEvade}
+                      className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                    >
+                      Evade
+                    </button>
+                  </div>
+                )}
 
               {/* Step 2: After Agility Check */}
               {currentStep === 2 && !awaitingAttacker && (
@@ -845,8 +842,7 @@ const TacticalGame = ({ username, roomId }) => {
                   <p className="text-yellow-700 font-semibold">
                     Awaiting response from Attacker...
                   </p>
-                  {unit.combatReceived.response?.evadeWithLuck_defender
-                    ?.done && (
+                  {unit.combatReceived.response?.hitWithLuck_attacker?.done && (
                     <button
                       onClick={() => {
                         setCurrentStep(3);
