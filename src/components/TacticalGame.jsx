@@ -139,6 +139,10 @@ const TacticalGame = ({ username, roomId }) => {
               ],
               combatSent: {},
               combatReceived: {},
+              processedCombatSent: [],
+              processedCombatReceived: [],
+              canCounter: false,
+              counteringAgainstWho: null,
             },
             // Add other initial units here
 
@@ -178,10 +182,13 @@ const TacticalGame = ({ username, roomId }) => {
               ],
               combatSent: [],
               combatReceived: {},
+              processedCombatSent: [],
+              processedCombatReceived: [],
+              canCounter: false,
+              counteringAgainstWho: null,
               effects: [],
               effectsReceived: [],
               statusIfHit: null,
-              canCounter: false,
               agilityChecks: null,
               luckChecks: null,
               baseAgility: 3,
@@ -213,6 +220,16 @@ const TacticalGame = ({ username, roomId }) => {
     } else if (lastJsonMessage?.type === "DETECTION_ERROR") {
       setDetectionError(lastJsonMessage.message);
       setTimeout(() => setDetectionError(null), 3000);
+    } else if (lastJsonMessage?.type === "COMBAT_COMPLETION_NOTIFICATION") {
+      setCombatCompletionMessage(lastJsonMessage.message);
+    } else if (lastJsonMessage?.type === "CLOSE_COMBAT_MENU") {
+      // Close all combat-related menus
+      setShowSentCombatManagement(false);
+      setShowCombatTargets(false);
+      setShowCombatManagement(false);
+      setShowCombatSelection(false);
+      setSelectedCombatTarget(null);
+      console.log("Combat menu closed by server:", lastJsonMessage.reason);
     }
   }, [lastJsonMessage]);
 
@@ -506,7 +523,7 @@ const TacticalGame = ({ username, roomId }) => {
       setAwaitingDefender(updatedResponse.awaitingDefender);
     };
 
-    const handleDoNothing = () => {
+    const handleDoNothing = async () => {
       const currentAttacker = gameState.units.find(
         (u) => u.id === unit.combatReceived.attacker.id
       );
@@ -519,76 +536,27 @@ const TacticalGame = ({ username, roomId }) => {
         return;
       }
 
-      const currentAttackerDeepCopy = JSON.parse(
-        JSON.stringify(currentAttacker)
+      // STEP 1: Find the attacker's player ID (WebSocket UUID) from the game state
+      const attackerPlayerId = Object.keys(gameState.players).find(
+        (playerId) => gameState.players[playerId].team === currentAttacker.team
       );
 
-      const currentDefenderDeepCopy = JSON.parse(
-        JSON.stringify(currentDefender)
-      );
-
-      const gameStateDeepCopy = JSON.parse(JSON.stringify(gameState));
-
-      const combat = new Combat({
-        typeOfAttackCausingIt: unit.combatReceived.typeOfAttackCausingIt,
-        proportionOfMagicUsed: unit.combatReceived.proportionOfMagicUsed,
-        proportionOfStrengthUsed: unit.combatReceived.proportionOfStrengthUsed,
-        attacker: currentAttackerDeepCopy,
-        defender: currentDefenderDeepCopy,
-        gameState: gameStateDeepCopy,
-        integratedAttackMultiplier:
-          unit.combatReceived.integratedAttackMultiplier,
-        integratedAttackFlatBonus:
-          unit.combatReceived.integratedAttackFlatBonus,
-        isAoE: unit.combatReceived.isAoE || false,
-      });
-      // Instead of setting finalResults, copy over the stored combat results
-      combat.combatResults = JSON.parse(JSON.stringify(unit.combatReceived));
-
-      // Now call receiveCombat to apply any defender modifications
-      const finalResults = combat.receiveCombat();
-
-      // unit.statusIfHit.hp =
-      //   unit.statusIfHit.hp - finalResults.finalDamage.total;
-      // unit = JSON.parse(JSON.stringify(unit.statusIfHit));
-      const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
-      const newEffect = unit.effectsReceived;
-
-      //if existing, remove the blockdefense effect
-      if (currentDefender.effects) {
-        currentDefender.effects = currentDefender.effects.filter(
-          (e) => e.name !== "BlockDefense"
-        );
+      if (!attackerPlayerId) {
+        console.error("Could not find attacker's player ID");
+        return;
       }
 
-      const updatedUnit = {
-        ...unit,
-        hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
-        effects: [...currentEffects, newEffect],
-      };
-
+      // STEP 1: Send message to close attacker's menu
+      console.log("Requesting to close attacker's menu...");
       sendJsonMessage({
         type: "GAME_ACTION",
-        action: "RECEIVE_ATTACK",
-        updatedUnit,
-        combatResults: finalResults,
+        action: "CLOSE_COMBAT_MENU",
+        targetPlayerId: attackerPlayerId,
+        reason: "Combat completed without counter",
       });
 
-      onClose();
-    };
-
-    const handleConfirmCombatResultsAndInitiateCounter = () => {
-      const currentAttacker = gameState.units.find(
-        (u) => u.id === unit.combatReceived.attacker.id
-      );
-      const currentDefender = gameState.units.find(
-        (u) => u.id === unit.combatReceived.defender.id
-      );
-
-      if (!currentAttacker || !currentDefender) {
-        console.error("Could not find current units");
-        return;
-      }
+      // STEP 2: Wait a brief moment for the close message to be processed
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       const currentAttackerDeepCopy = JSON.parse(
         JSON.stringify(currentAttacker)
@@ -633,23 +601,139 @@ const TacticalGame = ({ username, roomId }) => {
       }
 
       // Determine if hit or evade based on combat response
-      const outcome = determineOutcome(combat.response);
+      const outcome = determineOutcome(combat.combatResults.response);
+      let updatedUnit = {
+        ...unit,
+      };
+      if (outcome === "hit") {
+        updatedUnit = {
+          ...unit,
+          hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
+          effects: [...currentEffects, newEffect],
+        };
+      }
+
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "RECEIVE_ATTACK",
+        updatedUnit,
+        combatResults: finalResults,
+      });
+
+      onClose();
+    };
+
+    const handleConfirmCombatResultsAndInitiateCounter = async () => {
+      const currentAttacker = gameState.units.find(
+        (u) => u.id === unit.combatReceived.attacker.id
+      );
+      const currentDefender = gameState.units.find(
+        (u) => u.id === unit.combatReceived.defender.id
+      );
+
+      if (!currentAttacker || !currentDefender) {
+        console.error("Could not find current units");
+        return;
+      }
+
+      // STEP 1: Find the attacker's player ID (WebSocket UUID) from the game state
+      const attackerPlayerId = Object.keys(gameState.players).find(
+        (playerId) => gameState.players[playerId].team === currentAttacker.team
+      );
+
+      if (!attackerPlayerId) {
+        console.error("Could not find attacker's player ID");
+        return;
+      }
+
+      // STEP 1: Send message to close attacker's menu
+      console.log("Requesting to close attacker's menu...");
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "CLOSE_COMBAT_MENU",
+        targetPlayerId: attackerPlayerId,
+        reason: "Combat being processed by defender",
+      });
+
+      // STEP 2: Wait a brief moment for the close message to be processed
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const currentAttackerDeepCopy = JSON.parse(
+        JSON.stringify(currentAttacker)
+      );
+
+      const currentDefenderDeepCopy = JSON.parse(
+        JSON.stringify(currentDefender)
+      );
+
+      const gameStateDeepCopy = JSON.parse(JSON.stringify(gameState));
+
+      const combat = new Combat({
+        typeOfAttackCausingIt: unit.combatReceived.typeOfAttackCausingIt,
+        proportionOfMagicUsed: unit.combatReceived.proportionOfMagicUsed,
+        proportionOfStrengthUsed: unit.combatReceived.proportionOfStrengthUsed,
+        attacker: currentAttackerDeepCopy,
+        defender: currentDefenderDeepCopy,
+        gameState: gameStateDeepCopy,
+        integratedAttackMultiplier:
+          unit.combatReceived.integratedAttackMultiplier,
+        integratedAttackFlatBonus:
+          unit.combatReceived.integratedAttackFlatBonus,
+        isAoE: unit.combatReceived.isAoE || false,
+      });
+      // Instead of setting finalResults, copy over the stored combat results
+      combat.combatResults = JSON.parse(JSON.stringify(unit.combatReceived));
+
+      // Now call receiveCombat to apply any defender modifications
+      const finalResults = combat.receiveCombat();
+
+      // unit.statusIfHit.hp =
+      //   unit.statusIfHit.hp - finalResults.finalDamage.total;
+      // unit = JSON.parse(JSON.stringify(unit.statusIfHit));
+      const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
+      const newEffect = unit.effectsReceived;
+
+      //if existing, remove the blockdefense effect
+      if (currentDefender.effects) {
+        currentDefender.effects = currentDefender.effects.filter(
+          (e) => e.name !== "BlockDefense"
+        );
+      }
+
+      // Determine if hit or evade based on combat response
+      const outcome = determineOutcome(combat.combatResults.response);
 
       let updatedDefender = currentDefender;
+
+      //if the attack doesn't hit, then still counter would be available
+      updatedDefender.canCounter = true;
+      updatedDefender.counteringAgainstWho = combat.attacker.id;
+
       if (outcome === "hit") {
         updatedDefender = {
           ...currentDefender,
-          hp: Math.max(0, currentDefender.hp - finalResults.finalDamage.total),
           canCounter: true,
           counteringAgainstWho: combat.attacker.id,
-          effects: [
-            ...(currentDefender.effects || []),
-            ...(currentDefender.effectsReceived
-              ? [currentDefender.effectsReceived]
-              : []),
-          ].filter(Boolean),
+          hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
+          effects: [...currentEffects, newEffect],
         };
       }
+
+      // outcome doesnt seem necessary, even if it doesn't hit it will still have to send a msg to server
+      // if (outcome === "hit") {
+      //   updatedDefender = {
+      //     ...currentDefender,
+      //     hp: Math.max(0, currentDefender.hp - finalResults.finalDamage.total),
+      //     canCounter: true,
+      //     counteringAgainstWho: combat.attacker.id,
+      //     effects: [
+      //       ...(currentDefender.effects || []),
+      //       ...(currentDefender.effectsReceived
+      //         ? [currentDefender.effectsReceived]
+      //         : []),
+      //     ].filter(Boolean),
+      //   };
+      // }
 
       //currently may be out of use for updatedDefender
       const updatedUnit = {
@@ -1056,6 +1140,14 @@ const TacticalGame = ({ username, roomId }) => {
     // Now we can directly map over the array
     const sentCombats = unit.combatSent || [];
 
+    // If there are no combat targets, close the menu
+    useEffect(() => {
+      if (sentCombats.length === 0) {
+        console.log("No combat targets available, closing menu");
+        setTimeout(() => onClose(), 100); // Small delay to prevent immediate close issues
+      }
+    }, [sentCombats.length, onClose]);
+
     // Function to find the actual defender unit from gameState
     const getDefenderUnit = (defenderId) => {
       return gameState.units.find((u) => u.id === defenderId);
@@ -1125,6 +1217,42 @@ const TacticalGame = ({ username, roomId }) => {
     const combat = defender?.combatReceived;
 
     console.log("combat obtained on MenuForSent:", combat);
+
+    // Helper function to check if combat object is valid/has required data
+    const isCombatValid = (combat) => {
+      if (!combat) return false;
+      if (typeof combat !== "object") return false;
+      if (Object.keys(combat).length === 0) return false; // Empty object
+      if (!combat.defender || !combat.attacker) return false; // Missing required properties
+      return true;
+    };
+
+    // Defensive programming: If combat is invalid/empty, close the menu
+    useEffect(() => {
+      if (!isCombatValid(combat)) {
+        console.log(
+          "Combat data not found or invalid, closing menu. Combat:",
+          combat
+        );
+        onClose();
+        return;
+      }
+    }, [combat, onClose]);
+
+    // If combat is not available or invalid, show loading message briefly before closing
+    if (!isCombatValid(combat)) {
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-4 w-[500px]">
+            <div className="text-center">
+              <p className="text-gray-600">
+                Combat data unavailable. Menu will close shortly...
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     // Effect to watch for defender's initial response
     useEffect(() => {
@@ -1421,7 +1549,7 @@ const TacticalGame = ({ username, roomId }) => {
       const finalResults = combatInstance.receiveCombat();
 
       // Determine if hit or evade based on combat response
-      const outcome = determineOutcome(combat.response);
+      const outcome = determineOutcome(combatInstance.combatResults.response);
 
       const updatedDefender = {
         ...currentDefender,

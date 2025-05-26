@@ -416,6 +416,26 @@ const handleMessage = (bytes, uuid) => {
           broadcastToRoom(player.currentRoom);
           break;
 
+        case "CLOSE_COMBAT_MENU":
+          const { targetPlayerId, reason } = message;
+
+          // Send message to the target player to close their combat menu
+          const targetConnection = connections[targetPlayerId];
+          if (targetConnection) {
+            targetConnection.send(
+              JSON.stringify({
+                type: "CLOSE_COMBAT_MENU_RESPONSE",
+                reason: reason || "Combat menu closed by request",
+              })
+            );
+            console.log(`Sent close menu message to player ${targetPlayerId}`);
+          } else {
+            console.log(
+              `Target player ${targetPlayerId} not found or not connected`
+            );
+          }
+          break;
+
         case "PROCESS_COMBAT_AND_INITIATE_COUNTER":
           const {
             attackerId: counterId,
@@ -425,6 +445,17 @@ const handleMessage = (bytes, uuid) => {
             combatResults: counterResults,
             outcome: counterOutcome,
           } = message;
+
+          // FIRST: Send message to close attacker's combat menu
+          const attackerConnection = connections[counterId];
+          if (attackerConnection) {
+            attackerConnection.send(
+              JSON.stringify({
+                type: "CLOSE_COMBAT_MENU",
+                reason: "Combat being processed by defender",
+              })
+            );
+          }
 
           // Update both units
           room.gameState.units = room.gameState.units.map((unit) => {
@@ -490,6 +521,17 @@ const handleMessage = (bytes, uuid) => {
             combatResults: completeResults,
             outcome: completeOutcome,
           } = message;
+
+          // FIRST: Send message to close attacker's combat menu if it's open
+          const completeAttackerConnection = connections[completeAttackerId];
+          if (completeAttackerConnection) {
+            completeAttackerConnection.send(
+              JSON.stringify({
+                type: "CLOSE_COMBAT_MENU",
+                reason: "Combat completed",
+              })
+            );
+          }
 
           // Update units and move combats to processed arrays
           room.gameState.units = room.gameState.units.map((unit) => {
