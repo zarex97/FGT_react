@@ -2168,6 +2168,8 @@ const TacticalGame = ({ username, roomId }) => {
       return;
     }
 
+    setSelectedUnit(unit);
+
     setActiveNP({
       ref: npRef,
       impl: npImpl,
@@ -2217,6 +2219,7 @@ const TacticalGame = ({ username, roomId }) => {
       console.log("Skill is on cooldown");
       return;
     }
+    setSelectedUnit(unit);
 
     setActiveSkill({
       ref: skillRef,
@@ -2604,6 +2607,8 @@ const TacticalGame = ({ username, roomId }) => {
     if (isActionOnCooldown(actionRef, gameState.currentTurn)) {
       return;
     }
+
+    setSelectedUnit(unit);
 
     setActiveAction({
       ref: actionRef,
@@ -3226,12 +3231,16 @@ const TacticalGame = ({ username, roomId }) => {
         setSelectedUnit(null);
         setHighlightedCells([]);
       }
-    } else if (
-      clickedUnit &&
-      clickedUnit.team === playerTeam &&
-      clickedUnit.team === gameState.turn
-    ) {
-      setSelectedUnit(clickedUnit);
+    } else if (clickedUnit && clickedUnit.team === playerTeam) {
+      // FIXED: Allow selection if it's player's unit AND either:
+      // 1. It's their turn, OR
+      // 2. The unit can counter (reactive abilities)
+      const isPlayerTurn = clickedUnit.team === gameState.turn;
+      const canCounter = clickedUnit.canCounter === true;
+
+      if (isPlayerTurn || canCounter) {
+        setSelectedUnit(clickedUnit);
+      }
     }
   };
 
