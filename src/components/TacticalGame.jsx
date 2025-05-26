@@ -1873,7 +1873,26 @@ const TacticalGame = ({ username, roomId }) => {
 
   const CommonActionsMenu = ({ unit, onClose }) => {
     const isPlayerTurn = gameState.turn === playerTeam;
+    // Helper function to check counter restrictions
+    const hasCounterPendingOnBoard = (gameState) => {
+      return gameState.units.some((unit) => unit.canCounter === true);
+    };
 
+    const getCounterUnit = (gameState) => {
+      return gameState.units.find((unit) => unit.canCounter === true);
+    };
+
+    const canUseAction = (actionImpl, unit, isPlayerTurn) => {
+      const hasCounterPending = hasCounterPendingOnBoard(gameState);
+      if (hasCounterPending) {
+        const counterUnit = getCounterUnit(gameState);
+        // Only allow actions if this unit is the one that can counter, or if it's a reactionary action
+        if (counterUnit.id !== unit.id && !actionImpl.isReactionary) {
+          return false;
+        }
+      }
+      return actionImpl.isReactionary || unit.canCounter || isPlayerTurn;
+    };
     if (!showCommonActions) return null;
 
     return (
@@ -1895,8 +1914,16 @@ const TacticalGame = ({ username, roomId }) => {
                 actionRef,
                 gameState.currentTurn
               );
-              const canUse =
-                actionImpl.isReactionary || unit.canCounter || isPlayerTurn;
+              const canUse = canUseAction(actionImpl, unit, isPlayerTurn);
+              const hasCounterPending = hasCounterPendingOnBoard(gameState);
+              const counterUnit = hasCounterPending
+                ? getCounterUnit(gameState)
+                : null;
+              const isBlockedByCounter =
+                hasCounterPending &&
+                counterUnit.id !== unit.id &&
+                !actionImpl.isReactionary;
+
               const turnsRemaining = isOnCd
                 ? actionRef.onCooldownUntil - gameState.currentTurn
                 : 0;
@@ -1905,9 +1932,7 @@ const TacticalGame = ({ username, roomId }) => {
                 <div
                   key={index}
                   className={`p-2 border rounded hover:bg-gray-50 cursor-pointer 
-                                        ${
-                                          isOnCd || !canUse ? "opacity-50" : ""
-                                        }`}
+                                      ${isOnCd || !canUse ? "opacity-50" : ""}`}
                   onClick={() =>
                     !isOnCd &&
                     canUse &&
@@ -1918,13 +1943,19 @@ const TacticalGame = ({ username, roomId }) => {
                     {actionImpl.name}
                     <span
                       className={`text-sm ${
-                        isOnCd ? "text-red-500" : "text-green-500"
+                        isOnCd
+                          ? "text-red-500"
+                          : isBlockedByCounter
+                          ? "text-orange-500"
+                          : "text-green-500"
                       }`}
                     >
                       {isOnCd
                         ? `CD: ${turnsRemaining} turn${
                             turnsRemaining !== 1 ? "s" : ""
                           }`
+                        : isBlockedByCounter
+                        ? "Counter Pending"
                         : canUse
                         ? "Ready"
                         : "Not Available"}
@@ -2554,9 +2585,16 @@ const TacticalGame = ({ username, roomId }) => {
                 npImpl,
                 gameState.currentRound
               );
-              const canUse =
-                roundCheck.canUse &&
-                (npImpl.isReactionary || unit.canCounter || isPlayerTurn);
+              const canUse = canUseNP(npImpl, unit, isPlayerTurn, roundCheck);
+              const hasCounterPending = hasCounterPendingOnBoard(gameState);
+              const counterUnit = hasCounterPending
+                ? getCounterUnit(gameState)
+                : null;
+              const isBlockedByCounter =
+                hasCounterPending &&
+                counterUnit.id !== unit.id &&
+                !npImpl.isReactionary;
+
               const turnsRemaining = isOnCd
                 ? npRef.onCooldownUntil - gameState.currentTurn
                 : 0;
@@ -2565,7 +2603,7 @@ const TacticalGame = ({ username, roomId }) => {
                 <div
                   key={index}
                   className={`p-2 border rounded hover:bg-gray-50 cursor-pointer 
-                                    ${isOnCd || !canUse ? "opacity-50" : ""}`}
+                                  ${isOnCd || !canUse ? "opacity-50" : ""}`}
                   onClick={() =>
                     !isOnCd && canUse && handleNPSelect(npRef, npImpl, unit)
                   }
@@ -2578,6 +2616,8 @@ const TacticalGame = ({ username, roomId }) => {
                           ? "text-red-500"
                           : !roundCheck.canUse
                           ? "text-yellow-500"
+                          : isBlockedByCounter
+                          ? "text-orange-500"
                           : "text-green-500"
                       }`}
                     >
@@ -2587,6 +2627,8 @@ const TacticalGame = ({ username, roomId }) => {
                           }`
                         : !roundCheck.canUse
                         ? `Available Round ${npImpl.usableFromRound}`
+                        : isBlockedByCounter
+                        ? "Counter Pending"
                         : canUse
                         ? "Ready"
                         : "Not Available"}
