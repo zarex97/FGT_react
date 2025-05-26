@@ -2319,6 +2319,10 @@ const TacticalGame = ({ username, roomId }) => {
   };
 
   const endTurn = () => {
+    if (hasCounterPendingOnBoard(gameState)) {
+      console.log("Cannot end turn: Counter is pending");
+      return;
+    }
     const updatedUnits = gameState.units.map((unit) => ({
       ...unit,
       movementLeft: unit.movementRange,
@@ -2442,9 +2446,19 @@ const TacticalGame = ({ username, roomId }) => {
           className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
                     ${!isPlayerTurn ? "opacity-50 cursor-not-allowed" : ""}`}
           onClick={() => handleAction("move", unit)}
-          disabled={!isPlayerTurn}
+          disabled={!isPlayerTurn || hasCounterPending}
+          title={
+            hasCounterPending
+              ? "Movement blocked while counter is pending"
+              : !isPlayerTurn
+              ? "Not your turn"
+              : "Move unit"
+          }
         >
           <Move size={16} /> Move
+          {hasCounterPending && (
+            <span className="text-xs text-orange-500 ml-auto">(Blocked)</span>
+          )}
         </button>
         <button
           className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
@@ -2969,6 +2983,14 @@ const TacticalGame = ({ username, roomId }) => {
     const hasCounterPending = hasCounterPendingOnBoard(gameState);
     if (hasCounterPending) {
       const counterUnit = getCounterUnit(gameState);
+
+      // For movement, block ALL units when counter is pending (even the counter unit)
+      if (action === "move") {
+        console.log("Movement blocked: Counter is pending");
+        return;
+      }
+
+      // For other actions, only block non-counter units
       if (counterUnit.id !== unit.id) {
         console.log("Action blocked: Another unit has counter pending");
         return;
@@ -3574,9 +3596,22 @@ const TacticalGame = ({ username, roomId }) => {
           {gameState.turn === playerTeam && (
             <button
               onClick={endTurn}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className={`px-4 py-2 rounded text-white ${
+                hasCounterPendingOnBoard(gameState)
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-blue-500 hover:bg-blue-600"
+              }`}
+              disabled={hasCounterPendingOnBoard(gameState)}
+              title={
+                hasCounterPendingOnBoard(gameState)
+                  ? "Cannot end turn while counter is pending"
+                  : "End your turn"
+              }
             >
               End Turn
+              {hasCounterPendingOnBoard(gameState) && (
+                <span className="ml-2 text-xs">(Counter Pending)</span>
+              )}
             </button>
           )}
           <DetectionButton />

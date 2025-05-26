@@ -511,6 +511,7 @@ const handleMessage = (bytes, uuid) => {
               }
             }
           );
+          broadcastToRoom(player.currentRoom);
           break;
 
         case "PROCESS_COMBAT_COMPLETE":
@@ -586,6 +587,7 @@ const handleMessage = (bytes, uuid) => {
               }
             }
           );
+          broadcastToRoom(player.currentRoom);
           break;
 
         case "RESET_COUNTER_STATUS":
