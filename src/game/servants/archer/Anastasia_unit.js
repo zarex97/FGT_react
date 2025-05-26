@@ -389,7 +389,7 @@ export const AnastasiaAttributes = {
   baseAgility: 16,
   maxAgility: 20,
   // Luck Stats
-  baseLuck: 8,
+  baseLuck: 2,
   maxLuck: 12,
   // Sustainability
   sustainability: "4",
@@ -397,7 +397,10 @@ export const AnastasiaAttributes = {
   sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp",
   combatSent: [],
   combatReceived: {},
+  processedCombatSent: [],
+  processedCombatReceived: [],
   canCounter: false,
+  counteringAgainstWho: null,
   agilityChecks: null,
   luckChecks: null,
 };

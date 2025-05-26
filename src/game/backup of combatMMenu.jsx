@@ -4,17 +4,14 @@ const CombatManagementMenu = ({ unit, onClose }) => {
     console.log("Awaiting attacker:", awaitingAttacker);
     console.log("Combat response:", unit.combatReceived?.response);
   }, [currentStep, awaitingAttacker, unit.combatReceived?.response]);
-  const s_unit = gameState.units.find(
-    (u) => u.id === unit.combatReceived?.defender.id
-  );
-  unit = s_unit;
-  // Add effect to watch for attacker's response
-  useEffect(() => {
-    if (unit.combatReceived?.response?.hitWithLuck_attacker?.done) {
-      setAwaitingAttacker(false);
-      setCurrentStep(3);
-    }
-  }, [unit.combatReceived?.response?.hitWithLuck_attacker?.done]);
+
+  // // Add effect to watch for attacker's response
+  // useEffect(() => {
+  //   if (unit.combatReceived?.response?.hitWithLuck_attacker?.done) {
+  //     setAwaitingAttacker(false);
+  //     setCurrentStep(3);
+  //   }
+  // }, [unit.combatReceived?.response?.hitWithLuck_attacker?.done]);
 
   useEffect(() => {
     // If we have a successful agility evasion and attacker tries a luck hit
@@ -36,22 +33,22 @@ const CombatManagementMenu = ({ unit, onClose }) => {
     }
   }, [unit.combatReceived?.response]);
 
-  useEffect(() => {
-    // When combat state changes, preserve our current step
-    if (unit.combatReceived?.response) {
-      // Don't reset to step 1 if we're already in a later step
-      if (currentStep === 1) {
-        if (unit.combatReceived.response.AgiEvasion_defender?.done) {
-          if (!unit.combatReceived.response.AgiEvasion_defender.success) {
-            setCurrentStep(2);
-          } else {
-            setAwaitingAttacker(true);
-            setCurrentStep(2);
-          }
-        }
-      }
-    }
-  }, [unit.combatReceived?.response]);
+  // useEffect(() => {
+  //   // When combat state changes, preserve our current step
+  //   if (unit.combatReceived?.response) {
+  //     // Don't reset to step 1 if we're already in a later step
+  //     if (currentStep === 1) {
+  //       if (unit.combatReceived.response.AgiEvasion_defender?.done) {
+  //         if (!unit.combatReceived.response.AgiEvasion_defender.success) {
+  //           setCurrentStep(2);
+  //         } else {
+  //           setAwaitingAttacker(true);
+  //           setCurrentStep(2);
+  //         }
+  //       }
+  //     }
+  //   }
+  // }, [unit.combatReceived?.response]);
 
   // And add a state to track if we've processed the initial response
   const [hasProcessedResponse, setHasProcessedResponse] = useState(false);
@@ -236,11 +233,11 @@ const CombatManagementMenu = ({ unit, onClose }) => {
 
     // Calculate modifiers
     if (type === "agility") {
-      if (unit.baseAgility < combat.attacker.baseAgility) totalModifier -= 4;
+      if (unit.baseAgility < combat.attacker.baseAgility) totalModifier += 4;
       if (combat.typeOfAttackCausingIt === "NP") totalModifier += 3;
       if (combat.isAoE) totalModifier += 2;
     } else if (type === "luck") {
-      if (unit.baseLuck < combat.attacker.baseLuck) totalModifier -= 4;
+      if (unit.baseLuck < combat.attacker.baseLuck) totalModifier += 4;
       if (combat.isAoE) totalModifier += 2;
     }
 
