@@ -397,6 +397,8 @@ export const AnastasiaAttributes = {
   sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp",
   combatSent: [],
   combatReceived: {},
+  processedCombatSent: [],
+  processedCombatReceived: [],
   canCounter: false,
   agilityChecks: null,
   luckChecks: null,

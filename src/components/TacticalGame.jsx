@@ -315,6 +315,15 @@ const TacticalGame = ({ username, roomId }) => {
     );
   };
 
+  // Checks that no unit is in the middle of countering
+  const hasCounterPendingOnBoard = (gameState) => {
+    return gameState?.units?.some((unit) => unit.canCounter === true) || false;
+  };
+  // If an unit is countering it grabs its id
+  const getCounterUnit = (gameState) => {
+    return gameState?.units?.find((unit) => unit.canCounter === true);
+  };
+
   // Components for displaying check history and results
   const CheckHistoryDisplay = ({ checks, type }) => {
     if (!checks || checks.length === 0) return null;
@@ -2459,6 +2468,16 @@ const TacticalGame = ({ username, roomId }) => {
 
     if (unit.team !== playerTeam || unit.team !== gameState.turn) return;
 
+    // Check for counter restrictions
+    const hasCounterPending = hasCounterPendingOnBoard(gameState);
+    if (hasCounterPending) {
+      const counterUnit = getCounterUnit(gameState);
+      if (counterUnit.id !== unit.id) {
+        console.log("Action blocked: Another unit has counter pending");
+        return;
+      }
+    }
+
     if (action === "move") {
       setHighlightedCells(getPossibleMoves(unit));
       setContextMenu(null);
@@ -2468,6 +2487,15 @@ const TacticalGame = ({ username, roomId }) => {
       // You could set a state to indicate attack mode and highlight possible targets
       // Then handle the actual attack in handleCellClick when a target is selected
     }
+  };
+
+  // Add this function to reset counter status (call this when counter is completed)
+  const resetCounterStatus = (unitId) => {
+    sendJsonMessage({
+      type: "GAME_ACTION",
+      action: "RESET_COUNTER_STATUS",
+      unitId: unitId,
+    });
   };
 
   const handleCellClick = (x, y) => {
