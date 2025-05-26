@@ -475,7 +475,6 @@ const handleMessage = (bytes, uuid) => {
                   ...(unit.processedCombatSent || []),
                   processedCombat,
                 ],
-                canCounter: true,
               };
             }
             if (unit.id === counterDefenderId) {
@@ -483,6 +482,7 @@ const handleMessage = (bytes, uuid) => {
               return {
                 ...counterDefender,
                 combatReceived: {},
+                canCounter: true,
                 processedCombatReceived: [
                   ...(unit.processedCombatReceived || []),
                   unit.combatReceived,

@@ -703,6 +703,12 @@ const TacticalGame = ({ username, roomId }) => {
       // Determine if hit or evade based on combat response
       const outcome = determineOutcome(combat.combatResults.response);
 
+      // Create updatedAttacker - this was missing!
+      let updatedAttacker = {
+        ...currentAttacker,
+        hasAttacked: true, // Mark as having completed their attack
+      };
+
       let updatedDefender = currentDefender;
 
       //if the attack doesn't hit, then still counter would be available
@@ -749,6 +755,7 @@ const TacticalGame = ({ username, roomId }) => {
         action: "PROCESS_COMBAT_AND_INITIATE_COUNTER",
         attackerId: combat.attacker.id,
         defenderId: combat.defender.id,
+        updatedAttacker,
         updatedDefender,
         combatResults: finalResults,
         outcome,
