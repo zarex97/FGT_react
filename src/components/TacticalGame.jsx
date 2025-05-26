@@ -1791,6 +1791,26 @@ const TacticalGame = ({ username, roomId }) => {
 
   const UniqueActionsMenu = ({ unit, onClose }) => {
     const isPlayerTurn = gameState.turn === playerTeam;
+    // Helper function to check counter restrictions
+    const hasCounterPendingOnBoard = (gameState) => {
+      return gameState.units.some((unit) => unit.canCounter === true);
+    };
+
+    const getCounterUnit = (gameState) => {
+      return gameState.units.find((unit) => unit.canCounter === true);
+    };
+
+    const canUseAction = (actionImpl, unit, isPlayerTurn) => {
+      const hasCounterPending = hasCounterPendingOnBoard(gameState);
+      if (hasCounterPending) {
+        const counterUnit = getCounterUnit(gameState);
+        // Only allow actions if this unit is the one that can counter, or if it's a reactionary action
+        if (counterUnit.id !== unit.id && !actionImpl.isReactionary) {
+          return false;
+        }
+      }
+      return actionImpl.isReactionary || unit.canCounter || isPlayerTurn;
+    };
 
     if (!showUniqueActions) return null;
 
@@ -1813,8 +1833,16 @@ const TacticalGame = ({ username, roomId }) => {
                 actionRef,
                 gameState.currentTurn
               );
-              const canUse =
-                actionImpl.isReactionary || unit.canCounter || isPlayerTurn;
+              const canUse = canUseAction(actionImpl, unit, isPlayerTurn);
+              const hasCounterPending = hasCounterPendingOnBoard(gameState);
+              const counterUnit = hasCounterPending
+                ? getCounterUnit(gameState)
+                : null;
+              const isBlockedByCounter =
+                hasCounterPending &&
+                counterUnit.id !== unit.id &&
+                !actionImpl.isReactionary;
+
               const turnsRemaining = isOnCd
                 ? actionRef.onCooldownUntil - gameState.currentTurn
                 : 0;
@@ -1823,9 +1851,7 @@ const TacticalGame = ({ username, roomId }) => {
                 <div
                   key={index}
                   className={`p-2 border rounded hover:bg-gray-50 cursor-pointer 
-                                        ${
-                                          isOnCd || !canUse ? "opacity-50" : ""
-                                        }`}
+                                      ${isOnCd || !canUse ? "opacity-50" : ""}`}
                   onClick={() =>
                     !isOnCd &&
                     canUse &&
@@ -1836,13 +1862,19 @@ const TacticalGame = ({ username, roomId }) => {
                     {actionImpl.name}
                     <span
                       className={`text-sm ${
-                        isOnCd ? "text-red-500" : "text-green-500"
+                        isOnCd
+                          ? "text-red-500"
+                          : isBlockedByCounter
+                          ? "text-orange-500"
+                          : "text-green-500"
                       }`}
                     >
                       {isOnCd
                         ? `CD: ${turnsRemaining} turn${
                             turnsRemaining !== 1 ? "s" : ""
                           }`
+                        : isBlockedByCounter
+                        ? "Counter Pending"
                         : canUse
                         ? "Ready"
                         : "Not Available"}
@@ -3278,6 +3310,39 @@ const TacticalGame = ({ username, roomId }) => {
               }`}
             />
             {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
+            {unit && isVisible && (
+              <div
+                className={`absolute inset-0 flex items-center justify-center 
+                          ${
+                            unit.team === playerTeam
+                              ? "text-blue-600"
+                              : "text-red-600"
+                          }
+                          ${unit.movementLeft === 0 ? "opacity-50" : ""}`}
+                onMouseEnter={() => setHoveredUnit(unit)}
+                onMouseLeave={() => setHoveredUnit(null)}
+              >
+                <img
+                  src={unit.sprite}
+                  alt={unit.name}
+                  className={`w-16 h-16 object-contain ${
+                    npTargetingMode && isInPreview
+                      ? "filter brightness-110"
+                      : ""
+                  } ${unit.canCounter ? "ring-2 ring-orange-400" : ""}`}
+                />
+                {/* Counter indicator */}
+                {unit.canCounter && (
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                    <Target size={10} className="text-white" />
+                  </div>
+                )}
+                {hoveredUnit?.id === unit.id && (
+                  <UnitStatsTooltip unit={unit} />
+                )}
+              </div>
+            )}
+
             {/* Add ReceiveAttackButton if unit has pending combat */}
             {/* <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2">
                         <ReceiveAttackButton unit={unit} />
