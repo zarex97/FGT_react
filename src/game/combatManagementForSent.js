@@ -1,45 +1,104 @@
-const CombatManagementMenuForSent = ({ unit, combat, onClose }) => {
+const CombatManagementMenuForSent = ({ unit, defenderId, onClose }) => {
+  // // Get fresh combat data from unit's combatSent array
+  // const comba1 = useMemo(() => {
+  //   return unit.combatSent.find((c) => c.defender.id === defenderId);
+  // }, [unit.combatSent, defenderId]);
+  const defender = gameState.units.find((u) => u.id === defenderId);
+  const combat = defender?.combatReceived;
+
+  console.log("combat obtained on MenuForSent:", combat);
+
   // Effect to watch for defender's initial response
   useEffect(() => {
+    if (!combat) return;
+    console.log("Effect triggered. Combat response:", combat.response);
+
     if (combat.response?.AgiEvasion_defender?.done) {
       if (combat.response.AgiEvasion_defender.success) {
+        // If defender succeeds agility check, show attacker luck hit options
+        console.log(
+          "Defender succeeded agility check - showing luck hit options"
+        );
         setAwaitingDefender(false);
+        setAwaitingAttacker(true);
         setCurrentStep(2);
+        setReadyToConfirm(false);
       } else {
+        // If defender fails agility check, wait for their luck evade attempt
+        console.log("Defender failed agility check - waiting for luck evade");
         setAwaitingDefender(true);
-        setCurrentStep(2);
+        setAwaitingAttacker(false);
+        setCurrentStep(1);
+        setReadyToConfirm(false);
       }
     }
-  }, [combat.response?.AgiEvasion_defender?.done]);
+  }, [combat.response?.AgiEvasion_defender]);
 
-  // useEffect(() => {
-  //   // If we have a successful agility evasion and attacker tries a luck hit
-  //   if (
-  //     combat.response?.AgiEvasion_defender?.success &&
-  //     combat.response?.hitWithLuck_attacker?.done
-  //   ) {
-  //     setAwaitingAttacker(false);
-  //     // If attacker succeeded with luck hit, show luck evade option
-  //     if (
-  //       combat.response?.hitWithLuck_attacker.success &&
-  //       !combat.response?.evadeWithLuck_defender?.done
-  //     ) {
-  //       setCurrentStep(2);
-  //     } else {
-  //       setCurrentStep(3);
-  //       setReadyToConfirm(true);
-  //     }
-  //   }
-  // }, [unit.combatReceived?.response]);
-
-  // Effect to watch for defender's luck response
+  // Second useEffect - Handle defender's luck evade after failed agility
   useEffect(() => {
-    if (combat.response?.evadeWithLuck_defender?.done) {
+    if (!combat) return;
+    if (
+      combat.response?.evadeWithLuck_defender?.done &&
+      !combat.response?.AgiEvasion_defender?.success
+    ) {
+      if (combat.response.evadeWithLuck_defender.success) {
+        // If defender succeeds luck evade after failed agility, show attacker options
+        console.log(
+          "Defender succeeded luck evade after failed agility - showing luck hit options"
+        );
+        setAwaitingDefender(false);
+        setAwaitingAttacker(true);
+        setCurrentStep(2);
+        setReadyToConfirm(false);
+      } else {
+        // If defender fails luck evade after failed agility, move to confirmation
+        console.log(
+          "Defender failed luck evade after failed agility - moving to confirmation"
+        );
+        setAwaitingDefender(false);
+        setAwaitingAttacker(false);
+        setCurrentStep(3);
+        setReadyToConfirm(true);
+      }
+    }
+  }, [
+    combat.response?.evadeWithLuck_defender,
+    combat.response?.AgiEvasion_defender,
+  ]);
+
+  // Third useEffect - Handle defender's luck evade after attacker's luck hit
+  useEffect(() => {
+    if (!combat) return;
+    if (
+      combat.response?.hitWithLuck_attacker?.success &&
+      combat.response?.evadeWithLuck_defender?.done
+    ) {
+      // After defender responds to our luck hit, always move to confirmation
+      console.log("Defender responded to luck hit - moving to confirmation");
       setAwaitingDefender(false);
+      setAwaitingAttacker(false);
       setCurrentStep(3);
       setReadyToConfirm(true);
     }
-  }, [combat.response?.evadeWithLuck_defender?.done]);
+  }, [
+    combat.response?.hitWithLuck_attacker,
+    combat.response?.evadeWithLuck_defender,
+  ]);
+  // fourth useEffect - Handle defender's luck evade after attacker's luck hit
+  useEffect(() => {
+    if (!combat) return;
+    if (
+      !combat.response?.hitWithLuck_attacker?.success &&
+      combat.response?.hitWithLuck_attacker?.done
+    ) {
+      // If the luck hits fails, there is nothing else to do on the attacker part,  move to confirmation
+      console.log("Luck hit failed - moving to confirmation");
+      setAwaitingDefender(false);
+      setAwaitingAttacker(false);
+      setCurrentStep(3);
+      setReadyToConfirm(true);
+    }
+  }, [combat.response?.hitWithLuck_attacker]);
 
   const performCheck = (type) => {
     const baseRoll = Math.floor(Math.random() * 20) + 1;
@@ -88,18 +147,37 @@ const CombatManagementMenuForSent = ({ unit, combat, onClose }) => {
     };
 
     if (luckCheck.success) {
-      setAwaitingDefender(true);
-      setAwaitingAttacker(false);
-      setCurrentStep(2);
-      updateCombatResponse(updatedResponse);
+      //if the luck hit succeeds but the luck evasion also succeeded we should go straight to the confirmation view
+      if (updatedResponse.evadeWithLuck_defender.success) {
+        setCurrentStep(3);
+        setReadyToConfirm(true);
+        setAwaitingDefender(false);
+        const updatedResponse2 = {
+          ...updatedResponse,
+          currentStep: 3,
+          awaitingDefender: false,
+          readyToConfirm: true,
+        };
+        updateCombatResponse(updatedResponse2);
+      }
+      //instead, if the luck hit succeeds but the luck evasion has not been done yet, then the defender should have a chance to try it
+      if (!updatedResponse.evadeWithLuck_defender.done) {
+        setAwaitingDefender(true);
+        setAwaitingAttacker(false);
+        setCurrentStep(2);
+        updateCombatResponse(updatedResponse);
+      }
     } else {
+      // if the lucky hit failed it goes straight into step 3, as there is nothing else the attacker may do (hit with CS in the future, maybe?) nor anything else the defender must
       setCurrentStep(3);
       setReadyToConfirm(true);
       setAwaitingDefender(false);
+      setAwaitingAttacker(false);
       const updatedResponse2 = {
         ...updatedResponse,
         currentStep: 3,
         awaitingDefender: false,
+        awaitingAttacker: false,
         readyToConfirm: true,
       };
       updateCombatResponse(updatedResponse2);

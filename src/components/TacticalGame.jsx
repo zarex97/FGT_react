@@ -183,7 +183,7 @@ const TacticalGame = ({ username, roomId }) => {
               canCounter: false,
               agilityChecks: null,
               luckChecks: null,
-              baseAgility: 8,
+              baseAgility: 3,
               baseLuck: 18,
             },
           ],
@@ -390,7 +390,10 @@ const TacticalGame = ({ username, roomId }) => {
       console.log("Awaiting attacker:", awaitingAttacker);
       console.log("Combat response:", unit.combatReceived?.response);
     }, [currentStep, awaitingAttacker, unit.combatReceived?.response]);
-
+    const s_unit = gameState.units.find(
+      (u) => u.id === unit.combatReceived?.defender.id
+    );
+    unit = s_unit;
     // Add effect to watch for attacker's response
     useEffect(() => {
       if (unit.combatReceived?.response?.hitWithLuck_attacker?.done) {
@@ -627,11 +630,11 @@ const TacticalGame = ({ username, roomId }) => {
 
       // Calculate modifiers
       if (type === "agility") {
-        if (unit.baseAgility < combat.attacker.baseAgility) totalModifier -= 4;
+        if (unit.baseAgility < combat.attacker.baseAgility) totalModifier += 4;
         if (combat.typeOfAttackCausingIt === "NP") totalModifier += 3;
         if (combat.isAoE) totalModifier += 2;
       } else if (type === "luck") {
-        if (unit.baseLuck < combat.attacker.baseLuck) totalModifier -= 4;
+        if (unit.baseLuck < combat.attacker.baseLuck) totalModifier += 4;
         if (combat.isAoE) totalModifier += 2;
       }
 
@@ -1117,7 +1120,7 @@ const TacticalGame = ({ username, roomId }) => {
       let totalModifier = 0;
 
       if (type === "luck") {
-        if (unit.baseLuck < combat.defender.baseLuck) totalModifier -= 4;
+        if (unit.baseLuck < combat.defender.baseLuck) totalModifier += 4;
         if (combat.isAoE) totalModifier += 2;
       }
 
@@ -1184,10 +1187,12 @@ const TacticalGame = ({ username, roomId }) => {
         setCurrentStep(3);
         setReadyToConfirm(true);
         setAwaitingDefender(false);
+        setAwaitingAttacker(false);
         const updatedResponse2 = {
           ...updatedResponse,
           currentStep: 3,
           awaitingDefender: false,
+          awaitingAttacker: false,
           readyToConfirm: true,
         };
         updateCombatResponse(updatedResponse2);
@@ -1424,7 +1429,6 @@ const TacticalGame = ({ username, roomId }) => {
       </div>
     );
   };
-
   const CombatSelectionMenu = ({
     unit,
     onClose,

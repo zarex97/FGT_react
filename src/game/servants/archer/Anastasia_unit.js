@@ -389,7 +389,7 @@ export const AnastasiaAttributes = {
   baseAgility: 16,
   maxAgility: 20,
   // Luck Stats
-  baseLuck: 8,
+  baseLuck: 2,
   maxLuck: 12,
   // Sustainability
   sustainability: "4",
