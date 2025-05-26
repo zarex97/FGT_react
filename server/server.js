@@ -28,6 +28,7 @@ const handleMessage = (bytes, uuid) => {
             turnsPerRound: message.turnsPerRound || 2, // Default to 2 if not specified
             players: {},
             detectionsThisTurn: [], // Initialize as array - Track who has used detection
+            pendingCombatProcesses: false,
           },
         };
       }
@@ -412,6 +413,153 @@ const handleMessage = (bytes, uuid) => {
           };
 
           console.log("Updated game state after skill:", room.gameState);
+          broadcastToRoom(player.currentRoom);
+          break;
+
+        case "PROCESS_COMBAT_AND_INITIATE_COUNTER":
+          const {
+            attackerId: counterId,
+            defenderId: counterDefenderId,
+            updatedAttacker,
+            updatedDefender: counterDefender,
+            combatResults: counterResults,
+            outcome: counterOutcome,
+          } = message;
+
+          // Update both units
+          room.gameState.units = room.gameState.units.map((unit) => {
+            if (unit.id === counterId) {
+              // Move combat from combatSent to processedCombatSent and set canCounter
+              const processedCombat = unit.combatSent.find(
+                (c) => c.defender.id === counterDefenderId
+              );
+              const remainingCombatSent = unit.combatSent.filter(
+                (c) => c.defender.id !== counterDefenderId
+              );
+
+              return {
+                ...updatedAttacker,
+                combatSent: remainingCombatSent,
+                processedCombatSent: [
+                  ...(unit.processedCombatSent || []),
+                  processedCombat,
+                ],
+                canCounter: true,
+              };
+            }
+            if (unit.id === counterDefenderId) {
+              // Move combat from combatReceived to processedCombatReceived
+              return {
+                ...counterDefender,
+                combatReceived: {},
+                processedCombatReceived: [
+                  ...(unit.processedCombatReceived || []),
+                  unit.combatReceived,
+                ],
+              };
+            }
+            return unit;
+          });
+
+          broadcastToRoom(player.currentRoom);
+
+          // Send completion notification
+          Object.entries(room.gameState.players).forEach(
+            ([playerId, playerInfo]) => {
+              const connection = connections[playerId];
+              if (connection) {
+                connection.send(
+                  JSON.stringify({
+                    type: "COMBAT_COMPLETION_NOTIFICATION",
+                    message:
+                      counterOutcome === "hit"
+                        ? "All combat steps except counter were solved, damage received and effects were applied"
+                        : "All combat steps except counter were solved, attack was evaded",
+                  })
+                );
+              }
+            }
+          );
+          break;
+
+        case "PROCESS_COMBAT_COMPLETE":
+          const {
+            attackerId: completeAttackerId,
+            defenderId: completeDefenderId,
+            updatedDefender: completeDefender,
+            combatResults: completeResults,
+            outcome: completeOutcome,
+          } = message;
+
+          // Update units and move combats to processed arrays
+          room.gameState.units = room.gameState.units.map((unit) => {
+            if (unit.id === completeAttackerId) {
+              // Move combat from combatSent to processedCombatSent
+              const processedCombat = unit.combatSent.find(
+                (c) => c.defender.id === completeDefenderId
+              );
+              const remainingCombatSent = unit.combatSent.filter(
+                (c) => c.defender.id !== completeDefenderId
+              );
+
+              return {
+                ...unit,
+                combatSent: remainingCombatSent,
+                processedCombatSent: [
+                  ...(unit.processedCombatSent || []),
+                  processedCombat,
+                ],
+              };
+            }
+            if (unit.id === completeDefenderId) {
+              // Move combat from combatReceived to processedCombatReceived
+              return {
+                ...completeDefender,
+                combatReceived: {},
+                processedCombatReceived: [
+                  ...(unit.processedCombatReceived || []),
+                  unit.combatReceived,
+                ],
+              };
+            }
+            return unit;
+          });
+
+          broadcastToRoom(player.currentRoom);
+
+          // Send completion notification
+          Object.entries(room.gameState.players).forEach(
+            ([playerId, playerInfo]) => {
+              const connection = connections[playerId];
+              if (connection) {
+                connection.send(
+                  JSON.stringify({
+                    type: "COMBAT_COMPLETION_NOTIFICATION",
+                    message:
+                      completeOutcome === "hit"
+                        ? "Combat complete, damage received and effects were applied"
+                        : "Combat complete, attack was evaded",
+                  })
+                );
+              }
+            }
+          );
+          break;
+
+        case "RESET_COUNTER_STATUS":
+          const { unitId: resetUnitId } = message;
+
+          room.gameState.units = room.gameState.units.map((unit) => {
+            if (unit.id === resetUnitId) {
+              return {
+                ...unit,
+                canCounter: false,
+                counteringAgainstWho: 0,
+              };
+            }
+            return unit;
+          });
+
           broadcastToRoom(player.currentRoom);
           break;
       }

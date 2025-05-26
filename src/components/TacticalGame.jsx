@@ -86,6 +86,7 @@ const TacticalGame = ({ username, roomId }) => {
   const [showCombatTargets, setShowCombatTargets] = useState(false);
   const [selectedCombatTarget, setSelectedCombatTarget] = useState(null);
   const [awaitingDefender, setAwaitingDefender] = useState(true);
+  const [combatCompletionMessage, setCombatCompletionMessage] = useState(null);
 
   const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
@@ -576,6 +577,102 @@ const TacticalGame = ({ username, roomId }) => {
       onClose();
     };
 
+    const handleConfirmCombatResultsAndInitiateCounter = () => {
+      const currentAttacker = gameState.units.find(
+        (u) => u.id === unit.combatReceived.attacker.id
+      );
+      const currentDefender = gameState.units.find(
+        (u) => u.id === unit.combatReceived.defender.id
+      );
+
+      if (!currentAttacker || !currentDefender) {
+        console.error("Could not find current units");
+        return;
+      }
+
+      const currentAttackerDeepCopy = JSON.parse(
+        JSON.stringify(currentAttacker)
+      );
+
+      const currentDefenderDeepCopy = JSON.parse(
+        JSON.stringify(currentDefender)
+      );
+
+      const gameStateDeepCopy = JSON.parse(JSON.stringify(gameState));
+
+      const combat = new Combat({
+        typeOfAttackCausingIt: unit.combatReceived.typeOfAttackCausingIt,
+        proportionOfMagicUsed: unit.combatReceived.proportionOfMagicUsed,
+        proportionOfStrengthUsed: unit.combatReceived.proportionOfStrengthUsed,
+        attacker: currentAttackerDeepCopy,
+        defender: currentDefenderDeepCopy,
+        gameState: gameStateDeepCopy,
+        integratedAttackMultiplier:
+          unit.combatReceived.integratedAttackMultiplier,
+        integratedAttackFlatBonus:
+          unit.combatReceived.integratedAttackFlatBonus,
+        isAoE: unit.combatReceived.isAoE || false,
+      });
+      // Instead of setting finalResults, copy over the stored combat results
+      combat.combatResults = JSON.parse(JSON.stringify(unit.combatReceived));
+
+      // Now call receiveCombat to apply any defender modifications
+      const finalResults = combat.receiveCombat();
+
+      // unit.statusIfHit.hp =
+      //   unit.statusIfHit.hp - finalResults.finalDamage.total;
+      // unit = JSON.parse(JSON.stringify(unit.statusIfHit));
+      const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
+      const newEffect = unit.effectsReceived;
+
+      //if existing, remove the blockdefense effect
+      if (currentDefender.effects) {
+        currentDefender.effects = currentDefender.effects.filter(
+          (e) => e.name !== "BlockDefense"
+        );
+      }
+
+      // Determine if hit or evade based on combat response
+      const outcome = determineOutcome(combat.response);
+
+      let updatedDefender = currentDefender;
+      if (outcome === "hit") {
+        updatedDefender = {
+          ...currentDefender,
+          hp: Math.max(0, currentDefender.hp - finalResults.finalDamage.total),
+          canCounter: true,
+          counteringAgainstWho: combat.attacker.id,
+          effects: [
+            ...(currentDefender.effects || []),
+            ...(currentDefender.effectsReceived
+              ? [currentDefender.effectsReceived]
+              : []),
+          ].filter(Boolean),
+        };
+      }
+
+      //currently may be out of use for updatedDefender
+      const updatedUnit = {
+        ...unit,
+        hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
+        canCounter: true,
+        counteringAgainstWho: combat.attacker.id,
+        effects: [...currentEffects, newEffect],
+      };
+
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "PROCESS_COMBAT_AND_INITIATE_COUNTER",
+        attackerId: combat.attacker.id,
+        defenderId: combat.defender.id,
+        updatedDefender,
+        combatResults: finalResults,
+        outcome,
+      });
+
+      onClose();
+    };
+
     const handleBlock = () => {
       const currentDefender = gameState.units.find(
         (u) => u.id === unit.combatReceived.defender.id
@@ -907,21 +1004,18 @@ const TacticalGame = ({ username, roomId }) => {
 
               {/* Step 3: Confirmation */}
               {currentStep === 3 && readyToConfirm && (
-                <div className="mt-4">
+                <div className="mt-4 space-y-2">
                   <button
-                    onClick={() => {
-                      const outcome = determineOutcome(
-                        unit.combatReceived.response
-                      );
-                      if (outcome === "hit") {
-                        handleDoNothing();
-                      } else {
-                        onClose();
-                      }
-                    }}
+                    onClick={handleDoNothing}
                     className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                   >
-                    Confirm Results of Combat
+                    Confirm Results of Combat - Skip counter
+                  </button>
+                  <button
+                    onClick={handleConfirmCombatResultsAndInitiateCounter}
+                    className="w-full px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600"
+                  >
+                    Confirm Results of Combat - Initiate Counter
                   </button>
                 </div>
               )}
@@ -1232,6 +1326,7 @@ const TacticalGame = ({ username, roomId }) => {
       setAwaitingAttacker(updatedResponse.awaitingAttacker);
     };
 
+    // handleDoNothing may be replaced by
     const handleDoNothing = () => {
       const currentAttacker = gameState.units.find((u) => u.id === unit.id);
       const currentDefender = gameState.units.find(
@@ -1283,6 +1378,70 @@ const TacticalGame = ({ username, roomId }) => {
         action: "RECEIVE_ATTACK",
         updatedUnit: updatedDefender,
         combatResults: finalResults,
+      });
+
+      onClose();
+    };
+
+    const handleConfirmCombatResults = () => {
+      const currentAttacker = gameState.units.find((u) => u.id === unit.id);
+      const currentDefender = gameState.units.find(
+        (u) => u.id === combat.defender.id
+      );
+
+      if (!currentAttacker || !currentDefender) {
+        console.error("Could not find current units");
+        return;
+      }
+
+      const currentAttackerDeepCopy = JSON.parse(
+        JSON.stringify(currentAttacker)
+      );
+      const currentDefenderDeepCopy = JSON.parse(
+        JSON.stringify(currentDefender)
+      );
+      const gameStateDeepCopy = JSON.parse(JSON.stringify(gameState));
+
+      //forSentCombats
+      const combatInstance = new Combat({
+        typeOfAttackCausingIt: combat.typeOfAttackCausingIt,
+        proportionOfMagicUsed: combat.proportionOfMagicUsed,
+        proportionOfStrengthUsed: combat.proportionOfStrengthUsed,
+        attacker: currentAttackerDeepCopy,
+        defender: currentDefenderDeepCopy,
+        gameState: gameStateDeepCopy,
+        integratedAttackMultiplier: combat.integratedAttackMultiplier,
+        integratedAttackFlatBonus: combat.integratedAttackFlatBonus,
+        isAoE: combat.isAoE || false,
+      });
+
+      // Copy over the stored combat results
+      combatInstance.combatResults = JSON.parse(JSON.stringify(combat));
+
+      const finalResults = combatInstance.receiveCombat();
+
+      // Determine if hit or evade based on combat response
+      const outcome = determineOutcome(combat.response);
+
+      const updatedDefender = {
+        ...currentDefender,
+        canCounter: true,
+        counteringAgainstWho: combat.attacker.id,
+        hp: Math.max(0, currentDefender.hp - finalResults.finalDamage.total),
+        effects: [
+          ...(currentDefender.effects || []),
+          currentDefender.effectsReceived,
+        ],
+      };
+
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "PROCESS_COMBAT_COMPLETE",
+        attackerId: combat.attacker.id,
+        defenderId: combat.defender.id,
+        updatedDefender,
+        combatResults: finalResults,
+        outcome,
       });
 
       onClose();
@@ -1394,6 +1553,19 @@ const TacticalGame = ({ username, roomId }) => {
             {currentStep === 3 && readyToConfirm && (
               <div className="mt-4">
                 <button
+                  onClick={handleConfirmCombatResults}
+                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Confirm Results of Combat
+                </button>
+              </div>
+            )}
+
+            {/*
+            Step 3: Confirmation
+            {currentStep === 3 && readyToConfirm && (
+              <div className="mt-4">
+                <button
                   onClick={() => {
                     const outcome = determineOutcome(combat.response);
                     if (outcome === "hit") {
@@ -1408,6 +1580,7 @@ const TacticalGame = ({ username, roomId }) => {
                 </button>
               </div>
             )}
+            */}
 
             {/* Check Result Display */}
             {checkResult && (
@@ -1584,6 +1757,36 @@ const TacticalGame = ({ username, roomId }) => {
       type: "GAME_ACTION",
       action: "ATTEMPT_DETECTION",
     });
+  };
+
+  // Add a popup component for combat completion notification
+  const CombatCompletionNotification = ({ message, onClose }) => {
+    useEffect(() => {
+      const timer = setTimeout(() => {
+        onClose();
+      }, 3000); // Auto-close after 3 seconds
+
+      return () => clearTimeout(timer);
+    }, [onClose]);
+
+    if (!message) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-md mx-4">
+          <div className="text-center">
+            <h3 className="text-lg font-bold mb-4">Combat Complete</h3>
+            <p className="text-gray-700 mb-4">{message}</p>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const UniqueActionsMenu = ({ unit, onClose }) => {
@@ -2088,6 +2291,19 @@ const TacticalGame = ({ username, roomId }) => {
   const SkillsMenu = ({ unit }) => {
     const isPlayerTurn = gameState.turn === playerTeam;
     if (!showSkillsMenu) return null;
+    const hasCounterPending = hasCounterPendingOnBoard(gameState);
+
+    const canUseSkill = (skillImpl, unit, isPlayerTurn) => {
+      const hasCounterPending = hasCounterPendingOnBoard(gameState);
+      if (hasCounterPending) {
+        const counterUnit = getCounterUnit(gameState);
+        // Only allow skills if this unit is the one that can counter, or if it's a reactionary skill
+        if (counterUnit.id !== unit.id && !skillImpl.isReactionary) {
+          return false;
+        }
+      }
+      return skillImpl.isReactionary || unit.canCounter || isPlayerTurn;
+    };
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -2102,8 +2318,15 @@ const TacticalGame = ({ username, roomId }) => {
               if (!skillImpl) return null;
 
               const isOnCd = isSkillOnCooldown(skillRef, gameState.currentTurn);
-              const canUse =
-                skillImpl.isReactionary || unit.canCounter || isPlayerTurn;
+              const canUse = canUseSkill(skillImpl, unit, isPlayerTurn);
+              const hasCounterPending = hasCounterPendingOnBoard(gameState);
+              const counterUnit = hasCounterPending
+                ? getCounterUnit(gameState)
+                : null;
+              const isBlockedByCounter =
+                hasCounterPending &&
+                counterUnit.id !== unit.id &&
+                !skillImpl.isReactionary;
               const turnsRemaining = isOnCd
                 ? skillRef.onCooldownUntil - gameState.currentTurn
                 : 0;
@@ -2123,13 +2346,19 @@ const TacticalGame = ({ username, roomId }) => {
                     {skillImpl.name}
                     <span
                       className={`text-sm ${
-                        isOnCd ? "text-red-500" : "text-green-500"
+                        isOnCd
+                          ? "text-red-500"
+                          : isBlockedByCounter
+                          ? "text-orange-500"
+                          : "text-green-500"
                       }`}
                     >
                       {isOnCd
                         ? `CD: ${turnsRemaining} turn${
                             turnsRemaining !== 1 ? "s" : ""
                           }`
+                        : isBlockedByCounter
+                        ? "Counter Pending"
                         : canUse
                         ? "Ready"
                         : "Not Available"}
@@ -2282,6 +2511,30 @@ const TacticalGame = ({ username, roomId }) => {
   const NoblePhantasmMenu = ({ unit }) => {
     const isPlayerTurn = gameState.turn === playerTeam;
     if (!showNPMenu) return null;
+
+    // Helper function to check counter restrictions
+    const hasCounterPendingOnBoard = (gameState) => {
+      return gameState.units.some((unit) => unit.canCounter === true);
+    };
+
+    const getCounterUnit = (gameState) => {
+      return gameState.units.find((unit) => unit.canCounter === true);
+    };
+
+    const canUseNP = (npImpl, unit, isPlayerTurn, roundCheck) => {
+      const hasCounterPending = hasCounterPendingOnBoard(gameState);
+      if (hasCounterPending) {
+        const counterUnit = getCounterUnit(gameState);
+        // Only allow NPs if this unit is the one that can counter, or if it's a reactionary NP
+        if (counterUnit.id !== unit.id && !npImpl.isReactionary) {
+          return false;
+        }
+      }
+      return (
+        roundCheck.canUse &&
+        (npImpl.isReactionary || unit.canCounter || isPlayerTurn)
+      );
+    };
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -3188,6 +3441,12 @@ const TacticalGame = ({ username, roomId }) => {
       )}
       {detectionResults && <DetectionResults results={detectionResults} />}
       {detectionError && <DetectionError message={detectionError} />}
+      {combatCompletionMessage && (
+        <CombatCompletionNotification
+          message={combatCompletionMessage}
+          onClose={() => setCombatCompletionMessage(null)}
+        />
+      )}
     </div>
   );
 };

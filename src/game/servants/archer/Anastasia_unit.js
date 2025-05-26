@@ -400,6 +400,7 @@ export const AnastasiaAttributes = {
   processedCombatSent: [],
   processedCombatReceived: [],
   canCounter: false,
+  counteringAgainstWho: null,
   agilityChecks: null,
   luckChecks: null,
 };
