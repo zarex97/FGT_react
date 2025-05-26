@@ -1612,6 +1612,7 @@ const TacticalGame = ({ username, roomId }) => {
       // Determine if hit or evade based on combat response
       const outcome = determineOutcome(combatInstance.combatResults.response);
 
+      // should change canCounter to depend on willTriggerDoubleCounter, so basically, if this variable is true, then canCounter should false, and if canCounter is false, counteringAgainstWho should be null, changes must be on the server side of things for this menu and for the defender menu regarding the de-activation of canCounter after countering and this issue with preventing infinite counters
       const updatedDefender = {
         ...currentDefender,
         canCounter: true,
