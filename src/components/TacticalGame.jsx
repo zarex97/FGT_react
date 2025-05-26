@@ -208,6 +208,17 @@ const TacticalGame = ({ username, roomId }) => {
     }
   );
 
+  const resetCombatStates = () => {
+    console.log("Resetting all combat states to initial values");
+    setCurrentStep(1);
+    setAwaitingAttacker(false);
+    setReadyToConfirm(false);
+    setAwaitingDefender(true);
+    setCheckResult(null);
+    setActiveCheck(null);
+    setCurrentCombatResponse(null);
+  };
+
   // Handle incoming WebSocket messages
   useEffect(() => {
     if (lastJsonMessage?.type === "GAME_STATE_UPDATE") {
@@ -222,6 +233,7 @@ const TacticalGame = ({ username, roomId }) => {
       setTimeout(() => setDetectionError(null), 3000);
     } else if (lastJsonMessage?.type === "COMBAT_COMPLETION_NOTIFICATION") {
       setCombatCompletionMessage(lastJsonMessage.message);
+      resetCombatStates();
     } else if (lastJsonMessage?.type === "CLOSE_COMBAT_MENU") {
       // Close all combat-related menus
       setShowSentCombatManagement(false);
@@ -229,6 +241,8 @@ const TacticalGame = ({ username, roomId }) => {
       setShowCombatManagement(false);
       setShowCombatSelection(false);
       setSelectedCombatTarget(null);
+      resetCombatStates();
+      console.log("resetting combat states for fresh counter");
       console.log("Combat menu closed by server:", lastJsonMessage.reason);
     }
   }, [lastJsonMessage]);
@@ -421,6 +435,18 @@ const TacticalGame = ({ username, roomId }) => {
       (u) => u.id === unit.combatReceived?.defender.id
     );
     unit = s_unit;
+    const d_unit = gameState.units.find(
+      (u) => u.id === unit.combatReceived?.attacker.id
+    );
+    const d_unit_id = d_unit.id;
+
+    const combat = unit.combatReceived;
+
+    setCurrentStep(combat.response.currentStep);
+    setAwaitingAttacker(combat.response.awaitingAttacker);
+    setReadyToConfirm(combat.response.readyToConfirm);
+    setAwaitingDefender(combat.response.awaitingDefender || true);
+
     // Add effect to watch for attacker's response
     useEffect(() => {
       if (unit.combatReceived?.response?.hitWithLuck_attacker?.done) {
@@ -605,14 +631,16 @@ const TacticalGame = ({ username, roomId }) => {
       let updatedUnit = {
         ...unit,
       };
+
+      const willTriggerDoubleCounter = d_unit.counteringAgainstWho === unit.id;
       if (outcome === "hit") {
         updatedUnit = {
           ...unit,
+          canCounter: willTriggerDoubleCounter,
           hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
           effects: [...currentEffects, newEffect],
         };
       }
-
       sendJsonMessage({
         type: "GAME_ACTION",
         action: "RECEIVE_ATTACK",
@@ -761,6 +789,11 @@ const TacticalGame = ({ username, roomId }) => {
         outcome,
       });
 
+      setCurrentStep(1);
+      setAwaitingAttacker(false);
+      setReadyToConfirm(false);
+      setAwaitingDefender(true);
+      setHasProcessedResponse(false);
       onClose();
     };
 
@@ -976,6 +1009,7 @@ const TacticalGame = ({ username, roomId }) => {
       setReadyToConfirm(true);
     };
 
+    const willTriggerDoubleCounter = d_unit.counteringAgainstWho === unit.id;
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-4 w-[500px] max-h-[80vh] overflow-y-auto">
@@ -1048,9 +1082,6 @@ const TacticalGame = ({ username, roomId }) => {
                   <button
                     onClick={handleLuckEvade}
                     className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-                    disabled={
-                      unit.combatReceived.response?.evadeWithLuck_defender?.done
-                    }
                   >
                     Try Luck Evasion
                   </button>
@@ -1104,9 +1135,24 @@ const TacticalGame = ({ username, roomId }) => {
                   </button>
                   <button
                     onClick={handleConfirmCombatResultsAndInitiateCounter}
-                    className="w-full px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600"
+                    className={`w-full px-4 py-2 rounded text-white ${
+                      willTriggerDoubleCounter
+                        ? "bg-gray-400 cursor-not-allowed"
+                        : "bg-orange-500 hover:bg-orange-600"
+                    }`}
+                    disabled={willTriggerDoubleCounter}
+                    title={
+                      willTriggerDoubleCounter
+                        ? "You Cannot counter against a counterattack"
+                        : "Confirm Results"
+                    }
                   >
                     Confirm Results of Combat - Initiate Counter
+                    {willTriggerDoubleCounter && (
+                      <span className="ml-2 text-xs">
+                        (Can't counter against a counter)
+                      </span>
+                    )}
                   </button>
                 </div>
               )}
@@ -1233,6 +1279,14 @@ const TacticalGame = ({ username, roomId }) => {
       if (!combat.defender || !combat.attacker) return false; // Missing required properties
       return true;
     };
+
+    // if (combat.response.currentStep > 1) {
+    //   setCurrentStep(1);
+    //   setAwaitingAttacker(false);
+    //   setReadyToConfirm(false);
+    //   setAwaitingDefender(true);
+    //   setHasProcessedResponse(false);
+    // }
 
     // Defensive programming: If combat is invalid/empty, close the menu
     useEffect(() => {
