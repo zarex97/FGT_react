@@ -1951,13 +1951,15 @@ const TacticalGame = ({ username, roomId }) => {
 
   const ContextMenu = ({ position, unit }) => {
     const isPlayerTurn = gameState.turn === unit.team;
+    const hasCounterPending = hasCounterPendingOnBoard(gameState);
+    const counterUnit = hasCounterPending ? getCounterUnit(gameState) : null;
+    const isBlockedByCounter = hasCounterPending && counterUnit?.id !== unit.id;
+
     console.log("isPlayerTurn:", isPlayerTurn);
     console.log("unit.hasAttacked:", unit.hasAttacked);
     console.log("current gameState:", gameState);
-    const canUseSkill = (skill) => {
-      return skill.isReactionary || unit.canCounter || isPlayerTurn;
-    };
-
+    console.log("hasCounterPending:", hasCounterPending);
+    console.log("isBlockedByCounter:", isBlockedByCounter);
     if (!position) return null;
 
     return (
@@ -1968,32 +1970,54 @@ const TacticalGame = ({ username, roomId }) => {
         <button
           className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
                         ${
-                          unit.hasAttacked || !isPlayerTurn
+                          unit.hasAttacked ||
+                          !isPlayerTurn ||
+                          isBlockedByCounter
                             ? "opacity-50 cursor-not-allowed"
                             : ""
                         }`}
           onClick={() => handleAction("basic-attack", unit)}
-          disabled={unit.hasAttacked || !isPlayerTurn}
+          disabled={unit.hasAttacked || !isPlayerTurn || isBlockedByCounter}
+          title={isBlockedByCounter ? "Another unit has counter pending" : ""}
         >
           <Sword size={16} /> Basic Attack
+          {isBlockedByCounter && (
+            <span className="text-xs text-orange-500 ml-auto">(Blocked)</span>
+          )}
         </button>
         <button
-          className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+          className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
+                        ${isBlockedByCounter ? "opacity-50" : ""}`}
           onClick={() => {
             setShowSkillsMenu(true);
             setContextMenu(null);
           }}
+          title={
+            isBlockedByCounter ? "Some skills may be blocked by counter" : ""
+          }
         >
           <ScrollText size={16} /> Skills
+          {isBlockedByCounter && (
+            <span className="text-xs text-orange-500 ml-auto">(Limited)</span>
+          )}
         </button>
         <button
-          className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+          className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
+                        ${isBlockedByCounter ? "opacity-50" : ""}`}
           onClick={() => {
             setShowNPMenu(true);
             setContextMenu(null);
           }}
+          title={
+            isBlockedByCounter
+              ? "Some Noble Phantasms may be blocked by counter"
+              : ""
+          }
         >
           <Star size={16} /> Noble Phantasms
+          {isBlockedByCounter && (
+            <span className="text-xs text-orange-500 ml-auto">(Limited)</span>
+          )}
         </button>
         <button
           className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
@@ -2005,13 +2029,20 @@ const TacticalGame = ({ username, roomId }) => {
           <User size={16} /> Show Profile
         </button>
         <button
-          className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+          className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
+                        ${isBlockedByCounter ? "opacity-50" : ""}`}
           onClick={() => {
             setShowOtherActions(true);
             setContextMenu(null);
           }}
+          title={
+            isBlockedByCounter ? "Some actions may be blocked by counter" : ""
+          }
         >
           <MoreHorizontal size={16} /> Other Actions
+          {isBlockedByCounter && (
+            <span className="text-xs text-orange-500 ml-auto">(Limited)</span>
+          )}
         </button>
         <button
           className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
@@ -2030,6 +2061,17 @@ const TacticalGame = ({ username, roomId }) => {
         >
           <Swords size={16} /> Manage Combat
         </button>
+        {unit.canCounter && (
+          <button
+            className="w-full px-4 py-2 text-left hover:bg-yellow-100 flex items-center gap-2 text-orange-600 font-semibold"
+            onClick={() => {
+              resetCounterStatus(unit.id);
+              setContextMenu(null);
+            }}
+          >
+            <Target size={16} /> End Counter
+          </button>
+        )}
       </div>
     );
   };
