@@ -218,17 +218,83 @@ const handleMessage = (bytes, uuid) => {
           break;
 
         case "RECEIVE_ATTACK":
-          room.gameState = {
-            ...room.gameState,
-            units: room.gameState.units.map((existingUnit) => {
-              if (existingUnit.id === message.updatedUnit.id) {
-                return {
-                  ...message.updatedUnit,
-                };
+          const updatedUnit = message.updatedUnit;
+          const updated_Attacker = message.updatedAttacker;
+          const combatResults = message.combatResults;
+
+          // Find the attacker and defender from the combat results
+          const fullAttackerId = updated_Attacker.id;
+          const fullDefenderId = updatedUnit.id;
+
+          // Check if this is a counter attack being processed
+          const defenderUnit = room.gameState.units.find(
+            (u) => u.id === fullDefenderId
+          );
+          const attackerUnit = room.gameState.units.find(
+            (u) => u.id === fullAttackerId
+          );
+          const isCounterAttack =
+            attackerUnit.counteringAgainstWho === fullAttackerId;
+
+          console.log("Processing RECEIVE_ATTACK:", {
+            fullAttackerId,
+            fullDefenderId,
+            isCounterAttack,
+            defenderCountering: defenderUnit?.counteringAgainstWho,
+            attackerCountering: attackerUnit?.counteringAgainstWho,
+          });
+
+          room.gameState.units = room.gameState.units.map((existingUnit) => {
+            // Update the defender unit with new stats
+            if (existingUnit.id === fullDefenderId) {
+              return {
+                ...updatedUnit,
+                // Move combat from combatReceived to processedCombatReceived
+                combatReceived: {},
+                processedCombatReceived: [
+                  ...(existingUnit.processedCombatReceived || []),
+                  existingUnit.combatReceived,
+                ],
+              };
+            }
+
+            // Update the attacker unit - move combat arrays and handle counter status
+            if (existingUnit.id === fullAttackerId) {
+              // Find the combat that was sent to this defender
+              const processedCombat = existingUnit.combatSent.find(
+                (c) => c.defender.id === fullDefenderId
+              );
+              const remainingCombatSent = existingUnit.combatSent.filter(
+                (c) => c.defender.id !== fullDefenderId
+              );
+
+              let updatedAttacker = {
+                ...existingUnit,
+                canCounter: false,
+                counteringAgainstWho: null,
+                // Move combat from combatSent to processedCombatSent
+                combatSent: remainingCombatSent,
+                processedCombatSent: [
+                  ...(existingUnit.processedCombatSent || []),
+                  processedCombat,
+                ],
+              };
+
+              // If this is a counter attack being processed, reset the original attacker's counter status
+              if (isCounterAttack) {
+                console.log(
+                  "Resetting counter status for original attacker:",
+                  fullAttackerId
+                );
+                updatedAttacker.canCounter = false;
+                updatedAttacker.counteringAgainstWho = null;
               }
-              return existingUnit;
-            }),
-          };
+
+              return updatedAttacker;
+            }
+
+            return existingUnit;
+          });
 
           broadcastToRoom(player.currentRoom);
           break;
@@ -475,7 +541,6 @@ const handleMessage = (bytes, uuid) => {
                   ...(unit.processedCombatSent || []),
                   processedCombat,
                 ],
-                canCounter: true,
               };
             }
             if (unit.id === counterDefenderId) {
@@ -483,6 +548,7 @@ const handleMessage = (bytes, uuid) => {
               return {
                 ...counterDefender,
                 combatReceived: {},
+                canCounter: true,
                 processedCombatReceived: [
                   ...(unit.processedCombatReceived || []),
                   unit.combatReceived,
@@ -511,6 +577,7 @@ const handleMessage = (bytes, uuid) => {
               }
             }
           );
+          broadcastToRoom(player.currentRoom);
           break;
 
         case "PROCESS_COMBAT_COMPLETE":
@@ -543,9 +610,10 @@ const handleMessage = (bytes, uuid) => {
               const remainingCombatSent = unit.combatSent.filter(
                 (c) => c.defender.id !== completeDefenderId
               );
-
               return {
                 ...unit,
+                canCounter: false,
+                counteringAgainstWho: null,
                 combatSent: remainingCombatSent,
                 processedCombatSent: [
                   ...(unit.processedCombatSent || []),
@@ -586,6 +654,7 @@ const handleMessage = (bytes, uuid) => {
               }
             }
           );
+          broadcastToRoom(player.currentRoom);
           break;
 
         case "RESET_COUNTER_STATUS":

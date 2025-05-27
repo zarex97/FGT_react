@@ -208,6 +208,17 @@ const TacticalGame = ({ username, roomId }) => {
     }
   );
 
+  const resetCombatStates = () => {
+    console.log("Resetting all combat states to initial values");
+    setCurrentStep(1);
+    setAwaitingAttacker(false);
+    setReadyToConfirm(false);
+    setAwaitingDefender(true);
+    setCheckResult(null);
+    setActiveCheck(null);
+    setCurrentCombatResponse(null);
+  };
+
   // Handle incoming WebSocket messages
   useEffect(() => {
     if (lastJsonMessage?.type === "GAME_STATE_UPDATE") {
@@ -222,6 +233,7 @@ const TacticalGame = ({ username, roomId }) => {
       setTimeout(() => setDetectionError(null), 3000);
     } else if (lastJsonMessage?.type === "COMBAT_COMPLETION_NOTIFICATION") {
       setCombatCompletionMessage(lastJsonMessage.message);
+      resetCombatStates();
     } else if (lastJsonMessage?.type === "CLOSE_COMBAT_MENU") {
       // Close all combat-related menus
       setShowSentCombatManagement(false);
@@ -229,6 +241,8 @@ const TacticalGame = ({ username, roomId }) => {
       setShowCombatManagement(false);
       setShowCombatSelection(false);
       setSelectedCombatTarget(null);
+      resetCombatStates();
+      console.log("resetting combat states for fresh counter");
       console.log("Combat menu closed by server:", lastJsonMessage.reason);
     }
   }, [lastJsonMessage]);
@@ -421,6 +435,18 @@ const TacticalGame = ({ username, roomId }) => {
       (u) => u.id === unit.combatReceived?.defender.id
     );
     unit = s_unit;
+    const d_unit = gameState.units.find(
+      (u) => u.id === unit.combatReceived?.attacker.id
+    );
+    const d_unit_id = d_unit.id;
+
+    const combat = unit.combatReceived;
+
+    setCurrentStep(combat.response.currentStep);
+    setAwaitingAttacker(combat.response.awaitingAttacker);
+    setReadyToConfirm(combat.response.readyToConfirm);
+    setAwaitingDefender(combat.response.awaitingDefender || true);
+
     // Add effect to watch for attacker's response
     useEffect(() => {
       if (unit.combatReceived?.response?.hitWithLuck_attacker?.done) {
@@ -602,21 +628,35 @@ const TacticalGame = ({ username, roomId }) => {
 
       // Determine if hit or evade based on combat response
       const outcome = determineOutcome(combat.combatResults.response);
-      let updatedUnit = {
-        ...unit,
+
+      let updatedAttacker = {
+        ...currentAttackerDeepCopy,
       };
+      const currentDefenderDeepCopy2 = JSON.parse(
+        JSON.stringify(currentDefender)
+      );
+      let updatedUnit = {
+        ...currentDefenderDeepCopy2,
+        canCounter: false,
+        counteringAgainstWho: null,
+      };
+
+      const willTriggerDoubleCounter = d_unit.counteringAgainstWho === unit.id;
+      // can counter is set to false because this method is for when you skip counter
       if (outcome === "hit") {
         updatedUnit = {
           ...unit,
+          canCounter: false,
+          counteringAgainstWho: null,
           hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
           effects: [...currentEffects, newEffect],
         };
       }
-
       sendJsonMessage({
         type: "GAME_ACTION",
         action: "RECEIVE_ATTACK",
         updatedUnit,
+        updatedAttacker,
         combatResults: finalResults,
       });
 
@@ -703,6 +743,12 @@ const TacticalGame = ({ username, roomId }) => {
       // Determine if hit or evade based on combat response
       const outcome = determineOutcome(combat.combatResults.response);
 
+      // Create updatedAttacker - this was missing!
+      let updatedAttacker = {
+        ...currentAttacker,
+        hasAttacked: true, // Mark as having completed their attack
+      };
+
       let updatedDefender = currentDefender;
 
       //if the attack doesn't hit, then still counter would be available
@@ -749,11 +795,17 @@ const TacticalGame = ({ username, roomId }) => {
         action: "PROCESS_COMBAT_AND_INITIATE_COUNTER",
         attackerId: combat.attacker.id,
         defenderId: combat.defender.id,
+        updatedAttacker,
         updatedDefender,
         combatResults: finalResults,
         outcome,
       });
 
+      setCurrentStep(1);
+      setAwaitingAttacker(false);
+      setReadyToConfirm(false);
+      setAwaitingDefender(true);
+      setHasProcessedResponse(false);
       onClose();
     };
 
@@ -938,7 +990,28 @@ const TacticalGame = ({ username, roomId }) => {
         setAwaitingAttacker(false);
         setAwaitingDefender(true);
         updateCombatResponse(updatedResponse);
-      } else {
+      }
+      // else if (
+      //   !luckCheck.success &&
+      //   !updatedResponse.evadeWithCS_defender.done
+      // ) {
+      //   console.log(
+      //     "Failed luck check, but you can still use Command Seal moving to step 3"
+      //   );
+      //   setAwaitingAttacker(true);
+      //   setCurrentStep(2);
+      //   setReadyToConfirm(false);
+      //   setAwaitingDefender(false);
+      //   const updatedResponse2 = {
+      //     ...updatedResponse,
+      //     currentStep: 2,
+      //     awaitingAttacker: true,
+      //     awaitingDefender: false,
+      //     readyToConfirm: false,
+      //   };
+      //   updateCombatResponse(updatedResponse2);
+      // }
+      else {
         console.log("Successful luck check, awaiting attacker");
         setAwaitingAttacker(true);
         setCurrentStep(2);
@@ -969,6 +1042,9 @@ const TacticalGame = ({ username, roomId }) => {
       setReadyToConfirm(true);
     };
 
+    const willTriggerDoubleCounter = d_unit.counteringAgainstWho === unit.id;
+    const hasUsedCommandSeal =
+      unit.combatReceived.response.evadeWithCS_defender.done;
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-4 w-[500px] max-h-[80vh] overflow-y-auto">
@@ -1041,18 +1117,15 @@ const TacticalGame = ({ username, roomId }) => {
                   <button
                     onClick={handleLuckEvade}
                     className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-                    disabled={
-                      unit.combatReceived.response?.evadeWithLuck_defender?.done
-                    }
                   >
                     Try Luck Evasion
                   </button>
-                  <button
+                  {/* <button
                     onClick={handleCommandSeal}
                     className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
                   >
                     Use Command Seal
-                  </button>
+                  </button> */}
                   <button
                     onClick={() => {
                       setCurrentStep(3);
@@ -1061,6 +1134,18 @@ const TacticalGame = ({ username, roomId }) => {
                     className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
                   >
                     Skip
+                  </button>
+                </div>
+              )}
+
+              {/* Floating command seal button */}
+              {!hasUsedCommandSeal && !awaitingAttacker && (
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={handleCommandSeal}
+                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                  >
+                    Use Command Seal
                   </button>
                 </div>
               )}
@@ -1097,9 +1182,24 @@ const TacticalGame = ({ username, roomId }) => {
                   </button>
                   <button
                     onClick={handleConfirmCombatResultsAndInitiateCounter}
-                    className="w-full px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600"
+                    className={`w-full px-4 py-2 rounded text-white ${
+                      willTriggerDoubleCounter
+                        ? "bg-gray-400 cursor-not-allowed"
+                        : "bg-orange-500 hover:bg-orange-600"
+                    }`}
+                    disabled={willTriggerDoubleCounter}
+                    title={
+                      willTriggerDoubleCounter
+                        ? "You Cannot counter against a counterattack"
+                        : "Confirm Results"
+                    }
                   >
                     Confirm Results of Combat - Initiate Counter
+                    {willTriggerDoubleCounter && (
+                      <span className="ml-2 text-xs">
+                        (Can't counter against a counter)
+                      </span>
+                    )}
                   </button>
                 </div>
               )}
@@ -1226,6 +1326,14 @@ const TacticalGame = ({ username, roomId }) => {
       if (!combat.defender || !combat.attacker) return false; // Missing required properties
       return true;
     };
+
+    // if (combat.response.currentStep > 1) {
+    //   setCurrentStep(1);
+    //   setAwaitingAttacker(false);
+    //   setReadyToConfirm(false);
+    //   setAwaitingDefender(true);
+    //   setHasProcessedResponse(false);
+    // }
 
     // Defensive programming: If combat is invalid/empty, close the menu
     useEffect(() => {
@@ -1551,16 +1659,44 @@ const TacticalGame = ({ username, roomId }) => {
       // Determine if hit or evade based on combat response
       const outcome = determineOutcome(combatInstance.combatResults.response);
 
-      const updatedDefender = {
+      const willTriggerDoubleCounter =
+        currentAttacker.counteringAgainstWho === currentDefender.id;
+
+      let updatedDefender = {
         ...currentDefender,
-        canCounter: true,
-        counteringAgainstWho: combat.attacker.id,
-        hp: Math.max(0, currentDefender.hp - finalResults.finalDamage.total),
-        effects: [
-          ...(currentDefender.effects || []),
-          currentDefender.effectsReceived,
-        ],
       };
+
+      //if the attack hits then it evaluates if a counter attack coming from the defending unit would be possible, if not it stops the possibility of the enemy unit countering
+      if (outcome === "hit") {
+        if (!willTriggerDoubleCounter) {
+          updatedDefender = {
+            ...currentDefender,
+            canCounter: true,
+            counteringAgainstWho: combat.attacker.id,
+            hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
+            effects: [...currentEffects, newEffect],
+          };
+        } else {
+          updatedDefender = {
+            ...currentDefender,
+            canCounter: false,
+            counteringAgainstWho: null,
+            hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
+            effects: [...currentEffects, newEffect],
+          };
+        }
+      }
+      // // should change canCounter to depend on willTriggerDoubleCounter, so basically, if this variable is true, then canCounter should false, and if canCounter is false, counteringAgainstWho should be null, changes must be on the server side of things for this menu and for the defender menu regarding the de-activation of canCounter after countering and this issue with preventing infinite counters
+      // const updatedDefender = {
+      //   ...currentDefender,
+      //   canCounter: true,
+      //   counteringAgainstWho: combat.attacker.id,
+      //   hp: Math.max(0, currentDefender.hp - finalResults.finalDamage.total),
+      //   effects: [
+      //     ...(currentDefender.effects || []),
+      //     currentDefender.effectsReceived,
+      //   ],
+      // };
 
       sendJsonMessage({
         type: "GAME_ACTION",
@@ -2161,6 +2297,8 @@ const TacticalGame = ({ username, roomId }) => {
       return;
     }
 
+    setSelectedUnit(unit);
+
     setActiveNP({
       ref: npRef,
       impl: npImpl,
@@ -2210,6 +2348,7 @@ const TacticalGame = ({ username, roomId }) => {
       console.log("Skill is on cooldown");
       return;
     }
+    setSelectedUnit(unit);
 
     setActiveSkill({
       ref: skillRef,
@@ -2319,6 +2458,10 @@ const TacticalGame = ({ username, roomId }) => {
   };
 
   const endTurn = () => {
+    if (hasCounterPendingOnBoard(gameState)) {
+      console.log("Cannot end turn: Counter is pending");
+      return;
+    }
     const updatedUnits = gameState.units.map((unit) => ({
       ...unit,
       movementLeft: unit.movementRange,
@@ -2442,9 +2585,19 @@ const TacticalGame = ({ username, roomId }) => {
           className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
                     ${!isPlayerTurn ? "opacity-50 cursor-not-allowed" : ""}`}
           onClick={() => handleAction("move", unit)}
-          disabled={!isPlayerTurn}
+          disabled={!isPlayerTurn || hasCounterPending}
+          title={
+            hasCounterPending
+              ? "Movement blocked while counter is pending"
+              : !isPlayerTurn
+              ? "Not your turn"
+              : "Move unit"
+          }
         >
           <Move size={16} /> Move
+          {hasCounterPending && (
+            <span className="text-xs text-orange-500 ml-auto">(Blocked)</span>
+          )}
         </button>
         <button
           className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
@@ -2583,6 +2736,8 @@ const TacticalGame = ({ username, roomId }) => {
     if (isActionOnCooldown(actionRef, gameState.currentTurn)) {
       return;
     }
+
+    setSelectedUnit(unit);
 
     setActiveAction({
       ref: actionRef,
@@ -2969,6 +3124,14 @@ const TacticalGame = ({ username, roomId }) => {
     const hasCounterPending = hasCounterPendingOnBoard(gameState);
     if (hasCounterPending) {
       const counterUnit = getCounterUnit(gameState);
+
+      // For movement, block ALL units when counter is pending (even the counter unit)
+      if (action === "move") {
+        console.log("Movement blocked: Counter is pending");
+        return;
+      }
+
+      // For other actions, only block non-counter units
       if (counterUnit.id !== unit.id) {
         console.log("Action blocked: Another unit has counter pending");
         return;
@@ -3197,12 +3360,16 @@ const TacticalGame = ({ username, roomId }) => {
         setSelectedUnit(null);
         setHighlightedCells([]);
       }
-    } else if (
-      clickedUnit &&
-      clickedUnit.team === playerTeam &&
-      clickedUnit.team === gameState.turn
-    ) {
-      setSelectedUnit(clickedUnit);
+    } else if (clickedUnit && clickedUnit.team === playerTeam) {
+      // FIXED: Allow selection if it's player's unit AND either:
+      // 1. It's their turn, OR
+      // 2. The unit can counter (reactive abilities)
+      const isPlayerTurn = clickedUnit.team === gameState.turn;
+      const canCounter = clickedUnit.canCounter === true;
+
+      if (isPlayerTurn || canCounter) {
+        setSelectedUnit(clickedUnit);
+      }
     }
   };
 
@@ -3574,9 +3741,22 @@ const TacticalGame = ({ username, roomId }) => {
           {gameState.turn === playerTeam && (
             <button
               onClick={endTurn}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className={`px-4 py-2 rounded text-white ${
+                hasCounterPendingOnBoard(gameState)
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-blue-500 hover:bg-blue-600"
+              }`}
+              disabled={hasCounterPendingOnBoard(gameState)}
+              title={
+                hasCounterPendingOnBoard(gameState)
+                  ? "Cannot end turn while counter is pending"
+                  : "End your turn"
+              }
             >
               End Turn
+              {hasCounterPendingOnBoard(gameState) && (
+                <span className="ml-2 text-xs">(Counter Pending)</span>
+              )}
             </button>
           )}
           <DetectionButton />
