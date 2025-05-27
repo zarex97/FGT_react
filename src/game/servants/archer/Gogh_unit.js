@@ -61,7 +61,7 @@ const channelMarkerAllyBuffMicroAction = new MicroAction({
 });
 
 // The trigger effect that activates on successful attacks
-export const GoghSuccessfulAttackTrigger = new TriggerEffect({
+const GoghSuccessfulAttackTrigger = new TriggerEffect({
   eventType: EventTypes.SUCCESSFUL_ATTACK,
   name: "Gogh Buff Trigger",
   description:
@@ -163,14 +163,31 @@ const channelMarkerGoghBuffMicroAction = new MicroAction({
           ? unit.triggerEffects
           : [];
 
-        return {
+        // Store only a reference (following your skill pattern)
+        const triggerEffectReference = {
+          id: "GoghSuccessfulAttackTrigger",
+          appliedAt: gameState.currentTurn,
+          source: "Channel Marker Soul",
+        };
+
+        console.log(
+          `🎨 CHANNEL MARKER: Adding trigger effect reference:`,
+          triggerEffectReference
+        );
+        const updatedUnit = {
           ...unit,
           effects: [...currentEffects, goghBuffEffect],
-          triggerEffects: [
-            ...currentTriggerEffects,
-            GoghSuccessfulAttackTrigger,
-          ],
+          triggerEffects: [...currentTriggerEffects, triggerEffectReference],
         };
+        console.log(`🎨 CHANNEL MARKER: Unit after adding trigger:`, {
+          name: updatedUnit.name,
+          effectsCount: updatedUnit.effects.length,
+          triggerEffectsCount: updatedUnit.triggerEffects.length,
+          hasGoghBuff: updatedUnit.effects.some((e) => e.name === "Gogh"),
+          triggerIds: updatedUnit.triggerEffects.map((tr) => tr.id),
+        });
+
+        return updatedUnit;
       }
       return unit;
     });
@@ -442,6 +459,9 @@ const mahalaprayaMicroAction = new MicroAction({
   },
 });
 
+export const GoghTriggerEffects = {
+  GoghSuccessfulAttackTrigger: GoghSuccessfulAttackTrigger,
+};
 export const GoghNPs = {
   SnegletaSnegurochka: new NoblePhantasm(
     "Snegleta・Snegurochka: Summer Snow, Beautiful Drops of Hoarfrost",

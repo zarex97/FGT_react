@@ -506,6 +506,8 @@ export const AnastasiaAttributes = {
   luckChecks: null,
 };
 
+export const AnastasiaTriggerEffects = {};
+
 // Export complete Anastasia unit template
 export const AnastasiaTemplate = {
   ...AnastasiaAttributes,
