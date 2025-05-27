@@ -1,0 +1,10 @@
+C:\Users\isaac\OneDrive\Documentos\GitHub\FGT_react\src\assets
+C:\Users\isaac\OneDrive\Documentos\GitHub\FGT_react\src\components
+C:\Users\isaac\OneDrive\Documentos\GitHub\FGT_react\src\game
+C:\Users\isaac\OneDrive\Documentos\GitHub\FGT_react\src\game\actions
+C:\Users\isaac\OneDrive\Documentos\GitHub\FGT_react\src\game\noblePhantasms
+C:\Users\isaac\OneDrive\Documentos\GitHub\FGT_react\src\game\servants
+C:\Users\isaac\OneDrive\Documentos\GitHub\FGT_react\src\game\skills
+C:\Users\isaac\OneDrive\Documentos\GitHub\FGT_react\src\game\targeting
+C:\Users\isaac\OneDrive\Documentos\GitHub\FGT_react\src\game\triggerEffects
+C:\Users\isaac\OneDrive\Documentos\GitHub\FGT_react\src\game\servants\archer

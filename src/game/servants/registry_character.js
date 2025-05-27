@@ -1,5 +1,5 @@
 // src/game/servants/registry_character.js
-import { ArcherServants } from "./archer";
+import { ArcherServants } from "./archer/index.js";
 
 export const ServantRegistry = {
   Archer: ArcherServants,

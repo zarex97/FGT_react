@@ -1,13 +1,13 @@
 // src/game/servants/archer/Gogh_unit.js
-import { MicroAction } from "../../MicroAction";
-import { Skill } from "../../Skill";
-import { TargetingType } from "../../targeting/TargetingTypes";
-import { Combat } from "../../Combat";
-import { Action } from "../../actions/Action";
-import { ActionType } from "../../actions/ActionTypes";
-import { NoblePhantasm } from "../../NoblePhantasm";
-import { TriggerEffect } from "../../TriggerEffect";
-import { EventTypes } from "../../EventTypes";
+import { MicroAction } from "../../MicroAction.js";
+import { Skill } from "../../Skill.js";
+import { TargetingType } from "../../targeting/TargetingTypes.js";
+import { Combat } from "../../Combat.js";
+import { Action } from "../../actions/Action.js";
+import { ActionType } from "../../actions/ActionTypes.js";
+import { NoblePhantasm } from "../../NoblePhantasm.js";
+import { TriggerEffect } from "../../TriggerEffect.js";
+import { EventTypes } from "../../EventTypes.js";
 
 // MicroAction 1: Apply buffs to ally within 2 panels
 const channelMarkerAllyBuffMicroAction = new MicroAction({
@@ -171,6 +171,19 @@ const channelMarkerGoghBuffMicroAction = new MicroAction({
         };
 
         console.log(
+          `🎨💫 Created trigger effect reference:`,
+          triggerEffectReference
+        );
+        console.log(
+          `🎨💫 Reference ID specifically:`,
+          triggerEffectReference.id
+        );
+        console.log(
+          `🎨💫 Reference keys:`,
+          Object.keys(triggerEffectReference)
+        );
+
+        console.log(
           `🎨 CHANNEL MARKER: Adding trigger effect reference:`,
           triggerEffectReference
         );
@@ -179,6 +192,24 @@ const channelMarkerGoghBuffMicroAction = new MicroAction({
           effects: [...currentEffects, goghBuffEffect],
           triggerEffects: [...currentTriggerEffects, triggerEffectReference],
         };
+
+        console.log(
+          `🎨💫 Updated unit trigger effects:`,
+          updatedUnit.triggerEffects
+        );
+        console.log(
+          `🎨💫 Updated unit trigger effects count:`,
+          updatedUnit.triggerEffects.length
+        );
+        console.log(
+          `🎨💫 Updated unit trigger effect IDs:`,
+          updatedUnit.triggerEffects.map((tr) => {
+            console.log(`🎨💫   Trigger object:`, tr);
+            console.log(`🎨💫   Trigger ID:`, tr.id);
+            return tr.id;
+          })
+        );
+
         console.log(`🎨 CHANNEL MARKER: Unit after adding trigger:`, {
           name: updatedUnit.name,
           effectsCount: updatedUnit.effects.length,
@@ -584,6 +615,7 @@ export const GoghAttributes = {
   counteringAgainstWho: null,
   agilityChecks: null,
   luckChecks: null,
+  triggerEffects: [],
 };
 
 // Export complete Gogh unit template

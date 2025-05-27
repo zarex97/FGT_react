@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import { TriggerEffectProcessor } from "../src/game/TriggerEffectProcessor.js";
 import { EventTypes } from "../src/game/EventTypes.js";
+import "../src/game/registry_triggers.js";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 
@@ -85,37 +86,50 @@ const processTriggerEffectsForAction = (
   eventData,
   roomId = null
 ) => {
-  const triggeredEffects = TriggerEffectProcessor.processTriggerEffects(
+  console.log(`🌟 SERVER: Processing trigger effects for event: ${eventType}`, {
+    eventData,
+    roomId,
+    unitsWithTriggers: gameState.units
+      .filter((u) => u.triggerEffects && u.triggerEffects.length > 0)
+      .map((u) => ({ name: u.name, triggerCount: u.triggerEffects.length })),
+  });
+
+  // Get the original game state for comparison
+  const originalGameState = JSON.parse(JSON.stringify(gameState));
+
+  const updatedGameState = TriggerEffectProcessor.handleEvent(
     gameState,
     eventType,
     eventData
   );
 
-  if (triggeredEffects.length > 0) {
-    console.log(
-      `Processing ${triggeredEffects.length} trigger effects for event: ${eventType}`
-    );
+  // Compare before and after to see if changes were made
+  const stateChanged =
+    JSON.stringify(originalGameState) !== JSON.stringify(updatedGameState);
+  console.log(
+    `✨ SERVER: Trigger processing complete. State changed: ${stateChanged}`
+  );
 
-    // Send notifications for each triggered effect
-    if (roomId) {
-      triggeredEffects.forEach(({ unit, triggerEffect }) => {
-        broadcastTriggerNotification(
-          roomId,
-          unit.name,
-          triggerEffect.name,
-          triggerEffect.description
-        );
-      });
-    }
+  if (stateChanged) {
+    console.log(`🔄 SERVER: Game state was modified by triggers!`);
 
-    // Apply the triggered effects
-    gameState = TriggerEffectProcessor.applyTriggeredEffects(
-      gameState,
-      triggeredEffects
-    );
+    // Log specific changes to units
+    updatedGameState.units.forEach((unit, index) => {
+      const originalUnit = originalGameState.units[index];
+      if (
+        originalUnit &&
+        (originalUnit.effects?.length !== unit.effects?.length ||
+          JSON.stringify(originalUnit.effects) !== JSON.stringify(unit.effects))
+      ) {
+        console.log(`🔄 SERVER: Unit ${unit.name} effects changed:`, {
+          before: originalUnit.effects?.map((e) => e.name) || [],
+          after: unit.effects?.map((e) => e.name) || [],
+        });
+      }
+    });
   }
 
-  return gameState;
+  return updatedGameState;
 };
 const broadcastTriggerNotification = (
   roomId,
@@ -1026,63 +1040,9 @@ const handleMessage = (bytes, uuid) => {
             outcome: counterOutcome,
           } = message;
 
-          // Fire RECEIVE_DAMAGE event
-          room.gameState = processTriggerEffectsForAction(
-            room.gameState,
-            EventTypes.RECEIVE_DAMAGE,
-            {
-              attackerId: updatedAttacker.id,
-              defenderId: counterDefender.id,
-              damage: counterResults.finalDamage.total,
-              combatResults: counterResults,
-            },
-            room.roomId
+          console.log(
+            `🎯 PROCESS_COMBAT_AND_INITIATE_COUNTER: Starting processing`
           );
-
-          // Check if this was a successful attack
-          const was_Successful = counterResults.finalDamage.total > 0;
-          if (was_Successful) {
-            room.gameState = processTriggerEffectsForAction(
-              room.gameState,
-              EventTypes.SUCCESSFUL_ATTACK,
-              {
-                attackerId: updatedAttacker.id,
-                defenderId: counterDefender.id,
-                damage: counterResults.finalDamage.total,
-                wasCritical: counterResults.criticals.rolled,
-                wasSuccessful: true,
-                combatResults: counterResults,
-              },
-              room.roomId
-            );
-          }
-
-          // Check for HP loss
-          if (combatResults.finalDamage.total > 0) {
-            room.gameState = processTriggerEffectsForAction(
-              room.gameState,
-              EventTypes.HP_LOSS,
-              {
-                unitId: counterDefender.id,
-                hpLost: counterResults.finalDamage.total,
-                newHp: updatedUnit.hp,
-              },
-              room.roomId
-            );
-          }
-
-          // Check for unit defeat
-          if (updatedUnit.hp <= 0) {
-            room.gameState = processTriggerEffectsForAction(
-              room.gameState,
-              EventTypes.UNIT_DEFEATED,
-              {
-                defeatedUnitId: counterDefender.id,
-                attackerId: updatedAttacker.id,
-              },
-              room.roomId
-            );
-          }
 
           // FIRST: Send message to close attacker's combat menu
           const attackerConnection = connections[counterId];
@@ -1095,7 +1055,8 @@ const handleMessage = (bytes, uuid) => {
             );
           }
 
-          // Update both units
+          // STEP 1: Update both units with combat results FIRST
+          console.log(`🎯 Step 1: Updating units with combat results`);
           room.gameState.units = room.gameState.units.map((unit) => {
             if (unit.id === counterId) {
               // Move combat from combatSent to processedCombatSent and set canCounter
@@ -1130,6 +1091,81 @@ const handleMessage = (bytes, uuid) => {
             return unit;
           });
 
+          console.log(
+            `🎯 Step 2: Processing trigger effects AFTER unit updates`
+          );
+
+          // STEP 2: NOW process trigger effects (after unit updates are complete)
+
+          // Fire RECEIVE_DAMAGE event
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.RECEIVE_DAMAGE,
+            {
+              attackerId: updatedAttacker.id,
+              defenderId: counterDefender.id,
+              damage: counterResults.finalDamage.total,
+              combatResults: counterResults,
+            },
+            player.currentRoom
+          );
+
+          // Check if this was a successful attack
+          const was_Successful = counterResults.finalDamage.total > 0;
+          console.log(`🎯 Attack was successful: ${was_Successful}`);
+
+          if (was_Successful) {
+            console.log(
+              `🎯 Firing SUCCESSFUL_ATTACK event for ${
+                updatedAttacker.name || updatedAttacker.id
+              }`
+            );
+
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.SUCCESSFUL_ATTACK,
+              {
+                attackerId: updatedAttacker.id,
+                defenderId: counterDefender.id,
+                damage: counterResults.finalDamage.total,
+                wasCritical: counterResults.criticals.rolled,
+                wasSuccessful: true,
+                combatResults: counterResults,
+              },
+              player.currentRoom
+            );
+          }
+
+          // Check for HP loss
+          if (counterResults.finalDamage.total > 0) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.HP_LOSS,
+              {
+                unitId: counterDefender.id,
+                hpLost: counterResults.finalDamage.total,
+                newHp: counterDefender.hp,
+              },
+              player.currentRoom
+            );
+          }
+
+          // Check for unit defeat
+          if (counterDefender.hp <= 0) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.UNIT_DEFEATED,
+              {
+                defeatedUnitId: counterDefender.id,
+                attackerId: updatedAttacker.id,
+              },
+              player.currentRoom
+            );
+          }
+
+          console.log(`🎯 Step 3: Broadcasting final state to room`);
+
+          // STEP 3: Broadcast the final state (only once, after all processing)
           broadcastToRoom(player.currentRoom);
 
           // Send completion notification
@@ -1149,7 +1185,10 @@ const handleMessage = (bytes, uuid) => {
               }
             }
           );
-          broadcastToRoom(player.currentRoom);
+
+          console.log(
+            `🎯 PROCESS_COMBAT_AND_INITIATE_COUNTER: Completed successfully`
+          );
           break;
 
         case "PROCESS_COMBAT_COMPLETE":

@@ -5,14 +5,14 @@ import {
   AnastasiaActions,
   AnastasiaNPs,
   AnastasiaTriggerEffects,
-} from "./Anastasia_unit";
+} from "./Anastasia_unit.js";
 import {
   GoghSkills,
   GoghTemplate,
   GoghActions,
   GoghNPs,
   GoghTriggerEffects,
-} from "./Gogh_unit";
+} from "./Gogh_unit.js";
 
 export const ArcherServants = {
   Anastasia: {
