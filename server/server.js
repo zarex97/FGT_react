@@ -1,3 +1,9 @@
+import { TriggerEffectProcessor } from "./TriggerEffectProcessor.js";
+import { EventTypes } from "./EventTypes.js";
+// Add this helper function after the imports
+const processTriggerEffectsForAction = (gameState, eventType, eventData) => {
+  return TriggerEffectProcessor.handleEvent(gameState, eventType, eventData);
+};
 const { WebSocketServer } = require("ws");
 const http = require("http");
 const uuidv4 = require("uuid").v4;
