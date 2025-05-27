@@ -47,7 +47,7 @@ const createAutosave = (roomId, gameState, messageType, stage) => {
   }
 
   // Also save to disk periodically (every 10 saves)
-  if (autosaves[roomId].length % 10 === 0) {
+  if (autosaves[roomId].length % 2 === 0) {
     const filename = path.join(autosaveDir, `${roomId}_autosaves.json`);
     fs.writeFileSync(filename, JSON.stringify(autosaves[roomId], null, 2));
   }
@@ -335,6 +335,14 @@ const handleMessage = (bytes, uuid) => {
 
       const room = rooms[player.currentRoom];
       if (!room) return;
+
+      // Create autosave before processing action
+      createAutosave(
+        player.currentRoom,
+        room.gameState,
+        message.action,
+        "before"
+      );
 
       // Update game state based on action
       switch (message.action) {
