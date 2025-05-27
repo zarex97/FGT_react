@@ -12,6 +12,8 @@ import {
   Swords,
   Send,
   Target,
+  Save, // Add this icon
+  FolderOpen, // Add this icon
 } from "lucide-react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import { createMahalapraya } from "../game/skills/Mahalapraya";
@@ -87,6 +89,10 @@ const TacticalGame = ({ username, roomId }) => {
   const [selectedCombatTarget, setSelectedCombatTarget] = useState(null);
   const [awaitingDefender, setAwaitingDefender] = useState(true);
   const [combatCompletionMessage, setCombatCompletionMessage] = useState(null);
+  const [showSaveLoadMenu, setShowSaveLoadMenu] = useState(false);
+  const [saveLoadMessage, setSaveLoadMessage] = useState(null);
+  const [autosaves, setAutosaves] = useState([]);
+  const [showAutosaveMenu, setShowAutosaveMenu] = useState(false);
 
   const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
@@ -245,6 +251,26 @@ const TacticalGame = ({ username, roomId }) => {
       console.log("resetting combat states for fresh counter");
       console.log("Combat menu closed by server:", lastJsonMessage.reason);
     }
+    // save/autosaves messages
+    else if (lastJsonMessage?.type === "SAVE_COMPLETE") {
+      handleSaveComplete(lastJsonMessage.saveData);
+    } else if (lastJsonMessage?.type === "SAVE_ERROR") {
+      setSaveLoadMessage({ type: "error", text: lastJsonMessage.message });
+      setTimeout(() => setSaveLoadMessage(null), 3000);
+    } else if (lastJsonMessage?.type === "LOAD_COMPLETE") {
+      setSaveLoadMessage({ type: "success", text: lastJsonMessage.message });
+      setTimeout(() => setSaveLoadMessage(null), 3000);
+      setShowSaveLoadMenu(false);
+      setShowAutosaveMenu(false);
+    } else if (lastJsonMessage?.type === "LOAD_ERROR") {
+      setSaveLoadMessage({ type: "error", text: lastJsonMessage.message });
+      setTimeout(() => setSaveLoadMessage(null), 3000);
+    } else if (lastJsonMessage?.type === "AUTOSAVES_LIST") {
+      setAutosaves(lastJsonMessage.autosaves);
+    } else if (lastJsonMessage?.type === "AUTOSAVES_ERROR") {
+      setSaveLoadMessage({ type: "error", text: lastJsonMessage.message });
+      setTimeout(() => setSaveLoadMessage(null), 3000);
+    }
   }, [lastJsonMessage]);
 
   useEffect(() => {
@@ -305,6 +331,72 @@ const TacticalGame = ({ username, roomId }) => {
       </div>
     );
   }
+
+  const handleSaveGame = () => {
+    sendJsonMessage({
+      type: "SAVE_GAME",
+    });
+  };
+
+  const handleSaveComplete = (saveData) => {
+    const dataStr = JSON.stringify(saveData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `tactical_rpg_save_${new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setSaveLoadMessage({ type: "success", text: "Game saved successfully!" });
+    setTimeout(() => setSaveLoadMessage(null), 3000);
+  };
+
+  const handleLoadGame = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const saveData = JSON.parse(e.target.result);
+        sendJsonMessage({
+          type: "LOAD_GAME",
+          saveData: saveData,
+        });
+      } catch (error) {
+        setSaveLoadMessage({ type: "error", text: "Invalid save file format" });
+        setTimeout(() => setSaveLoadMessage(null), 3000);
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset file input
+    event.target.value = "";
+  };
+
+  const handleGetAutosaves = () => {
+    sendJsonMessage({
+      type: "GET_AUTOSAVES",
+    });
+    setShowAutosaveMenu(true);
+  };
+
+  const handleLoadAutosave = (autosaveIndex) => {
+    sendJsonMessage({
+      type: "LOAD_AUTOSAVE",
+      autosaveIndex: autosaveIndex,
+    });
+  };
+
+  const formatTimestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString();
+  };
 
   const DetectionError = ({ message }) => {
     if (!message) return null;
@@ -3713,6 +3805,162 @@ const TacticalGame = ({ username, roomId }) => {
       )
     ]?.team;
 
+  const SaveLoadMenu = () => {
+    if (!showSaveLoadMenu) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-[500px]">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">Save / Load Game</h3>
+            <button
+              className="p-2 hover:bg-gray-100 rounded"
+              onClick={() => setShowSaveLoadMenu(false)}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="border-b pb-4">
+              <h4 className="text-lg font-semibold mb-2">Manual Save/Load</h4>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleSaveGame}
+                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 flex items-center gap-2"
+                >
+                  <Save size={16} /> Save Game
+                </button>
+                <label className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 cursor-pointer flex items-center gap-2">
+                  <FolderOpen size={16} /> Load Game
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleLoadGame}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-lg font-semibold mb-2">Autosave System</h4>
+              <p className="text-sm text-gray-600 mb-3">
+                The game automatically saves before and after every action. View
+                and restore from up to 100 recent autosaves.
+              </p>
+              <button
+                onClick={handleGetAutosaves}
+                className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 flex items-center gap-2"
+              >
+                🔄 View Autosaves ({autosaves.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const AutosaveMenu = () => {
+    if (!showAutosaveMenu) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-[800px] max-h-[600px]">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">
+              Autosaves ({autosaves.length}/100)
+            </h3>
+            <button
+              className="p-2 hover:bg-gray-100 rounded"
+              onClick={() => setShowAutosaveMenu(false)}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="mb-4 text-sm text-gray-600">
+            <p>
+              Shows game states saved before (⏮️) and after (⏭️) each action.
+            </p>
+            <p>Click "Load" to restore the game to that exact state.</p>
+          </div>
+
+          <div className="overflow-y-auto max-h-[400px]">
+            {autosaves.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">
+                No autosaves available
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {[...autosaves].reverse().map((autosave, reverseIndex) => {
+                  const actualIndex = autosaves.length - 1 - reverseIndex;
+                  return (
+                    <div
+                      key={actualIndex}
+                      className="border rounded p-3 hover:bg-gray-50 flex justify-between items-center"
+                    >
+                      <div>
+                        <div className="font-medium">
+                          {autosave.stage === "before" ? "⏮️" : "⏭️"}{" "}
+                          {autosave.messageType}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {formatTimestamp(autosave.timestamp)}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Turn {autosave.turn} • Round {autosave.round}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleLoadAutosave(actualIndex)}
+                        className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                      >
+                        Load
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 pt-4 border-t flex gap-2">
+            <button
+              onClick={handleGetAutosaves}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              Refresh
+            </button>
+            <button
+              onClick={() => setShowAutosaveMenu(false)}
+              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const SaveLoadNotification = () => {
+    if (!saveLoadMessage) return null;
+
+    return (
+      <div
+        className={`fixed top-4 left-4 p-4 rounded shadow-lg z-50 ${
+          saveLoadMessage.type === "success"
+            ? "bg-green-500 text-white"
+            : "bg-red-500 text-white"
+        }`}
+      >
+        {saveLoadMessage.text}
+      </div>
+    );
+  };
+
   // In TacticalGame.jsx, replace the return statement with:
 
   return (
@@ -3765,6 +4013,13 @@ const TacticalGame = ({ username, roomId }) => {
             className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
           >
             Add Servant
+          </button>
+          {/* ADD THE SAVE/LOAD BUTTON HERE */}
+          <button
+            onClick={() => setShowSaveLoadMenu(true)}
+            className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 flex items-center gap-2"
+          >
+            <Save size={16} /> Save/Load
           </button>
         </div>
       </div>
@@ -3862,6 +4117,9 @@ const TacticalGame = ({ username, roomId }) => {
           onClose={() => setCombatCompletionMessage(null)}
         />
       )}
+      <SaveLoadMenu />
+      <AutosaveMenu />
+      <SaveLoadNotification />
     </div>
   );
 };

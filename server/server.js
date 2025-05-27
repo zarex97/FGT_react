@@ -3,6 +3,9 @@ const http = require("http");
 const uuidv4 = require("uuid").v4;
 const url = require("url");
 
+const fs = require("fs");
+const path = require("path");
+
 const server = http.createServer();
 const wsServer = new WebSocketServer({ server });
 
@@ -10,6 +13,66 @@ const port = 8000;
 const connections = {};
 const rooms = {};
 const playerStates = {};
+
+// Autosave system - stores up to 100 game states per room
+const autosaves = {}; // roomId -> array of saves
+const MAX_AUTOSAVES = 100;
+
+// Initialize autosaves directory
+const autosaveDir = path.join(__dirname, "autosaves");
+if (!fs.existsSync(autosaveDir)) {
+  fs.mkdirSync(autosaveDir, { recursive: true });
+}
+
+// Autosave function
+const createAutosave = (roomId, gameState, messageType, stage) => {
+  if (!autosaves[roomId]) {
+    autosaves[roomId] = [];
+  }
+
+  const autosave = {
+    timestamp: new Date().toISOString(),
+    messageType: messageType || "unknown",
+    stage: stage, // 'before' or 'after'
+    gameState: JSON.stringify(gameState),
+    turn: gameState.currentTurn,
+    round: gameState.currentRound,
+  };
+
+  autosaves[roomId].push(autosave);
+
+  // Keep only the last MAX_AUTOSAVES
+  if (autosaves[roomId].length > MAX_AUTOSAVES) {
+    autosaves[roomId] = autosaves[roomId].slice(-MAX_AUTOSAVES);
+  }
+
+  // Also save to disk periodically (every 10 saves)
+  if (autosaves[roomId].length % 2 === 0) {
+    const filename = path.join(autosaveDir, `${roomId}_autosaves.json`);
+    fs.writeFileSync(filename, JSON.stringify(autosaves[roomId], null, 2));
+  }
+
+  console.log(
+    `Autosave created for room ${roomId} - ${stage} ${messageType} (Total: ${autosaves[roomId].length})`
+  );
+};
+
+// Load autosaves from disk
+const loadAutosavesFromDisk = (roomId) => {
+  const filename = path.join(autosaveDir, `${roomId}_autosaves.json`);
+  if (fs.existsSync(filename)) {
+    try {
+      const data = fs.readFileSync(filename, "utf8");
+      autosaves[roomId] = JSON.parse(data);
+      console.log(
+        `Loaded ${autosaves[roomId].length} autosaves for room ${roomId}`
+      );
+    } catch (error) {
+      console.error(`Error loading autosaves for room ${roomId}:`, error);
+      autosaves[roomId] = [];
+    }
+  }
+};
 
 const handleMessage = (bytes, uuid) => {
   const message = JSON.parse(bytes.toString());
@@ -31,6 +94,8 @@ const handleMessage = (bytes, uuid) => {
             pendingCombatProcesses: false,
           },
         };
+        // Load existing autosaves for this room
+        loadAutosavesFromDisk(message.roomId);
       }
 
       // Add player to room
@@ -46,11 +111,238 @@ const handleMessage = (bytes, uuid) => {
       broadcastToRoom(message.roomId);
       break;
 
+    case "SAVE_GAME":
+      if (!player.currentRoom) {
+        connections[uuid].send(
+          JSON.stringify({
+            type: "SAVE_ERROR",
+            message: "Not in a room",
+          })
+        );
+        return;
+      }
+
+      const roomToSave = rooms[player.currentRoom];
+      if (!roomToSave) {
+        connections[uuid].send(
+          JSON.stringify({
+            type: "SAVE_ERROR",
+            message: "Room not found",
+          })
+        );
+        return;
+      }
+
+      // Create a complete save object with metadata
+      const saveData = {
+        version: "1.0",
+        savedAt: new Date().toISOString(),
+        savedBy: player.username,
+        roomId: player.currentRoom,
+        gameState: roomToSave.gameState,
+      };
+
+      connections[uuid].send(
+        JSON.stringify({
+          type: "SAVE_COMPLETE",
+          saveData: saveData,
+        })
+      );
+      break;
+
+    case "LOAD_GAME":
+      if (!player.currentRoom) {
+        connections[uuid].send(
+          JSON.stringify({
+            type: "LOAD_ERROR",
+            message: "Not in a room",
+          })
+        );
+        return;
+      }
+
+      const roomToLoad = rooms[player.currentRoom];
+      if (!roomToLoad) {
+        connections[uuid].send(
+          JSON.stringify({
+            type: "LOAD_ERROR",
+            message: "Room not found",
+          })
+        );
+        return;
+      }
+
+      try {
+        const loadData = message.saveData;
+
+        // Validate save data
+        if (!loadData || !loadData.gameState) {
+          throw new Error("Invalid save data format");
+        }
+
+        // Create autosave before loading
+        createAutosave(
+          player.currentRoom,
+          roomToLoad.gameState,
+          "LOAD_GAME",
+          "before"
+        );
+
+        // Replace the game state
+        roomToLoad.gameState = {
+          ...loadData.gameState,
+          // Ensure players from current session are preserved
+          players: roomToLoad.gameState.players,
+        };
+
+        // Create autosave after loading
+        createAutosave(
+          player.currentRoom,
+          roomToLoad.gameState,
+          "LOAD_GAME",
+          "after"
+        );
+
+        connections[uuid].send(
+          JSON.stringify({
+            type: "LOAD_COMPLETE",
+            message: `Game loaded from save created on ${loadData.savedAt}`,
+          })
+        );
+
+        broadcastToRoom(player.currentRoom);
+      } catch (error) {
+        connections[uuid].send(
+          JSON.stringify({
+            type: "LOAD_ERROR",
+            message: `Failed to load game: ${error.message}`,
+          })
+        );
+      }
+      break;
+
+    case "GET_AUTOSAVES":
+      if (!player.currentRoom) {
+        connections[uuid].send(
+          JSON.stringify({
+            type: "AUTOSAVES_ERROR",
+            message: "Not in a room",
+          })
+        );
+        return;
+      }
+
+      const roomAutosaves = autosaves[player.currentRoom] || [];
+      const autosaveList = roomAutosaves.map((save, index) => ({
+        index,
+        timestamp: save.timestamp,
+        messageType: save.messageType,
+        stage: save.stage,
+        turn: save.turn,
+        round: save.round,
+      }));
+
+      connections[uuid].send(
+        JSON.stringify({
+          type: "AUTOSAVES_LIST",
+          autosaves: autosaveList,
+        })
+      );
+      break;
+
+    case "LOAD_AUTOSAVE":
+      if (!player.currentRoom) {
+        connections[uuid].send(
+          JSON.stringify({
+            type: "LOAD_ERROR",
+            message: "Not in a room",
+          })
+        );
+        return;
+      }
+
+      const roomForAutosave = rooms[player.currentRoom];
+      const roomAutosavesForLoad = autosaves[player.currentRoom] || [];
+
+      if (!roomForAutosave || !roomAutosavesForLoad.length) {
+        connections[uuid].send(
+          JSON.stringify({
+            type: "LOAD_ERROR",
+            message: "No autosaves available",
+          })
+        );
+        return;
+      }
+
+      const autosaveIndex = message.autosaveIndex;
+      if (autosaveIndex < 0 || autosaveIndex >= roomAutosavesForLoad.length) {
+        connections[uuid].send(
+          JSON.stringify({
+            type: "LOAD_ERROR",
+            message: "Invalid autosave index",
+          })
+        );
+        return;
+      }
+
+      try {
+        const autosaveToLoad = roomAutosavesForLoad[autosaveIndex];
+        const gameStateToLoad = JSON.parse(autosaveToLoad.gameState);
+
+        // Create autosave before loading
+        createAutosave(
+          player.currentRoom,
+          roomForAutosave.gameState,
+          "LOAD_AUTOSAVE",
+          "before"
+        );
+
+        // Replace the game state
+        roomForAutosave.gameState = {
+          ...gameStateToLoad,
+          // Ensure players from current session are preserved
+          players: roomForAutosave.gameState.players,
+        };
+
+        // Create autosave after loading
+        createAutosave(
+          player.currentRoom,
+          roomForAutosave.gameState,
+          "LOAD_AUTOSAVE",
+          "after"
+        );
+
+        connections[uuid].send(
+          JSON.stringify({
+            type: "LOAD_COMPLETE",
+            message: `Autosave loaded from ${autosaveToLoad.timestamp}`,
+          })
+        );
+
+        broadcastToRoom(player.currentRoom);
+      } catch (error) {
+        connections[uuid].send(
+          JSON.stringify({
+            type: "LOAD_ERROR",
+            message: `Failed to load autosave: ${error.message}`,
+          })
+        );
+      }
+      break;
+
     case "GAME_ACTION":
       if (!player.currentRoom) return;
 
       const room = rooms[player.currentRoom];
       if (!room) return;
+
+      // Create autosave before processing action
+      createAutosave(
+        player.currentRoom,
+        room.gameState,
+        message.action,
+        "before"
+      );
 
       // Update game state based on action
       switch (message.action) {
@@ -674,7 +966,12 @@ const handleMessage = (bytes, uuid) => {
           broadcastToRoom(player.currentRoom);
           break;
       }
-
+      createAutosave(
+        player.currentRoom,
+        room.gameState,
+        message.action,
+        "after"
+      );
       broadcastToRoom(player.currentRoom);
       break;
   }
