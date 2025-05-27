@@ -628,15 +628,26 @@ const TacticalGame = ({ username, roomId }) => {
 
       // Determine if hit or evade based on combat response
       const outcome = determineOutcome(combat.combatResults.response);
+
+      let updatedAttacker = {
+        ...currentAttackerDeepCopy,
+      };
+      const currentDefenderDeepCopy2 = JSON.parse(
+        JSON.stringify(currentDefender)
+      );
       let updatedUnit = {
-        ...unit,
+        ...currentDefenderDeepCopy2,
+        canCounter: false,
+        counteringAgainstWho: null,
       };
 
       const willTriggerDoubleCounter = d_unit.counteringAgainstWho === unit.id;
+      // can counter is set to false because this method is for when you skip counter
       if (outcome === "hit") {
         updatedUnit = {
           ...unit,
-          canCounter: willTriggerDoubleCounter,
+          canCounter: false,
+          counteringAgainstWho: null,
           hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
           effects: [...currentEffects, newEffect],
         };
@@ -645,6 +656,7 @@ const TacticalGame = ({ username, roomId }) => {
         type: "GAME_ACTION",
         action: "RECEIVE_ATTACK",
         updatedUnit,
+        updatedAttacker,
         combatResults: finalResults,
       });
 
@@ -978,7 +990,28 @@ const TacticalGame = ({ username, roomId }) => {
         setAwaitingAttacker(false);
         setAwaitingDefender(true);
         updateCombatResponse(updatedResponse);
-      } else {
+      }
+      // else if (
+      //   !luckCheck.success &&
+      //   !updatedResponse.evadeWithCS_defender.done
+      // ) {
+      //   console.log(
+      //     "Failed luck check, but you can still use Command Seal moving to step 3"
+      //   );
+      //   setAwaitingAttacker(true);
+      //   setCurrentStep(2);
+      //   setReadyToConfirm(false);
+      //   setAwaitingDefender(false);
+      //   const updatedResponse2 = {
+      //     ...updatedResponse,
+      //     currentStep: 2,
+      //     awaitingAttacker: true,
+      //     awaitingDefender: false,
+      //     readyToConfirm: false,
+      //   };
+      //   updateCombatResponse(updatedResponse2);
+      // }
+      else {
         console.log("Successful luck check, awaiting attacker");
         setAwaitingAttacker(true);
         setCurrentStep(2);
@@ -1010,6 +1043,8 @@ const TacticalGame = ({ username, roomId }) => {
     };
 
     const willTriggerDoubleCounter = d_unit.counteringAgainstWho === unit.id;
+    const hasUsedCommandSeal =
+      unit.combatReceived.response.evadeWithCS_defender.done;
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-4 w-[500px] max-h-[80vh] overflow-y-auto">
@@ -1085,12 +1120,12 @@ const TacticalGame = ({ username, roomId }) => {
                   >
                     Try Luck Evasion
                   </button>
-                  <button
+                  {/* <button
                     onClick={handleCommandSeal}
                     className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
                   >
                     Use Command Seal
-                  </button>
+                  </button> */}
                   <button
                     onClick={() => {
                       setCurrentStep(3);
@@ -1099,6 +1134,18 @@ const TacticalGame = ({ username, roomId }) => {
                     className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
                   >
                     Skip
+                  </button>
+                </div>
+              )}
+
+              {/* Floating command seal button */}
+              {!hasUsedCommandSeal && !awaitingAttacker && (
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={handleCommandSeal}
+                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                  >
+                    Use Command Seal
                   </button>
                 </div>
               )}
@@ -1612,17 +1659,44 @@ const TacticalGame = ({ username, roomId }) => {
       // Determine if hit or evade based on combat response
       const outcome = determineOutcome(combatInstance.combatResults.response);
 
-      // should change canCounter to depend on willTriggerDoubleCounter, so basically, if this variable is true, then canCounter should false, and if canCounter is false, counteringAgainstWho should be null, changes must be on the server side of things for this menu and for the defender menu regarding the de-activation of canCounter after countering and this issue with preventing infinite counters
-      const updatedDefender = {
+      const willTriggerDoubleCounter =
+        currentAttacker.counteringAgainstWho === currentDefender.id;
+
+      let updatedDefender = {
         ...currentDefender,
-        canCounter: true,
-        counteringAgainstWho: combat.attacker.id,
-        hp: Math.max(0, currentDefender.hp - finalResults.finalDamage.total),
-        effects: [
-          ...(currentDefender.effects || []),
-          currentDefender.effectsReceived,
-        ],
       };
+
+      //if the attack hits then it evaluates if a counter attack coming from the defending unit would be possible, if not it stops the possibility of the enemy unit countering
+      if (outcome === "hit") {
+        if (!willTriggerDoubleCounter) {
+          updatedDefender = {
+            ...currentDefender,
+            canCounter: true,
+            counteringAgainstWho: combat.attacker.id,
+            hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
+            effects: [...currentEffects, newEffect],
+          };
+        } else {
+          updatedDefender = {
+            ...currentDefender,
+            canCounter: false,
+            counteringAgainstWho: null,
+            hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
+            effects: [...currentEffects, newEffect],
+          };
+        }
+      }
+      // // should change canCounter to depend on willTriggerDoubleCounter, so basically, if this variable is true, then canCounter should false, and if canCounter is false, counteringAgainstWho should be null, changes must be on the server side of things for this menu and for the defender menu regarding the de-activation of canCounter after countering and this issue with preventing infinite counters
+      // const updatedDefender = {
+      //   ...currentDefender,
+      //   canCounter: true,
+      //   counteringAgainstWho: combat.attacker.id,
+      //   hp: Math.max(0, currentDefender.hp - finalResults.finalDamage.total),
+      //   effects: [
+      //     ...(currentDefender.effects || []),
+      //     currentDefender.effectsReceived,
+      //   ],
+      // };
 
       sendJsonMessage({
         type: "GAME_ACTION",
