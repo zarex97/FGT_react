@@ -6,6 +6,8 @@ import { Combat } from "../../Combat";
 import { Action } from "../../actions/Action";
 import { ActionType } from "../../actions/ActionTypes";
 import { NoblePhantasm } from "../../NoblePhantasm";
+import { TriggerEffect } from "../../TriggerEffect";
+import { EventTypes } from "../../EventTypes";
 
 const snegletaDefenseDownMicroAction = new MicroAction({
   targetingType: TargetingType.SINGLE_TARGET,
@@ -306,6 +308,95 @@ const dodgeMicroAction = new MicroAction({
   },
 });
 
+// MicroAction that applies curse to enemies in an area
+const cursedIceMicroAction = new MicroAction({
+  targetingType: TargetingType.AOE_FROM_POINT,
+  range: 4, // Can target up to 4 cells away
+  dimensions: { width: 5, height: 5 }, // 5x5 area of effect
+  applyCornerRule: false,
+  effectLogic: (gameState, caster, affectedCells) => {
+    console.log("Executing Cursed Ice MicroAction:", {
+      caster: caster.name,
+      affectedCellsCount: affectedCells.size,
+    });
+
+    const updatedUnits = gameState.units.map((unit) => {
+      // Target enemy units in the affected area
+      if (
+        unit.team !== caster.team &&
+        affectedCells.has(`${unit.x},${unit.y}`)
+      ) {
+        const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
+
+        // Create multiple curse effects to test the trigger system
+        const curseEffect1 = {
+          name: "Curse",
+          type: "Curse",
+          duration: 3, // Lasts 3 turns
+          appliedAt: gameState.currentTurn,
+          value: 5, // 5% damage per turn or similar
+          description: "Cursed by frozen despair - Stage 1",
+          source: "Cursed Ice",
+          stage: 1,
+        };
+
+        const curseEffect2 = {
+          name: "Curse",
+          type: "Curse",
+          duration: 3,
+          appliedAt: gameState.currentTurn,
+          value: 5,
+          description: "Cursed by frozen despair - Stage 2",
+          source: "Cursed Ice",
+          stage: 2,
+        };
+
+        const curseEffect3 = {
+          name: "Curse",
+          type: "Curse",
+          duration: 3,
+          appliedAt: gameState.currentTurn,
+          value: 5,
+          description: "Cursed by frozen despair - Stage 3",
+          source: "Cursed Ice",
+          stage: 3,
+        };
+
+        console.log("Applying curse effects to unit:", {
+          unitName: unit.name,
+          currentEffects: currentEffects.length,
+          newCurses: 3,
+        });
+
+        return {
+          ...unit,
+          effects: [
+            ...currentEffects,
+            curseEffect1,
+            curseEffect2,
+            curseEffect3,
+          ],
+        };
+      }
+      return unit;
+    });
+
+    const newGameState = {
+      ...gameState,
+      units: updatedUnits,
+    };
+
+    console.log("Cursed Ice execution result:", {
+      updatedUnitsCount: updatedUnits.length,
+      cursedUnits: updatedUnits.filter((u) =>
+        u.effects?.some((e) => e.name === "Curse")
+      ).length,
+    });
+
+    return newGameState;
+  },
+});
+
 export const AnastasiaNPs = {
   SnegletaSnegurochka: new NoblePhantasm(
     "Snegleta・Snegurochka: Summer Snow, Beautiful Drops of Hoarfrost",
@@ -368,6 +459,16 @@ export const AnastasiaSkills = {
     true, // isAttack
     true //counts towards limit of attacks
   ),
+  IceCurse: new Skill(
+    "Cursed Ice",
+    "Summons cursed ice that afflicts enemies in a 5x5 area with multiple curse effects",
+    3, // cooldown in turns
+    4, // range - can target up to 4 cells away
+    [cursedIceMicroAction],
+    false, // not an attack skill (doesn't trigger attack-related effects)
+    false, // doesn't count against attack limit
+    false // not reactionary
+  ),
 };
 
 // Define Anastasia's base stats and attributes
@@ -411,6 +512,9 @@ export const AnastasiaTemplate = {
   // These will be populated by UnitUtils methods when needed
   statusIfHit: null,
   backUpStatus: null,
+  triggerEffects: [
+    // Initially empty - trigger effects are added dynamically by skills/buffs
+  ],
   skills: [
     {
       id: "Mahalapraya",
@@ -429,6 +533,12 @@ export const AnastasiaTemplate = {
       onCooldownUntil: 0,
       isAttack: true,
       affectsAttackCount: true,
+    },
+    {
+      id: "IceCurse",
+      onCooldownUntil: 0,
+      isAttack: false,
+      affectsAttackCount: false,
     },
   ],
   noblePhantasms: [

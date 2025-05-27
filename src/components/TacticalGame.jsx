@@ -93,6 +93,7 @@ const TacticalGame = ({ username, roomId }) => {
   const [saveLoadMessage, setSaveLoadMessage] = useState(null);
   const [autosaves, setAutosaves] = useState([]);
   const [showAutosaveMenu, setShowAutosaveMenu] = useState(false);
+  const [triggerNotifications, setTriggerNotifications] = useState([]);
 
   const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
@@ -270,6 +271,16 @@ const TacticalGame = ({ username, roomId }) => {
     } else if (lastJsonMessage?.type === "AUTOSAVES_ERROR") {
       setSaveLoadMessage({ type: "error", text: lastJsonMessage.message });
       setTimeout(() => setSaveLoadMessage(null), 3000);
+    } else if (lastJsonMessage?.type === "TRIGGER_EFFECT_NOTIFICATION") {
+      // Add new trigger notification
+      const newNotification = {
+        id: Date.now(),
+        unitName: lastJsonMessage.unitName,
+        triggerName: lastJsonMessage.triggerName,
+        description: lastJsonMessage.description,
+      };
+
+      setTriggerNotifications((prev) => [...prev, newNotification]);
     }
   }, [lastJsonMessage]);
 
@@ -396,6 +407,42 @@ const TacticalGame = ({ username, roomId }) => {
   const formatTimestamp = (timestamp) => {
     const date = new Date(timestamp);
     return date.toLocaleString();
+  };
+
+  // ADD this function to remove trigger notifications
+  const removeTriggerNotification = (notificationId) => {
+    setTriggerNotifications((prev) =>
+      prev.filter((notification) => notification.id !== notificationId)
+    );
+  };
+
+  // ADD this component before your return statement
+  const TriggerEffectNotification = ({ notification, onClose }) => {
+    useEffect(() => {
+      const timer = setTimeout(() => {
+        onClose();
+      }, 4000); // Show for 4 seconds
+
+      return () => clearTimeout(timer);
+    }, [onClose]);
+
+    if (!notification) return null;
+
+    return (
+      <div className="p-4 bg-purple-600 text-white rounded shadow-lg max-w-md">
+        <div className="text-sm font-bold mb-1">Trigger Effect Activated!</div>
+        <div className="text-sm mb-2">
+          <strong>{notification.unitName}</strong> - {notification.triggerName}
+        </div>
+        <div className="text-xs opacity-90">{notification.description}</div>
+        <button
+          onClick={onClose}
+          className="absolute top-1 right-2 text-white hover:text-gray-200"
+        >
+          ✕
+        </button>
+      </div>
+    );
   };
 
   const DetectionError = ({ message }) => {
@@ -3087,7 +3134,13 @@ const TacticalGame = ({ username, roomId }) => {
           </div>
 
           <div className="flex gap-2 mb-4">
-            {["stats", "skills", "noble phantasms", "reactions"].map((tab) => (
+            {[
+              "stats",
+              "skills",
+              "noble phantasms",
+              "reactions",
+              "triggers",
+            ].map((tab) => (
               <button
                 key={tab}
                 className={`px-4 py-2 rounded ${
@@ -3168,6 +3221,45 @@ const TacticalGame = ({ username, roomId }) => {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {activeTab === "triggers" && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold mb-3">
+                  Active Trigger Effects
+                </h3>
+                {unit.triggerEffects && unit.triggerEffects.length > 0 ? (
+                  unit.triggerEffects.map((trigger, index) => (
+                    <div
+                      key={index}
+                      className="p-4 border rounded bg-purple-50"
+                    >
+                      <h4 className="font-bold text-lg text-purple-800">
+                        {trigger.name}
+                      </h4>
+                      <div className="text-sm text-gray-600 mt-2">
+                        {trigger.description}
+                      </div>
+                      <div className="mt-2 text-sm">
+                        <span className="font-bold">Event:</span>{" "}
+                        {trigger.eventType}
+                      </div>
+                      <div className="text-sm">
+                        <span className="font-bold">Source:</span>{" "}
+                        {trigger.source}
+                      </div>
+                      <div className="text-sm">
+                        <span className="font-bold">Priority:</span>{" "}
+                        {trigger.priority}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-gray-500 italic">
+                    No active trigger effects
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -3527,6 +3619,37 @@ const TacticalGame = ({ username, roomId }) => {
           {unit.movementLeft}/{unit.movementRange}
         </span>
       </div>
+      {/* Show active trigger effects */}
+      {unit.triggerEffects && unit.triggerEffects.length > 0 && (
+        <div className="text-xs border-t border-gray-400 pt-1">
+          <div className="text-purple-300 font-semibold">Active Triggers:</div>
+          {unit.triggerEffects.slice(0, 2).map((trigger, index) => (
+            <div key={index} className="text-purple-200 truncate">
+              • {trigger.name}
+            </div>
+          ))}
+          {unit.triggerEffects.length > 2 && (
+            <div className="text-purple-200">
+              +{unit.triggerEffects.length - 2} more...
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Show special effects that might create triggers */}
+      {unit.effects && unit.effects.some((e) => e.type === "SpecialBuff") && (
+        <div className="text-xs border-t border-gray-400 pt-1">
+          <div className="text-yellow-300 font-semibold">Special Effects:</div>
+          {unit.effects
+            .filter((e) => e.type === "SpecialBuff")
+            .slice(0, 2)
+            .map((effect, index) => (
+              <div key={index} className="text-yellow-200 truncate">
+                • {effect.name}
+              </div>
+            ))}
+        </div>
+      )}
     </div>
   );
 
@@ -3986,6 +4109,17 @@ const TacticalGame = ({ username, roomId }) => {
         </div>
 
         <div className="flex gap-2 mt-2">
+          {/* Add trigger effect notifications */}
+          <div className="fixed top-4 right-4 space-y-2 z-50">
+            {triggerNotifications.map((notification) => (
+              <TriggerEffectNotification
+                key={notification.id}
+                notification={notification}
+                onClose={() => removeTriggerNotification(notification.id)}
+              />
+            ))}
+          </div>
+
           {gameState.turn === playerTeam && (
             <button
               onClick={endTurn}

@@ -1,16 +1,13 @@
-import { TriggerEffectProcessor } from "./TriggerEffectProcessor.js";
-import { EventTypes } from "./EventTypes.js";
-// Add this helper function after the imports
-const processTriggerEffectsForAction = (gameState, eventType, eventData) => {
-  return TriggerEffectProcessor.handleEvent(gameState, eventType, eventData);
-};
-const { WebSocketServer } = require("ws");
-const http = require("http");
-const uuidv4 = require("uuid").v4;
-const url = require("url");
-
-const fs = require("fs");
-const path = require("path");
+import { WebSocketServer } from "ws";
+import http from "http";
+import { v4 as uuidv4 } from "uuid";
+import url from "url";
+import fs from "fs";
+import path from "path";
+import { TriggerEffectProcessor } from "../src/game/TriggerEffectProcessor.js";
+import { EventTypes } from "../src/game/EventTypes.js";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 
 const server = http.createServer();
 const wsServer = new WebSocketServer({ server });
@@ -23,6 +20,8 @@ const playerStates = {};
 // Autosave system - stores up to 100 game states per room
 const autosaves = {}; // roomId -> array of saves
 const MAX_AUTOSAVES = 100;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Initialize autosaves directory
 const autosaveDir = path.join(__dirname, "autosaves");
@@ -78,6 +77,68 @@ const loadAutosavesFromDisk = (roomId) => {
       autosaves[roomId] = [];
     }
   }
+};
+
+const processTriggerEffectsForAction = (
+  gameState,
+  eventType,
+  eventData,
+  roomId = null
+) => {
+  const triggeredEffects = TriggerEffectProcessor.processTriggerEffects(
+    gameState,
+    eventType,
+    eventData
+  );
+
+  if (triggeredEffects.length > 0) {
+    console.log(
+      `Processing ${triggeredEffects.length} trigger effects for event: ${eventType}`
+    );
+
+    // Send notifications for each triggered effect
+    if (roomId) {
+      triggeredEffects.forEach(({ unit, triggerEffect }) => {
+        broadcastTriggerNotification(
+          roomId,
+          unit.name,
+          triggerEffect.name,
+          triggerEffect.description
+        );
+      });
+    }
+
+    // Apply the triggered effects
+    gameState = TriggerEffectProcessor.applyTriggeredEffects(
+      gameState,
+      triggeredEffects
+    );
+  }
+
+  return gameState;
+};
+const broadcastTriggerNotification = (
+  roomId,
+  unitName,
+  triggerName,
+  description
+) => {
+  const room = rooms[roomId];
+  if (!room) return;
+
+  Object.entries(room.gameState.players).forEach(([playerId, playerInfo]) => {
+    const connection = connections[playerId];
+    if (connection) {
+      connection.send(
+        JSON.stringify({
+          type: "TRIGGER_EFFECT_NOTIFICATION",
+          unitName,
+          triggerName,
+          description,
+        })
+      );
+    }
+  });
 };
 
 const handleMessage = (bytes, uuid) => {
@@ -359,6 +420,22 @@ const handleMessage = (bytes, uuid) => {
           break;
 
         case "MOVE_UNIT":
+          // triggerEffectsLogic (Before)
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.MOVE_START,
+            {
+              unitId: message.unitId,
+              fromX: room.gameState.units.find((u) => u.id === message.unitId)
+                ?.x,
+              fromY: room.gameState.units.find((u) => u.id === message.unitId)
+                ?.y,
+              toX: message.newX,
+              toY: message.newY,
+              movementLeft: message.newMovementLeft,
+            },
+            room.roomId
+          );
           room.gameState.units = room.gameState.units.map((unit) => {
             if (unit.id === message.unitId) {
               return {
@@ -370,6 +447,24 @@ const handleMessage = (bytes, uuid) => {
             }
             return unit;
           });
+
+          // triggerEffectsLogic (After)
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.MOVE_END,
+            {
+              unitId: message.unitId,
+              fromX: room.gameState.units.find((u) => u.id === message.unitId)
+                ?.x,
+              fromY: room.gameState.units.find((u) => u.id === message.unitId)
+                ?.y,
+              toX: message.newX,
+              toY: message.newY,
+              movementLeft: message.newMovementLeft,
+            },
+            room.roomId
+          );
+
           break;
 
         case "ATTACK":
@@ -394,6 +489,18 @@ const handleMessage = (bytes, uuid) => {
         // In server.js, update the END_TURN case:
 
         case "END_TURN":
+          // Add BEFORE existing end turn logic
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.TURN_END,
+            {
+              endingTurn: room.gameState.turn,
+              currentTurn: room.gameState.currentTurn,
+              currentRound: room.gameState.currentRound,
+            },
+            room.roomId
+          );
+
           const newTurn = message.nextTurn;
           const currentTurn = room.gameState.currentTurn + 1;
           let newRound = room.gameState.currentRound;
@@ -429,10 +536,33 @@ const handleMessage = (bytes, uuid) => {
             detectionsThisTurn: [], // Reset as empty array
           };
 
+          // Add AFTER updating game state
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.TURN_START,
+            {
+              startingTurn: newTurn,
+              currentTurn: currentTurn,
+              currentRound: newRound,
+            },
+            room.roomId
+          );
+
           broadcastToRoom(player.currentRoom);
           break;
 
         case "ATTEMPT_DETECTION":
+          // Add BEFORE existing detection logic
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.DETECTION_ATTEMPT,
+            {
+              detectingPlayerId: uuid,
+              detectingTeam: room.gameState.players[uuid].team,
+            },
+            room.roomId
+          );
+
           // Check if player has already used detection this turn
           if (room.gameState.detectionsThisTurn.includes(uuid)) {
             connection.send(
@@ -523,6 +653,64 @@ const handleMessage = (bytes, uuid) => {
           // Find the attacker and defender from the combat results
           const fullAttackerId = updated_Attacker.id;
           const fullDefenderId = updatedUnit.id;
+
+          // Fire RECEIVE_DAMAGE event
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.RECEIVE_DAMAGE,
+            {
+              attackerId: updatedAttacker.id,
+              defenderId: updatedUnit.id,
+              damage: combatResults.finalDamage.total,
+              combatResults: combatResults,
+            },
+            room.roomId
+          );
+
+          // Check if this was a successful attack
+          const wasSuccessful = combatResults.finalDamage.total > 0;
+          if (wasSuccessful) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.SUCCESSFUL_ATTACK,
+              {
+                attackerId: updatedAttacker.id,
+                defenderId: updatedUnit.id,
+                damage: combatResults.finalDamage.total,
+                wasCritical: combatResults.criticals.rolled,
+                wasSuccessful: true,
+                combatResults: combatResults,
+              },
+              room.roomId
+            );
+          }
+
+          // Check for HP loss
+          if (combatResults.finalDamage.total > 0) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.HP_LOSS,
+              {
+                unitId: updatedUnit.id,
+                hpLost: combatResults.finalDamage.total,
+                newHp: updatedUnit.hp,
+              },
+              room.roomId
+            );
+          }
+
+          // Check for unit defeat
+          if (updatedUnit.hp <= 0) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.UNIT_DEFEATED,
+              {
+                defeatedUnitId: updatedUnit.id,
+                attackerId: updatedAttacker.id,
+              },
+              room.roomId
+            );
+          }
 
           // Check if this is a counter attack being processed
           const defenderUnit = room.gameState.units.find(
@@ -743,6 +931,20 @@ const handleMessage = (bytes, uuid) => {
             "Updated game state after Noble Phantasm:",
             room.gameState
           );
+
+          // Add AFTER NP execution but BEFORE broadcasting
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.USE_NP,
+            {
+              npName: message.npName,
+              casterId: message.casterId,
+              targetX: message.targetX,
+              targetY: message.targetY,
+              updatedGameState: message.updatedGameState,
+            },
+            room.roomId
+          );
           broadcastToRoom(player.currentRoom);
           break;
 
@@ -777,6 +979,20 @@ const handleMessage = (bytes, uuid) => {
           };
 
           console.log("Updated game state after skill:", room.gameState);
+
+          // Add AFTER skill execution but BEFORE broadcasting
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.USE_SKILL,
+            {
+              skillName: message.skillName,
+              casterId: message.casterId,
+              targetX: message.targetX,
+              targetY: message.targetY,
+              updatedGameState: message.updatedGameState,
+            },
+            room.roomId
+          );
           broadcastToRoom(player.currentRoom);
           break;
 
@@ -809,6 +1025,64 @@ const handleMessage = (bytes, uuid) => {
             combatResults: counterResults,
             outcome: counterOutcome,
           } = message;
+
+          // Fire RECEIVE_DAMAGE event
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.RECEIVE_DAMAGE,
+            {
+              attackerId: updatedAttacker.id,
+              defenderId: counterDefender.id,
+              damage: counterResults.finalDamage.total,
+              combatResults: counterResults,
+            },
+            room.roomId
+          );
+
+          // Check if this was a successful attack
+          const was_Successful = counterResults.finalDamage.total > 0;
+          if (was_Successful) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.SUCCESSFUL_ATTACK,
+              {
+                attackerId: updatedAttacker.id,
+                defenderId: counterDefender.id,
+                damage: counterResults.finalDamage.total,
+                wasCritical: counterResults.criticals.rolled,
+                wasSuccessful: true,
+                combatResults: counterResults,
+              },
+              room.roomId
+            );
+          }
+
+          // Check for HP loss
+          if (combatResults.finalDamage.total > 0) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.HP_LOSS,
+              {
+                unitId: counterDefender.id,
+                hpLost: counterResults.finalDamage.total,
+                newHp: updatedUnit.hp,
+              },
+              room.roomId
+            );
+          }
+
+          // Check for unit defeat
+          if (updatedUnit.hp <= 0) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.UNIT_DEFEATED,
+              {
+                defeatedUnitId: counterDefender.id,
+                attackerId: updatedAttacker.id,
+              },
+              room.roomId
+            );
+          }
 
           // FIRST: Send message to close attacker's combat menu
           const attackerConnection = connections[counterId];

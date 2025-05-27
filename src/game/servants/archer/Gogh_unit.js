@@ -6,15 +6,15 @@ import { Combat } from "../../Combat";
 import { Action } from "../../actions/Action";
 import { ActionType } from "../../actions/ActionTypes";
 import { NoblePhantasm } from "../../NoblePhantasm";
-import { TriggerEffect } from "../TriggerEffect";
-import { EventTypes } from "../EventTypes";
+import { TriggerEffect } from "../../TriggerEffect";
+import { EventTypes } from "../../EventTypes";
 
 // MicroAction 1: Apply buffs to ally within 2 panels
 const channelMarkerAllyBuffMicroAction = new MicroAction({
   targetingType: TargetingType.AOE_FROM_POINT_WITHIN_RANGE,
   range: 2,
   dimensions: { width: 5, height: 5 },
-  applyCornerRule: true,
+  applyCornerRule: false,
   effectLogic: (gameState, caster, affectedCells) => {
     const updatedUnits = gameState.units.map((unit) => {
       if (
@@ -226,21 +226,221 @@ const channelMarkerCurseRedistributionMicroAction = new MicroAction({
   },
 });
 
-// The complete skill definition
-export const GoghChannelMarkerSoul = new Skill(
-  "Channel Marker Soul",
-  "Applies buffs to ally, grants special Gogh buff to self, and redistributes curses",
-  4, // cooldown in turns
-  2, // range
-  [
-    channelMarkerAllyBuffMicroAction,
-    channelMarkerGoghBuffMicroAction,
-    channelMarkerCurseRedistributionMicroAction,
-  ],
-  false, // not an attack skill
-  false, // doesn't affect attack count
-  false // not reactionary
-);
+const snegletaDefenseDownMicroAction = new MicroAction({
+  targetingType: TargetingType.SINGLE_TARGET,
+  range: 3, // rangeOfBasicAttack + 1
+  effectLogic: (gameState, caster, affectedCells) => {
+    const updatedUnits = gameState.units.map((unit) => {
+      if (
+        unit.team !== caster.team &&
+        affectedCells.has(`${unit.x},${unit.y}`)
+      ) {
+        const modifiedUnit = JSON.parse(JSON.stringify(unit));
+        const backUpUnit = modifiedUnit;
+
+        const currentEffects = Array.isArray(modifiedUnit.effects)
+          ? modifiedUnit.effects
+          : [];
+        const defenseDownEffect = {
+          name: "DefenseDown",
+          type: "DefenseDown",
+          duration: 2,
+          appliedAt: gameState.currentTurn,
+          value: 30,
+          flatOrMultiplier: "multiplier",
+          source: "Snegleta・Snegurochka",
+        };
+
+        modifiedUnit.effects = [...currentEffects, defenseDownEffect];
+
+        return {
+          ...unit,
+          statusIfHit: modifiedUnit,
+          backUpStatus: backUpUnit,
+        };
+      }
+      return unit;
+    });
+
+    return {
+      ...gameState,
+      units: updatedUnits,
+    };
+  },
+});
+
+// Create the MicroAction for the damage and skill seal
+const snegletaDamageAndSealMicroAction = new MicroAction({
+  targetingType: TargetingType.SINGLE_TARGET,
+  range: 3, // rangeOfBasicAttack + 1
+  effectLogic: (gameState, caster, affectedCells) => {
+    const updatedUnits = gameState.units.map((unit) => {
+      if (
+        unit.team !== caster.team &&
+        affectedCells.has(`${unit.x},${unit.y}`)
+      ) {
+        // Use existing statusIfHit to build upon previous effects (needed for NPs, actions, anything that has more than 1 microAction)
+        const modifiedUnit = unit.statusIfHit;
+        const backUpUnit = modifiedUnit;
+
+        const combat = new Combat({
+          typeOfAttackCausingIt: "Noble Phantasm",
+          proportionOfMagicUsed: 1, // 100% magic
+          proportionOfStrengthUsed: 0, // no strength
+          attacker: caster,
+          defender: modifiedUnit,
+          gameState: gameState,
+          integratedAttackMultiplier: 3.5,
+          integratedAttackFlatBonus: 0,
+        });
+
+        const initiationResults = combat.initiateCombat();
+        caster.combatSent = JSON.parse(JSON.stringify(combat.combatResults));
+        modifiedUnit.combatReceived = JSON.parse(
+          JSON.stringify(combat.combatResults)
+        );
+
+        const currentEffects = Array.isArray(modifiedUnit.effects)
+          ? modifiedUnit.effects
+          : [];
+        const skillSealEffect = {
+          name: "SkillSeal",
+          type: "SkillSeal",
+          duration: 1,
+          appliedAt: gameState.currentTurn,
+          description: "Cannot use skills",
+          source: "Snegleta・Snegurochka",
+        };
+
+        modifiedUnit.effects = [...currentEffects, skillSealEffect];
+
+        // Add debug logging
+        console.log("NP Second MicroAction Effects:", {
+          unit: unit.name,
+          previousEffects: currentEffects,
+          newEffects: modifiedUnit.effects,
+          combatResults: combat.combatResults,
+        });
+
+        return {
+          ...unit,
+          statusIfHit: modifiedUnit,
+          backUpStatus: backUpUnit,
+        };
+      }
+      return unit;
+    });
+
+    return {
+      ...gameState,
+      units: updatedUnits,
+    };
+  },
+});
+
+const mahalaprayaMicroAction = new MicroAction({
+  targetingType: TargetingType.AOE_FROM_POINT,
+  range: 6,
+  dimensions: { width: 7, height: 7 },
+  applyCornerRule: false,
+  effectLogic: (gameState, caster, affectedCells) => {
+    console.log("🔥🔥🔥 GOGH MAHALAPRAYA EXECUTING! 🔥🔥🔥");
+    console.log("Executing Mahalapraya MicroAction:", {
+      caster,
+      affectedCellsCount: affectedCells.size,
+      currentGameState: gameState,
+    });
+
+    // Initialize combatSent as an array if it doesn't exist
+    caster.combatSent = [];
+
+    const updatedUnits = gameState.units.map((unit) => {
+      if (
+        unit.team !== caster.team &&
+        affectedCells.has(`${unit.x},${unit.y}`)
+      ) {
+        console.log("💥 Processing unit:", unit.name);
+        const backUpUnit = JSON.parse(JSON.stringify(unit));
+        // Create modified attributes for the copy
+
+        const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
+
+        const casterDeepCopy = JSON.parse(JSON.stringify(caster));
+
+        const unitDeepCopy = JSON.parse(JSON.stringify(unit));
+
+        // const newHp = Math.max(0, modifiedUnit.hp - (5 * caster.atk));
+
+        const combat = new Combat({
+          typeOfAttackCausingIt: "Skill",
+          proportionOfMagicUsed: 1, // 30% of magic
+          proportionOfStrengthUsed: 0, // 120% of strength
+          attacker: casterDeepCopy,
+          defender: unitDeepCopy,
+          gameState: gameState,
+          integratedAttackMultiplier: 5,
+          integratedAttackFlatBonus: 0,
+        });
+        const initiationResults = combat.initiateCombat();
+        // Store only the necessary combat data, avoiding circular references
+        caster.combatSent.push(
+          JSON.parse(JSON.stringify(combat.combatResults))
+        );
+        console.log("Sent combat:", caster.combatSent);
+
+        unit.combatReceived = JSON.parse(JSON.stringify(combat.combatResults));
+        console.log("received combat:", unit.combatReceived);
+
+        // modifiedUnit.combatReceived = JSON.parse(
+        //   JSON.stringify(combat.combatResults)
+        // );
+
+        const newEffect = {
+          name: "uwu",
+          duration: 7,
+          appliedAt: gameState.currentTurn,
+          description: "Under the effect of Mahalapraya",
+        };
+
+        // Modify the copy
+        // modifiedUnit.hp = newHp;
+        unit.effectsReceived = [...currentEffects, newEffect];
+
+        console.log("Applying effect to unit:", {
+          unitName: unit.name,
+          current: unit.hp,
+          newEffect,
+        });
+
+        // Create a copy of the unit for statusIfHit
+        const modifiedUnit = JSON.parse(JSON.stringify(unit));
+
+        console.log("✅ Applied combat and effect to:", unit.name);
+
+        return {
+          ...unit,
+          statusIfHit: modifiedUnit,
+          backUpStatus: backUpUnit,
+        };
+      }
+      return unit;
+    });
+
+    const newGameState = {
+      ...gameState,
+      units: updatedUnits,
+    };
+    console.log("🎯 GOGH MAHALAPRAYA COMPLETED SUCCESSFULLY! 🎯");
+    console.log("MicroAction execution result:", {
+      updatedUnitsCount: updatedUnits.length,
+      affectedUnits: updatedUnits.filter((u) =>
+        u.effects?.some((e) => e.name === "uwu")
+      ),
+    });
+
+    return newGameState;
+  },
+});
 
 export const GoghNPs = {
   SnegletaSnegurochka: new NoblePhantasm(
@@ -256,6 +456,36 @@ export const GoghNPs = {
   ),
 };
 
+const dodgeMicroAction = new MicroAction({
+  targetingType: TargetingType.SELF,
+  range: 0,
+  effectLogic: (gameState, caster, affectedCells) => {
+    const updatedUnits = gameState.units.map((unit) => {
+      if (unit.id === caster.id) {
+        return {
+          ...unit,
+          effects: [
+            ...(unit.effects || []),
+            {
+              name: "Dodge",
+              type: "DefenseUp",
+              duration: 1,
+              appliedAt: gameState.currentTurn,
+              value: 50,
+              flatOrMultiplier: "multiplier",
+            },
+          ],
+        };
+      }
+      return unit;
+    });
+
+    return {
+      ...gameState,
+      units: updatedUnits,
+    };
+  },
+});
 export const GoghActions = {
   common: {
     dodge: new Action(
@@ -275,7 +505,7 @@ export const GoghActions = {
 
 // Define Gogh's skills
 export const GoghSkills = {
-  GoghChannelMarkerSoul: new Skill(
+  ChannelMarkerSoul: new Skill(
     "Channel Marker Soul",
     "Applies buffs to ally, grants special Gogh buff to self, and redistributes curses",
     4, // cooldown in turns
@@ -288,6 +518,16 @@ export const GoghSkills = {
     false, // not an attack skill
     false, // doesn't affect attack count
     false // not reactionary
+  ),
+  Mahalapraya: new Skill(
+    "Mahalapraya",
+    "Hits a 7x7 panel area within 6 cells. Applies 'uwu' effect and deals 5x ATK damage.",
+    5, // cooldown
+    6, // range
+    [mahalaprayaMicroAction],
+    true, // isAttack
+    true, //counts towards limit of attacks
+    true
   ),
 };
 
@@ -332,12 +572,21 @@ export const GoghTemplate = {
   // These will be populated by UnitUtils methods when needed
   statusIfHit: null,
   backUpStatus: null,
+  triggerEffects: [
+    // Initially empty - trigger effects are added dynamically by skills/buffs
+  ],
   skills: [
     {
       id: "ChannelMarkerSoul",
       onCooldownUntil: 0,
       isAttack: false, // New property
       affectsAttackCount: false, // New property
+    },
+    {
+      id: "Mahalapraya",
+      onCooldownUntil: 0,
+      isAttack: true, // New property
+      affectsAttackCount: true, // New property
     },
   ],
   noblePhantasms: [
