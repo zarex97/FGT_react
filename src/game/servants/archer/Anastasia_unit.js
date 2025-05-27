@@ -1,13 +1,13 @@
 // src/game/servants/archer/Anastasia_unit.js
-import { MicroAction } from "../../MicroAction";
-import { Skill } from "../../Skill";
-import { TargetingType } from "../../targeting/TargetingTypes";
-import { Combat } from "../../Combat";
-import { Action } from "../../actions/Action";
-import { ActionType } from "../../actions/ActionTypes";
-import { NoblePhantasm } from "../../NoblePhantasm";
-import { TriggerEffect } from "../../TriggerEffect";
-import { EventTypes } from "../../EventTypes";
+import { MicroAction } from "../../MicroAction.js";
+import { Skill } from "../../Skill.js";
+import { TargetingType } from "../../targeting/TargetingTypes.js";
+import { Combat } from "../../Combat.js";
+import { Action } from "../../actions/Action.js";
+import { ActionType } from "../../actions/ActionTypes.js";
+import { NoblePhantasm } from "../../NoblePhantasm.js";
+import { TriggerEffect } from "../../TriggerEffect.js";
+import { EventTypes } from "../../EventTypes.js";
 
 const snegletaDefenseDownMicroAction = new MicroAction({
   targetingType: TargetingType.SINGLE_TARGET,
@@ -505,6 +505,8 @@ export const AnastasiaAttributes = {
   agilityChecks: null,
   luckChecks: null,
 };
+
+export const AnastasiaTriggerEffects = {};
 
 // Export complete Anastasia unit template
 export const AnastasiaTemplate = {

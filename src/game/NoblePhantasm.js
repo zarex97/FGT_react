@@ -1,6 +1,6 @@
 // src/game/NoblePhantasm.js
-import { TargetingLogic } from "../game/targeting/TargetingLogic";
-import { TargetingType } from "../game/targeting/TargetingTypes";
+import { TargetingLogic } from "../game/targeting/TargetingLogic.js";
+import { TargetingType } from "../game/targeting/TargetingTypes.js";
 
 export class NoblePhantasm {
   constructor(

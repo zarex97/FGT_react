@@ -1,13 +1,15 @@
-import { WebSocketServer } from "ws";
-import http from "http";
-import { v4 as uuidv4 } from "uuid";
-import url from "url";
-import fs from "fs";
-import path from "path";
-import { TriggerEffectProcessor } from "../src/game/TriggerEffectProcessor.js";
-import { EventTypes } from "../src/game/EventTypes.js";
-import { fileURLToPath } from "url";
-import { dirname } from "path";
+const { WebSocketServer } = require("ws");
+const http = require("http");
+const { v4: uuidv4 } = require("uuid");
+const url = require("url"); // Provides url.fileURLToPath and other utilities
+const fs = require("fs");
+const path = require("path"); // Provides path.dirname and other utilities
+
+const { TriggerEffectProcessor } = import(
+  "../src/game/TriggerEffectProcessor.js"
+);
+const { EventTypes } = import("../src/game/EventTypes.js");
+import("../src/game/triggerEffects/registry_triggers.js"); // For side effects
 
 const server = http.createServer();
 const wsServer = new WebSocketServer({ server });
@@ -20,8 +22,8 @@ const playerStates = {};
 // Autosave system - stores up to 100 game states per room
 const autosaves = {}; // roomId -> array of saves
 const MAX_AUTOSAVES = 100;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = dirname(__filename);
 
 // Initialize autosaves directory
 const autosaveDir = path.join(__dirname, "autosaves");
