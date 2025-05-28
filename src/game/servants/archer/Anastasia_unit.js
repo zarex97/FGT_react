@@ -311,30 +311,32 @@ const dodgeMicroAction = new MicroAction({
 // MicroAction that applies curse to enemies in an area
 const cursedIceMicroAction = new MicroAction({
   targetingType: TargetingType.AOE_FROM_POINT,
-  range: 4, // Can target up to 4 cells away
-  dimensions: { width: 5, height: 5 }, // 5x5 area of effect
+  range: 4,
+  dimensions: { width: 5, height: 5 },
   applyCornerRule: false,
   effectLogic: (gameState, caster, affectedCells) => {
-    console.log("Executing Cursed Ice MicroAction:", {
+    console.log("❄️💀 Executing Cursed Ice with Trigger Effects:", {
       caster: caster.name,
       affectedCellsCount: affectedCells.size,
     });
 
     const updatedUnits = gameState.units.map((unit) => {
-      // Target enemy units in the affected area
       if (
         unit.team !== caster.team &&
         affectedCells.has(`${unit.x},${unit.y}`)
       ) {
         const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
+        const currentTriggerEffects = Array.isArray(unit.triggerEffects)
+          ? unit.triggerEffects
+          : [];
 
-        // Create multiple curse effects to test the trigger system
+        // Create multiple curse effects (stages)
         const curseEffect1 = {
           name: "Curse",
           type: "Curse",
-          duration: 3, // Lasts 3 turns
+          duration: 5,
           appliedAt: gameState.currentTurn,
-          value: 5, // 5% damage per turn or similar
+          value: 25,
           description: "Cursed by frozen despair - Stage 1",
           source: "Cursed Ice",
           stage: 1,
@@ -343,9 +345,9 @@ const cursedIceMicroAction = new MicroAction({
         const curseEffect2 = {
           name: "Curse",
           type: "Curse",
-          duration: 3,
+          duration: 5,
           appliedAt: gameState.currentTurn,
-          value: 5,
+          value: 25,
           description: "Cursed by frozen despair - Stage 2",
           source: "Cursed Ice",
           stage: 2,
@@ -354,18 +356,46 @@ const cursedIceMicroAction = new MicroAction({
         const curseEffect3 = {
           name: "Curse",
           type: "Curse",
-          duration: 3,
+          duration: 5,
           appliedAt: gameState.currentTurn,
-          value: 5,
+          value: 25,
           description: "Cursed by frozen despair - Stage 3",
           source: "Cursed Ice",
           stage: 3,
         };
 
-        console.log("Applying curse effects to unit:", {
+        // Check if unit already has curse trigger effect
+        const hasCurseTrigger = currentTriggerEffects.some(
+          (tr) => tr.id === "CurseTriggerEffect"
+        );
+
+        let newTriggerEffects = currentTriggerEffects;
+
+        // TRIGGER CREATES TRIGGER: Add curse trigger if unit doesn't have it
+        if (!hasCurseTrigger) {
+          console.log(
+            `❄️💀 ADDING CURSE TRIGGER: ${unit.name} will now take curse damage over time`
+          );
+
+          const curseTriggerReference = {
+            id: "CurseTriggerEffect",
+            appliedAt: gameState.currentTurn,
+            source: "Cursed Ice Application",
+          };
+
+          newTriggerEffects = [...currentTriggerEffects, curseTriggerReference];
+        } else {
+          console.log(
+            `❄️💀 CURSE: ${unit.name} already has curse trigger, just adding more curse stages`
+          );
+        }
+
+        console.log("❄️💀 Applying curse effects and trigger to:", {
           unitName: unit.name,
           currentEffects: currentEffects.length,
           newCurses: 3,
+          hadCurseTrigger: hasCurseTrigger,
+          newTriggerCount: newTriggerEffects.length,
         });
 
         return {
@@ -376,6 +406,7 @@ const cursedIceMicroAction = new MicroAction({
             curseEffect2,
             curseEffect3,
           ],
+          triggerEffects: newTriggerEffects,
         };
       }
       return unit;
@@ -386,10 +417,13 @@ const cursedIceMicroAction = new MicroAction({
       units: updatedUnits,
     };
 
-    console.log("Cursed Ice execution result:", {
+    console.log("❄️💀 Cursed Ice execution result:", {
       updatedUnitsCount: updatedUnits.length,
       cursedUnits: updatedUnits.filter((u) =>
         u.effects?.some((e) => e.name === "Curse")
+      ).length,
+      unitsWithCurseTrigger: updatedUnits.filter((u) =>
+        u.triggerEffects?.some((tr) => tr.id === "CurseTriggerEffect")
       ).length,
     });
 

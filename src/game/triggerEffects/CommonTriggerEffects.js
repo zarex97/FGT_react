@@ -43,7 +43,7 @@ export const CurseTriggerEffect = new TriggerEffect({
         // Calculate total curse stages
         const curseEffects =
           updatedUnit.effects?.filter((e) => e.name === "Curse") || [];
-        const totalCurseStages = curseEffects.length;
+        const totalCurseStages = curseEffects.stage;
         const curseDamage = totalCurseStages * 25; // 25 damage per stage
 
         console.log(
@@ -61,8 +61,8 @@ export const CurseTriggerEffect = new TriggerEffect({
           // If unit dies from curse, remove all effects (including curses)
           if (updatedUnit.hp <= 0) {
             console.log(`💀 CURSE DEATH: ${unit.name} died from curse damage`);
-            updatedUnit.effects = [];
-            updatedUnit.triggerEffects = [];
+            // updatedUnit.effects = [];
+            // updatedUnit.triggerEffects = [];
           }
         }
 

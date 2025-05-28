@@ -1,22 +1,30 @@
 // src/game/triggerEffects/registry_triggers.js - Following your exact pattern from registry_skills.js
 
 import { ServantRegistry } from "./servants/registry_character.js";
+import { CommonTriggerEffects } from "../game/triggerEffects/CommonTriggerEffects.js";
 
-// Flatten all trigger effects from all servants (same pattern as SkillImplementations)
-export const TriggerEffectImplementations = Object.values(
-  ServantRegistry
-).reduce((acc, servantClass) => {
-  Object.values(servantClass).forEach((servant) => {
-    if (servant.triggerEffects) {
-      Object.entries(servant.triggerEffects).forEach(
-        ([triggerName, triggerImpl]) => {
-          acc[triggerName] = triggerImpl;
-        }
-      );
-    }
-  });
-  return acc;
-}, {});
+// Flatten all trigger effects from all servants (character-specific effects)
+const CharacterTriggerEffects = Object.values(ServantRegistry).reduce(
+  (acc, servantClass) => {
+    Object.values(servantClass).forEach((servant) => {
+      if (servant.triggerEffects) {
+        Object.entries(servant.triggerEffects).forEach(
+          ([triggerName, triggerImpl]) => {
+            acc[triggerName] = triggerImpl;
+          }
+        );
+      }
+    });
+    return acc;
+  },
+  {}
+);
+
+// Combine common trigger effects with character-specific ones
+export const TriggerEffectImplementations = {
+  ...CommonTriggerEffects, // Common effects (Curse, Burn, Regen, etc.)
+  ...CharacterTriggerEffects, // Character-specific effects (Gogh's buff, etc.)
+};
 
 // Utility functions (same pattern as your skill registry)
 export const getTriggerEffectImplementation = (triggerId) => {
