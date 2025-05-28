@@ -668,64 +668,6 @@ const handleMessage = (bytes, uuid) => {
           const fullAttackerId = updated_Attacker.id;
           const fullDefenderId = updatedUnit.id;
 
-          // Fire RECEIVE_DAMAGE event
-          room.gameState = processTriggerEffectsForAction(
-            room.gameState,
-            EventTypes.RECEIVE_DAMAGE,
-            {
-              attackerId: updatedAttacker.id,
-              defenderId: updatedUnit.id,
-              damage: combatResults.finalDamage.total,
-              combatResults: combatResults,
-            },
-            room.roomId
-          );
-
-          // Check if this was a successful attack
-          const wasSuccessful = combatResults.finalDamage.total > 0;
-          if (wasSuccessful) {
-            room.gameState = processTriggerEffectsForAction(
-              room.gameState,
-              EventTypes.SUCCESSFUL_ATTACK,
-              {
-                attackerId: updatedAttacker.id,
-                defenderId: updatedUnit.id,
-                damage: combatResults.finalDamage.total,
-                wasCritical: combatResults.criticals.rolled,
-                wasSuccessful: true,
-                combatResults: combatResults,
-              },
-              room.roomId
-            );
-          }
-
-          // Check for HP loss
-          if (combatResults.finalDamage.total > 0) {
-            room.gameState = processTriggerEffectsForAction(
-              room.gameState,
-              EventTypes.HP_LOSS,
-              {
-                unitId: updatedUnit.id,
-                hpLost: combatResults.finalDamage.total,
-                newHp: updatedUnit.hp,
-              },
-              room.roomId
-            );
-          }
-
-          // Check for unit defeat
-          if (updatedUnit.hp <= 0) {
-            room.gameState = processTriggerEffectsForAction(
-              room.gameState,
-              EventTypes.UNIT_DEFEATED,
-              {
-                defeatedUnitId: updatedUnit.id,
-                attackerId: updatedAttacker.id,
-              },
-              room.roomId
-            );
-          }
-
           // Check if this is a counter attack being processed
           const defenderUnit = room.gameState.units.find(
             (u) => u.id === fullDefenderId
@@ -795,6 +737,72 @@ const handleMessage = (bytes, uuid) => {
 
             return existingUnit;
           });
+
+          // Fire RECEIVE_DAMAGE event
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.RECEIVE_DAMAGE,
+            {
+              attackerId: updated_Attacker.id,
+              defenderId: updatedUnit.id,
+              damage: combatResults.finalDamage.total,
+              combatResults: combatResults,
+            },
+            room.roomId
+          );
+
+          // Check if this was a successful attack
+          const wasSuccessful = combatResults.finalDamage.total > 0;
+          console.log(
+            `🎯 Attack from defender's POV (handleDoNothing) was successful: ${wasSuccessful}`
+          );
+          if (wasSuccessful) {
+            console.log(
+              `🎯 Firing SUCCESSFUL_ATTACK event for ${
+                updated_Attacker.name || updated_Attacker.id
+              }`
+            );
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.SUCCESSFUL_ATTACK,
+              {
+                attackerId: updated_Attacker.id,
+                defenderId: updatedUnit.id,
+                damage: combatResults.finalDamage.total,
+                wasCritical: combatResults.criticals.rolled,
+                wasSuccessful: true,
+                combatResults: combatResults,
+              },
+              room.roomId
+            );
+          }
+
+          // Check for HP loss
+          if (combatResults.finalDamage.total > 0) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.HP_LOSS,
+              {
+                unitId: updatedUnit.id,
+                hpLost: combatResults.finalDamage.total,
+                newHp: updatedUnit.hp,
+              },
+              room.roomId
+            );
+          }
+
+          // Check for unit defeat
+          if (updatedUnit.hp <= 0) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.UNIT_DEFEATED,
+              {
+                defeatedUnitId: updatedUnit.id,
+                attackerId: updated_Attacker.id,
+              },
+              room.roomId
+            );
+          }
 
           broadcastToRoom(player.currentRoom);
           break;
@@ -1200,6 +1208,10 @@ const handleMessage = (bytes, uuid) => {
             outcome: completeOutcome,
           } = message;
 
+          const completeAttacker = room.gameState.units.find(
+            (u) => u.id === completeAttackerId
+          );
+
           // FIRST: Send message to close attacker's combat menu if it's open
           const completeAttackerConnection = connections[completeAttackerId];
           if (completeAttackerConnection) {
@@ -1246,6 +1258,81 @@ const handleMessage = (bytes, uuid) => {
             return unit;
           });
 
+          console.log(
+            `🎯 Step 2: Processing trigger effects AFTER unit updates`
+          );
+
+          // STEP 2: NOW process trigger effects (after unit updates are complete)
+
+          // Fire RECEIVE_DAMAGE event
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.RECEIVE_DAMAGE,
+            {
+              attackerId: completeAttackerId.id,
+              defenderId: completeDefenderId.id,
+              damage: completeResults.finalDamage.total,
+              combatResults: completeResults,
+            },
+            player.currentRoom
+          );
+
+          // Check if this was a successful attack
+          const was__Successful = completeResults.finalDamage.total > 0;
+          console.log(
+            `🎯 Attack from attacker POV (handleConfirmCombatResults) was successful: ${was_Successful}`
+          );
+
+          if (was__Successful) {
+            console.log(
+              `🎯 Firing SUCCESSFUL_ATTACK event for ${
+                completeAttacker.name || completeAttackerId
+              }`
+            );
+
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.SUCCESSFUL_ATTACK,
+              {
+                attackerId: completeAttackerId.id,
+                defenderId: completeAttackerId.id,
+                damage: completeResults.finalDamage.total,
+                wasCritical: completeResults.criticals.rolled,
+                wasSuccessful: true,
+                combatResults: completeResults,
+              },
+              player.currentRoom
+            );
+          }
+
+          // Check for HP loss
+          if (completeResults.finalDamage.total > 0) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.HP_LOSS,
+              {
+                unitId: completeDefenderId.id,
+                hpLost: completeResults.finalDamage.total,
+                newHp: completeDefenderId.hp,
+              },
+              player.currentRoom
+            );
+          }
+
+          // Check for unit defeat
+          if (completeDefenderId.hp <= 0) {
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.UNIT_DEFEATED,
+              {
+                defeatedUnitId: completeDefenderId.id,
+                attackerId: completeAttackerId,
+              },
+              player.currentRoom
+            );
+          }
+
+          console.log(`🎯 Step 3: Broadcasting final state to room`);
           broadcastToRoom(player.currentRoom);
 
           // Send completion notification

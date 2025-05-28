@@ -1813,7 +1813,7 @@ const TacticalGame = ({ username, roomId }) => {
             canCounter: true,
             counteringAgainstWho: combat.attacker.id,
             hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
-            effects: [...currentEffects, newEffect],
+            effects: [...effects, newEffect],
           };
         } else {
           updatedDefender = {
@@ -1821,7 +1821,7 @@ const TacticalGame = ({ username, roomId }) => {
             canCounter: false,
             counteringAgainstWho: null,
             hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
-            effects: [...currentEffects, newEffect],
+            effects: [...effects, newEffect],
           };
         }
       }
