@@ -8,6 +8,18 @@ const CombatManagementMenu = ({ unit, onClose }) => {
     (u) => u.id === unit.combatReceived?.defender.id
   );
   unit = s_unit;
+  const d_unit = gameState.units.find(
+    (u) => u.id === unit.combatReceived?.attacker.id
+  );
+  const d_unit_id = d_unit.id;
+
+  const combat = unit.combatReceived;
+
+  setCurrentStep(combat.response.currentStep);
+  setAwaitingAttacker(combat.response.awaitingAttacker);
+  setReadyToConfirm(combat.response.readyToConfirm);
+  setAwaitingDefender(combat.response.awaitingDefender || true);
+
   // Add effect to watch for attacker's response
   useEffect(() => {
     if (unit.combatReceived?.response?.hitWithLuck_attacker?.done) {
@@ -110,7 +122,7 @@ const CombatManagementMenu = ({ unit, onClose }) => {
     setAwaitingDefender(updatedResponse.awaitingDefender);
   };
 
-  const handleDoNothing = () => {
+  const handleDoNothing = async () => {
     const currentAttacker = gameState.units.find(
       (u) => u.id === unit.combatReceived.attacker.id
     );
@@ -122,6 +134,28 @@ const CombatManagementMenu = ({ unit, onClose }) => {
       console.error("Could not find current units");
       return;
     }
+
+    // STEP 1: Find the attacker's player ID (WebSocket UUID) from the game state
+    const attackerPlayerId = Object.keys(gameState.players).find(
+      (playerId) => gameState.players[playerId].team === currentAttacker.team
+    );
+
+    if (!attackerPlayerId) {
+      console.error("Could not find attacker's player ID");
+      return;
+    }
+
+    // STEP 1: Send message to close attacker's menu
+    console.log("Requesting to close attacker's menu...");
+    sendJsonMessage({
+      type: "GAME_ACTION",
+      action: "CLOSE_COMBAT_MENU",
+      targetPlayerId: attackerPlayerId,
+      reason: "Combat completed without counter",
+    });
+
+    // STEP 2: Wait a brief moment for the close message to be processed
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const currentAttackerDeepCopy = JSON.parse(JSON.stringify(currentAttacker));
 
@@ -160,19 +194,181 @@ const CombatManagementMenu = ({ unit, onClose }) => {
       );
     }
 
+    // Determine if hit or evade based on combat response
+    const outcome = determineOutcome(combat.combatResults.response);
+
+    let updatedAttacker = {
+      ...currentAttackerDeepCopy,
+    };
+    const currentDefenderDeepCopy2 = JSON.parse(
+      JSON.stringify(currentDefender)
+    );
+    let updatedUnit = {
+      ...currentDefenderDeepCopy2,
+      canCounter: false,
+      counteringAgainstWho: null,
+    };
+
+    const willTriggerDoubleCounter = d_unit.counteringAgainstWho === unit.id;
+    // can counter is set to false because this method is for when you skip counter
+    if (outcome === "hit") {
+      updatedUnit = {
+        ...unit,
+        canCounter: false,
+        counteringAgainstWho: null,
+        hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
+        effects: [...currentEffects, newEffect],
+      };
+    }
+    sendJsonMessage({
+      type: "GAME_ACTION",
+      action: "RECEIVE_ATTACK",
+      updatedUnit,
+      updatedAttacker,
+      combatResults: finalResults,
+    });
+
+    onClose();
+  };
+
+  const handleConfirmCombatResultsAndInitiateCounter = async () => {
+    const currentAttacker = gameState.units.find(
+      (u) => u.id === unit.combatReceived.attacker.id
+    );
+    const currentDefender = gameState.units.find(
+      (u) => u.id === unit.combatReceived.defender.id
+    );
+
+    if (!currentAttacker || !currentDefender) {
+      console.error("Could not find current units");
+      return;
+    }
+
+    // STEP 1: Find the attacker's player ID (WebSocket UUID) from the game state
+    const attackerPlayerId = Object.keys(gameState.players).find(
+      (playerId) => gameState.players[playerId].team === currentAttacker.team
+    );
+
+    if (!attackerPlayerId) {
+      console.error("Could not find attacker's player ID");
+      return;
+    }
+
+    // STEP 1: Send message to close attacker's menu
+    console.log("Requesting to close attacker's menu...");
+    sendJsonMessage({
+      type: "GAME_ACTION",
+      action: "CLOSE_COMBAT_MENU",
+      targetPlayerId: attackerPlayerId,
+      reason: "Combat being processed by defender",
+    });
+
+    // STEP 2: Wait a brief moment for the close message to be processed
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const currentAttackerDeepCopy = JSON.parse(JSON.stringify(currentAttacker));
+
+    const currentDefenderDeepCopy = JSON.parse(JSON.stringify(currentDefender));
+
+    const gameStateDeepCopy = JSON.parse(JSON.stringify(gameState));
+
+    const combat = new Combat({
+      typeOfAttackCausingIt: unit.combatReceived.typeOfAttackCausingIt,
+      proportionOfMagicUsed: unit.combatReceived.proportionOfMagicUsed,
+      proportionOfStrengthUsed: unit.combatReceived.proportionOfStrengthUsed,
+      attacker: currentAttackerDeepCopy,
+      defender: currentDefenderDeepCopy,
+      gameState: gameStateDeepCopy,
+      integratedAttackMultiplier:
+        unit.combatReceived.integratedAttackMultiplier,
+      integratedAttackFlatBonus: unit.combatReceived.integratedAttackFlatBonus,
+      isAoE: unit.combatReceived.isAoE || false,
+    });
+    // Instead of setting finalResults, copy over the stored combat results
+    combat.combatResults = JSON.parse(JSON.stringify(unit.combatReceived));
+
+    // Now call receiveCombat to apply any defender modifications
+    const finalResults = combat.receiveCombat();
+
+    // unit.statusIfHit.hp =
+    //   unit.statusIfHit.hp - finalResults.finalDamage.total;
+    // unit = JSON.parse(JSON.stringify(unit.statusIfHit));
+    const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
+    const newEffect = unit.effectsReceived;
+
+    //if existing, remove the blockdefense effect
+    if (currentDefender.effects) {
+      currentDefender.effects = currentDefender.effects.filter(
+        (e) => e.name !== "BlockDefense"
+      );
+    }
+
+    // Determine if hit or evade based on combat response
+    const outcome = determineOutcome(combat.combatResults.response);
+
+    // Create updatedAttacker - this was missing!
+    let updatedAttacker = {
+      ...currentAttacker,
+      hasAttacked: true, // Mark as having completed their attack
+    };
+
+    let updatedDefender = currentDefender;
+
+    //if the attack doesn't hit, then still counter would be available
+    updatedDefender.canCounter = true;
+    updatedDefender.counteringAgainstWho = combat.attacker.id;
+
+    if (outcome === "hit") {
+      updatedDefender = {
+        ...currentDefender,
+        canCounter: true,
+        counteringAgainstWho: combat.attacker.id,
+        hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
+        effects: [...currentEffects, newEffect],
+      };
+    }
+
+    // outcome doesnt seem necessary, even if it doesn't hit it will still have to send a msg to server
+    // if (outcome === "hit") {
+    //   updatedDefender = {
+    //     ...currentDefender,
+    //     hp: Math.max(0, currentDefender.hp - finalResults.finalDamage.total),
+    //     canCounter: true,
+    //     counteringAgainstWho: combat.attacker.id,
+    //     effects: [
+    //       ...(currentDefender.effects || []),
+    //       ...(currentDefender.effectsReceived
+    //         ? [currentDefender.effectsReceived]
+    //         : []),
+    //     ].filter(Boolean),
+    //   };
+    // }
+
+    //currently may be out of use for updatedDefender
     const updatedUnit = {
       ...unit,
       hp: Math.max(0, unit.hp - finalResults.finalDamage.total),
+      canCounter: true,
+      counteringAgainstWho: combat.attacker.id,
       effects: [...currentEffects, newEffect],
     };
 
     sendJsonMessage({
       type: "GAME_ACTION",
-      action: "RECEIVE_ATTACK",
-      updatedUnit,
+      action: "PROCESS_COMBAT_AND_INITIATE_COUNTER",
+      attackerId: combat.attacker.id,
+      defenderId: combat.defender.id,
+      updatedAttacker,
+      updatedDefender,
       combatResults: finalResults,
+      outcome,
     });
 
+    setCurrentStep(1);
+    setAwaitingAttacker(false);
+    setReadyToConfirm(false);
+    setAwaitingDefender(true);
+    setHasProcessedResponse(false);
     onClose();
   };
 
@@ -236,11 +432,11 @@ const CombatManagementMenu = ({ unit, onClose }) => {
 
     // Calculate modifiers
     if (type === "agility") {
-      if (unit.baseAgility < combat.attacker.baseAgility) totalModifier -= 4;
+      if (unit.baseAgility < combat.attacker.baseAgility) totalModifier += 4;
       if (combat.typeOfAttackCausingIt === "NP") totalModifier += 3;
       if (combat.isAoE) totalModifier += 2;
     } else if (type === "luck") {
-      if (unit.baseLuck < combat.attacker.baseLuck) totalModifier -= 4;
+      if (unit.baseLuck < combat.attacker.baseLuck) totalModifier += 4;
       if (combat.isAoE) totalModifier += 2;
     }
 
@@ -354,7 +550,28 @@ const CombatManagementMenu = ({ unit, onClose }) => {
       setAwaitingAttacker(false);
       setAwaitingDefender(true);
       updateCombatResponse(updatedResponse);
-    } else {
+    }
+    // else if (
+    //   !luckCheck.success &&
+    //   !updatedResponse.evadeWithCS_defender.done
+    // ) {
+    //   console.log(
+    //     "Failed luck check, but you can still use Command Seal moving to step 3"
+    //   );
+    //   setAwaitingAttacker(true);
+    //   setCurrentStep(2);
+    //   setReadyToConfirm(false);
+    //   setAwaitingDefender(false);
+    //   const updatedResponse2 = {
+    //     ...updatedResponse,
+    //     currentStep: 2,
+    //     awaitingAttacker: true,
+    //     awaitingDefender: false,
+    //     readyToConfirm: false,
+    //   };
+    //   updateCombatResponse(updatedResponse2);
+    // }
+    else {
       console.log("Successful luck check, awaiting attacker");
       setAwaitingAttacker(true);
       setCurrentStep(2);
@@ -385,6 +602,9 @@ const CombatManagementMenu = ({ unit, onClose }) => {
     setReadyToConfirm(true);
   };
 
+  const willTriggerDoubleCounter = d_unit.counteringAgainstWho === unit.id;
+  const hasUsedCommandSeal =
+    unit.combatReceived.response.evadeWithCS_defender.done;
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-4 w-[500px] max-h-[80vh] overflow-y-auto">
@@ -455,18 +675,15 @@ const CombatManagementMenu = ({ unit, onClose }) => {
                 <button
                   onClick={handleLuckEvade}
                   className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-                  disabled={
-                    unit.combatReceived.response?.evadeWithLuck_defender?.done
-                  }
                 >
                   Try Luck Evasion
                 </button>
-                <button
+                {/* <button
                   onClick={handleCommandSeal}
                   className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
                 >
                   Use Command Seal
-                </button>
+                </button> */}
                 <button
                   onClick={() => {
                     setCurrentStep(3);
@@ -475,6 +692,18 @@ const CombatManagementMenu = ({ unit, onClose }) => {
                   className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
                 >
                   Skip
+                </button>
+              </div>
+            )}
+
+            {/* Floating command seal button */}
+            {!hasUsedCommandSeal && !awaitingAttacker && (
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={handleCommandSeal}
+                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                >
+                  Use Command Seal
                 </button>
               </div>
             )}
@@ -502,21 +731,33 @@ const CombatManagementMenu = ({ unit, onClose }) => {
 
             {/* Step 3: Confirmation */}
             {currentStep === 3 && readyToConfirm && (
-              <div className="mt-4">
+              <div className="mt-4 space-y-2">
                 <button
-                  onClick={() => {
-                    const outcome = determineOutcome(
-                      unit.combatReceived.response
-                    );
-                    if (outcome === "hit") {
-                      handleDoNothing();
-                    } else {
-                      onClose();
-                    }
-                  }}
+                  onClick={handleDoNothing}
                   className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                 >
-                  Confirm Results of Combat
+                  Confirm Results of Combat - Skip counter
+                </button>
+                <button
+                  onClick={handleConfirmCombatResultsAndInitiateCounter}
+                  className={`w-full px-4 py-2 rounded text-white ${
+                    willTriggerDoubleCounter
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-orange-500 hover:bg-orange-600"
+                  }`}
+                  disabled={willTriggerDoubleCounter}
+                  title={
+                    willTriggerDoubleCounter
+                      ? "You Cannot counter against a counterattack"
+                      : "Confirm Results"
+                  }
+                >
+                  Confirm Results of Combat - Initiate Counter
+                  {willTriggerDoubleCounter && (
+                    <span className="ml-2 text-xs">
+                      (Can't counter against a counter)
+                    </span>
+                  )}
                 </button>
               </div>
             )}
