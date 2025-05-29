@@ -1,6 +1,7 @@
 // src/game/triggerEffects/CommonTriggerEffects.js
 import { TriggerEffect } from "../TriggerEffect.js";
 import { EventTypes } from "../EventTypes.js";
+import { convertFractionalDuration } from "../utils/DurationHelper.js";
 
 // Curse Trigger Effect - Activates at end of turn for cursed units
 export const CurseTriggerEffect = new TriggerEffect({
@@ -13,20 +14,29 @@ export const CurseTriggerEffect = new TriggerEffect({
   conditionLogic: (eventData, gameState, unit) => {
     // Only trigger if this unit has curse effects AND it's their team's turn ending
     const hasCurse = unit.effects?.some((effect) => effect.name === "Curse");
+    const curseEffect = unit.effects?.find((effect) => effect.name === "Curse");
+    if (!curseEffect) {
+      console.log(`💀 CURSE does no exist for ${unit.name}:`);
+      return false;
+    }
 
-    // Check if it's the right timing based on turns per round
-    const turnsPerRound = gameState.turnsPerRound || 2;
-    const turnsSinceRoundStart = (gameState.currentTurn - 1) % turnsPerRound;
-    const intervalTurns = Math.max(1, Math.floor(turnsPerRound / 3)); // Every ⅓ of round
+    // Calculate interval turns (every 1/3 of a round)
+    const intervalTurns = convertFractionalDuration("1/3", turnsPerRound);
 
-    const shouldActivateThisTurn =
-      (turnsSinceRoundStart + 1) % intervalTurns === 0;
+    // Get when the curse was applied and when it last triggered
+    const appliedAt = curseEffect.appliedAt;
+    const lastActivated = curseEffect.lastTurnSinceActivated || appliedAt;
+
+    // Calculate when the next activation should occur
+    const turnsSinceLastActivation = currentTurn - lastActivated;
+    const shouldActivateThisTurn = turnsSinceLastActivation >= intervalTurns;
 
     console.log(`💀 CURSE CHECK for ${unit.name}:`, {
-      hasCurse,
-      currentTurn: gameState.currentTurn,
-      turnsPerRound,
+      currentTurn,
+      appliedAt,
+      lastActivated,
       intervalTurns,
+      turnsSinceLastActivation,
       shouldActivateThisTurn,
     });
 
@@ -53,6 +63,17 @@ export const CurseTriggerEffect = new TriggerEffect({
         if (curseDamage > 0) {
           // Apply curse damage
           updatedUnit.hp = Math.max(0, updatedUnit.hp - curseDamage);
+
+          // Update lastTurnSinceActivated for all curse effects
+          updatedUnit.effects = updatedUnit.effects.map((effect) => {
+            if (effect.name === "Curse") {
+              return {
+                ...effect,
+                lastTurnSinceActivated: gameState.currentTurn,
+              };
+            }
+            return effect;
+          });
 
           console.log(
             `💀 CURSE DAMAGE: ${unit.name} HP: ${gameUnit.hp} → ${updatedUnit.hp}`
