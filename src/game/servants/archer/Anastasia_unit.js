@@ -72,7 +72,8 @@ const bindingChainsMicroAction = new MicroAction({
             currentUnit,
             effect,
             gameState,
-            "Skill"
+            "Skill",
+            chance
           );
 
           const result = {
