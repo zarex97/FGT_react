@@ -6,16 +6,18 @@ export class EffectApplication {
     effect,
     gameState,
     applicationSource = "Skill", // "Skill", "NP", "Passive", etc.
+    chance = 100,
   }) {
     this.caster = caster;
     this.target = target;
     this.effect = effect;
     this.gameState = gameState;
     this.applicationSource = applicationSource;
+    this.chance = chance;
 
     // Initialize application results
     this.applicationResults = {
-      baseSuccessChance: 85, // Base 85% success rate
+      baseSuccessChance: this.chance,
       modifiers: {
         caster: {
           buffChanceUp: 0,
@@ -756,7 +758,8 @@ export const applyEffect = (
   target,
   effect,
   gameState,
-  applicationSource = "Skill"
+  applicationSource = "Skill",
+  chance
 ) => {
   const application = new EffectApplication({
     caster,
@@ -764,6 +767,7 @@ export const applyEffect = (
     effect,
     gameState,
     applicationSource,
+    chance,
   });
 
   const results = application.executeApplication();
