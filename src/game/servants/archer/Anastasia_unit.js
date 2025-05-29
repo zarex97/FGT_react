@@ -73,7 +73,7 @@ const bindingChainsMicroAction = new MicroAction({
             effect,
             gameState,
             "Skill",
-            chance
+            100
           );
 
           const result = {
@@ -731,6 +731,12 @@ export const AnastasiaTemplate = {
     },
     {
       id: "IceCurse",
+      onCooldownUntil: 0,
+      isAttack: false,
+      affectsAttackCount: false,
+    },
+    {
+      id: "BindingChains",
       onCooldownUntil: 0,
       isAttack: false,
       affectsAttackCount: false,

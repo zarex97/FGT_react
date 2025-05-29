@@ -616,6 +616,21 @@ export const GoghAttributes = {
   agilityChecks: null,
   luckChecks: null,
   triggerEffects: [],
+  effects: [
+    {
+      name: "Freedom's Blessing",
+      type: "Specific Immunity",
+      immuneTo: ["Immobility Debuffs"],
+      duration: null,
+      uses: 1,
+      appliedAt: 1, // Adjust this to your current game turn
+      description: "Divine blessing grants immunity to one immobility effect",
+      source: "Divine Protection",
+      archetype: "buff",
+      category: "Defensive Buffs",
+      removable: false,
+    },
+  ],
 };
 
 // Export complete Gogh unit template
