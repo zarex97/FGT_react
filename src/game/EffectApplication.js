@@ -805,7 +805,8 @@ export const applyEffectsSimultaneously = (
   caster,
   effects,
   gameState,
-  applicationSource = "Skill"
+  applicationSource = "Skill",
+  chance
 ) => {
   console.log(
     `🎯 SIMULTANEOUS APPLICATION: ${effects.length} effects using caster snapshot`
