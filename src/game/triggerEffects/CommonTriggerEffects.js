@@ -20,6 +20,8 @@ export const CurseTriggerEffect = new TriggerEffect({
       return false;
     }
 
+    const currentTurn = gameState.currentTurn;
+    const turnsPerRound = gameState.turnsPerRound || 2;
     // Calculate interval turns (every 1/3 of a round)
     const intervalTurns = convertFractionalDuration("1/3", turnsPerRound);
 
