@@ -164,6 +164,7 @@ const TacticalGame = ({ username, roomId }) => {
               movementRange: 3, // Heavy armored unit with low movement
               movementLeft: 3,
               hasAttacked: false,
+              visionRange: 1,
               name: "Artoria",
               sprite: "dist/sprites/(Saber) Artoria_portrait.png",
               skills: [

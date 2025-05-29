@@ -342,32 +342,39 @@ const cursedIceMicroAction = new MicroAction({
           stage: 1,
         };
 
-        const curseEffect2 = {
-          name: "Curse",
-          type: "Curse",
-          duration: 5,
-          appliedAt: gameState.currentTurn,
-          value: 25,
-          description: "Cursed by frozen despair - Stage 2",
-          source: "Cursed Ice",
-          stage: 2,
-        };
-
-        const curseEffect3 = {
-          name: "Curse",
-          type: "Curse",
-          duration: 5,
-          appliedAt: gameState.currentTurn,
-          value: 25,
-          description: "Cursed by frozen despair - Stage 3",
-          source: "Cursed Ice",
-          stage: 3,
-        };
-
-        // Check if unit already has curse trigger effect
-        const hasCurseTrigger = currentTriggerEffects.some(
-          (tr) => tr.id === "CurseTriggerEffect"
+        // Check if unit already has curse effects
+        const existingCurses = currentEffects.filter(
+          (effect) => effect.name === "Curse"
         );
+
+        if (existingCurses.length > 0) {
+          // Find the highest stage curse
+          const highestStageCurse = existingCurses.reduce((highest, curse) => {
+            return (curse.stage || 1) > (highest.stage || 1) ? curse : highest;
+          }, existingCurses[0]);
+
+          const currentStage = highestStageCurse.stage || 1;
+          const newStage = currentStage + curseEffect1.stage;
+          const newValue = 25 * newStage;
+
+          console.log(
+            `❄️💀 CURSE: ${unit.name} already has curse (Stage ${currentStage}), upgrading to Stage ${newStage}`
+          );
+
+          // Alter curseEffect1 to be the upgraded curse
+          curseEffect1 = {
+            ...curseEffect1,
+            stage: newStage,
+            value: newValue,
+            description: `Cursed by frozen despair - Stage ${newStage}`,
+          };
+
+          console.log(`❄️💀 CURSE: ${unit.name} curse upgraded:`, {
+            previousStage: currentStage,
+            newStage: newStage,
+            newValue: newValue,
+          });
+        }
 
         let newTriggerEffects = currentTriggerEffects;
 
@@ -384,28 +391,11 @@ const cursedIceMicroAction = new MicroAction({
           };
 
           newTriggerEffects = [...currentTriggerEffects, curseTriggerReference];
-        } else {
-          console.log(
-            `❄️💀 CURSE: ${unit.name} already has curse trigger, just adding more curse stages`
-          );
         }
-
-        console.log("❄️💀 Applying curse effects and trigger to:", {
-          unitName: unit.name,
-          currentEffects: currentEffects.length,
-          newCurses: 3,
-          hadCurseTrigger: hasCurseTrigger,
-          newTriggerCount: newTriggerEffects.length,
-        });
 
         return {
           ...unit,
-          effects: [
-            ...currentEffects,
-            curseEffect1,
-            curseEffect2,
-            curseEffect3,
-          ],
+          effects: [...currentEffects, curseEffect1],
           triggerEffects: newTriggerEffects,
         };
       }
