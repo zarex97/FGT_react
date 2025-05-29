@@ -6,7 +6,7 @@ export class EffectApplication {
     effect,
     gameState,
     applicationSource = "Skill", // "Skill", "NP", "Passive", etc.
-    chance = 100, //defaults to 100% if not stated
+    chance = 100,
   }) {
     this.caster = caster;
     this.target = target;
@@ -17,7 +17,7 @@ export class EffectApplication {
 
     // Initialize application results
     this.applicationResults = {
-      // Base 85% success rate
+      baseSuccessChance: this.chance,
       modifiers: {
         caster: {
           buffChanceUp: 0,
@@ -44,7 +44,7 @@ export class EffectApplication {
   // Step 1: Calculate success chance based on modifiers (with specific caster bonuses)
   calculateSuccessChance() {
     const { caster, target } = this.applicationResults.modifiers;
-    let successChance = this.chance;
+    let successChance = this.applicationResults.baseSuccessChance;
 
     // Determine if this is a buff or debuff
     const isBuff = this.isEffectBuff(this.effect);
@@ -166,7 +166,7 @@ export class EffectApplication {
     );
   }
 
-  // Step 2: Collect caster modifiers (using snapshot for simultaneous mode)
+  // Step 2: Collect caster modifiers (with consumption tracking)
   collectCasterModifiers() {
     const modifiers = {
       buffChanceUp: 0,
@@ -177,18 +177,7 @@ export class EffectApplication {
       usedEffects: [], // Track which effects should be consumed
     };
 
-    // Use snapshot for simultaneous mode, current state for sequential mode
-    const casterToAnalyze = this.simultaneousMode
-      ? this.casterSnapshot
-      : this.caster;
-
-    console.log(
-      `🔮 Analyzing caster modifiers from ${
-        this.simultaneousMode ? "SNAPSHOT" : "CURRENT STATE"
-      }`
-    );
-
-    casterToAnalyze.effects?.forEach((effect) => {
+    this.caster.effects?.forEach((effect) => {
       switch (effect.type) {
         case "Buff Chance Up":
           modifiers.buffChanceUp += effect.value || 15;
@@ -244,12 +233,7 @@ export class EffectApplication {
     });
 
     this.applicationResults.modifiers.caster = modifiers;
-    console.log(
-      `🔮 Caster modifiers (${
-        this.simultaneousMode ? "snapshot" : "current"
-      }):`,
-      modifiers
-    );
+    console.log(`🔮 Caster modifiers:`, modifiers);
   }
 
   // Step 3: Collect target resistance (with specific resistances and limited uses)
@@ -768,16 +752,14 @@ export class EffectApplication {
   }
 }
 
-// Convenience function for use in MicroActions (Updated for simultaneous mode)
+// Convenience function for use in MicroActions
 export const applyEffect = (
   caster,
   target,
   effect,
   gameState,
   applicationSource = "Skill",
-  simultaneousMode = false,
-  chance = 100,
-  casterSnapshot = null
+  chance
 ) => {
   const application = new EffectApplication({
     caster,
@@ -785,9 +767,7 @@ export const applyEffect = (
     effect,
     gameState,
     applicationSource,
-    simultaneousMode,
     chance,
-    casterSnapshot,
   });
 
   const results = application.executeApplication();
@@ -797,84 +777,5 @@ export const applyEffect = (
     updatedCaster: results.updatedCaster,
     updatedTarget: results.updatedTarget,
     applicationResults: results,
-  };
-};
-
-// NEW: Simultaneous effect application for MicroActions
-export const applyEffectsSimultaneously = (
-  caster,
-  effects,
-  gameState,
-  applicationSource = "Skill",
-  chance
-) => {
-  console.log(
-    `🎯 SIMULTANEOUS APPLICATION: ${effects.length} effects using caster snapshot`
-  );
-
-  // Take snapshot of caster's initial state
-  const casterSnapshot = JSON.parse(JSON.stringify(caster));
-
-  // Track all applications and their results
-  const applications = [];
-  let currentGameState = { ...gameState };
-
-  // Process each effect using the initial snapshot
-  effects.forEach((effectConfig, index) => {
-    const { target, effect } = effectConfig;
-
-    console.log(
-      `🎯 Effect ${index + 1}/${effects.length}: ${effect.name} → ${
-        target.name
-      } (using snapshot)`
-    );
-
-    const application = applyEffect(
-      caster, // Current caster state (for consumption tracking)
-      target,
-      effect,
-      currentGameState,
-      applicationSource,
-      true, // simultaneousMode = true
-      casterSnapshot // Use snapshot for modifier calculation
-    );
-
-    applications.push({
-      target: target.name,
-      targetId: target.id,
-      effect: effect.name,
-      wasSuccessful: application.wasSuccessful,
-      rollResult: application.applicationResults.rollResult,
-      finalSuccessChance: application.applicationResults.finalSuccessChance,
-      consumedCasterEffects:
-        application.applicationResults.consumedCasterEffects?.length || 0,
-      consumedTargetDefenses:
-        application.applicationResults.consumedTargetDefenses?.length || 0,
-    });
-
-    // Update game state with results
-    currentGameState = {
-      ...currentGameState,
-      units: currentGameState.units.map((unit) => {
-        if (unit.id === caster.id) {
-          return application.updatedCaster;
-        }
-        if (unit.id === target.id) {
-          return application.updatedTarget;
-        }
-        return unit;
-      }),
-    };
-
-    // Update caster reference for next iteration (for consumption)
-    caster = application.updatedCaster;
-  });
-
-  return {
-    updatedGameState: currentGameState,
-    applications,
-    totalSuccessful: applications.filter((app) => app.wasSuccessful).length,
-    totalAttempts: applications.length,
-    casterSnapshot: casterSnapshot, // For debugging
   };
 };
