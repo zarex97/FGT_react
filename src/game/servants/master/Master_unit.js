@@ -182,3 +182,41 @@ export const MasterAttributes = {
 };
 
 export const MasterTriggerEffects = {};
+
+// Export complete Master unit template
+export const MasterTemplate = {
+  ...MasterAttributes,
+  // These will be populated by UnitUtils methods when needed
+  statusIfHit: null,
+  backUpStatus: null,
+  triggerEffects: [
+    // Initially empty - trigger effects are added dynamically
+  ],
+  skills: [
+    // Masters don't have skills
+  ],
+  noblePhantasms: [
+    {
+      id: "MagicCrest",
+      name: "Magic Crest",
+      description:
+        "Channels the family's magical legacy into a focused magical attack",
+      cooldown: 30,
+      onCooldownUntil: 0,
+      isAttack: true,
+      affectsAttackCount: true,
+    },
+  ],
+  reactions: [
+    // Masters typically don't have reactions, but could be added if needed
+  ],
+  actions: {
+    common: [
+      {
+        id: "UseCommandSeal",
+        onCooldownUntil: 0,
+      },
+    ],
+    unique: [],
+  },
+};
