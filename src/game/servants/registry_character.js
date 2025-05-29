@@ -1,8 +1,10 @@
 // src/game/servants/registry_character.js
 import { ArcherServants } from "./archer/index.js";
+import { Masters } from "./master/index.js";
 
 export const ServantRegistry = {
   Archer: ArcherServants,
+  Master: Masters,
   // Add other classes here like:
   // Saber: SaberServants,
   // Lancer: LancerServants,
