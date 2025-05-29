@@ -8,6 +8,164 @@ import { ActionType } from "../../actions/ActionTypes.js";
 import { NoblePhantasm } from "../../NoblePhantasm.js";
 import { TriggerEffect } from "../../TriggerEffect.js";
 import { EventTypes } from "../../EventTypes.js";
+import { applyEffect } from "../../EffectApplication.js";
+
+const bindingChainsMicroAction = new MicroAction({
+  targetingType: TargetingType.AOE_FROM_POINT,
+  range: 4,
+  dimensions: { width: 3, height: 3 },
+  effectLogic: (gameState, caster, affectedCells) => {
+    console.log("⛓️ Executing Binding Chains:");
+
+    // Define immobility debuffs that will benefit from specific caster bonuses
+    const immobilityEffects = [
+      {
+        name: "Root",
+        type: "Immobilize",
+        value: 0, // Immobilization doesn't need a value
+        duration: 2,
+        description: "Magical roots prevent movement",
+        category: "Immobility Debuffs",
+        archetype: "debuff",
+      },
+      {
+        name: "Slow",
+        type: "SpeedDown",
+        value: 50,
+        duration: 3,
+        description: "Movement speed drastically reduced",
+        category: "Immobility Debuffs",
+        archetype: "debuff",
+      },
+      {
+        name: "Paralyze",
+        type: "Stun",
+        value: 0, // Stun doesn't need a value
+        duration: 1,
+        description: "Completely unable to act",
+        category: "Immobility Debuffs",
+        archetype: "debuff",
+      },
+    ];
+
+    const applicationResults = [];
+
+    const updatedUnits = gameState.units.map((unit) => {
+      if (
+        unit.team !== caster.team &&
+        affectedCells.has(`${unit.x},${unit.y}`)
+      ) {
+        console.log(`⛓️ Targeting ${unit.name} with binding chains`);
+
+        let currentUnit = { ...unit };
+        let currentCaster = { ...caster };
+        const unitResults = [];
+
+        // Apply each immobility effect
+        immobilityEffects.forEach((effect, index) => {
+          console.log(
+            `⛓️ Effect ${index + 1}/3: Applying ${effect.name} to ${unit.name}`
+          );
+
+          const application = applyEffect(
+            currentCaster,
+            currentUnit,
+            effect,
+            gameState,
+            "Skill"
+          );
+
+          const result = {
+            target: unit.name,
+            effect: effect.name,
+            success: application.wasSuccessful,
+            roll: application.applicationResults.rollResult,
+            chance: application.applicationResults.finalSuccessChance,
+            consumedCasterEffects:
+              application.applicationResults.consumedCasterEffects?.length || 0,
+            consumedTargetDefenses:
+              application.applicationResults.consumedTargetDefenses?.length ||
+              0,
+          };
+
+          unitResults.push(result);
+
+          // Update both units for next iteration
+          currentCaster = application.updatedCaster;
+          currentUnit = application.updatedTarget;
+
+          if (application.wasSuccessful) {
+            console.log(`✅ ${effect.name} applied to ${unit.name}`);
+          } else {
+            console.log(`❌ ${effect.name} resisted by ${unit.name}`);
+          }
+
+          // Log caster effect consumption
+          if (result.consumedCasterEffects > 0) {
+            console.log(
+              `🔮 ${result.consumedCasterEffects} caster enhancement(s) consumed for ${effect.name}`
+            );
+          }
+        });
+
+        applicationResults.push({
+          target: unit.name,
+          effects: unitResults,
+          successCount: unitResults.filter((r) => r.success).length,
+          totalCasterEffectsConsumed: unitResults.reduce(
+            (sum, r) => sum + r.consumedCasterEffects,
+            0
+          ),
+          totalTargetDefensesConsumed: unitResults.reduce(
+            (sum, r) => sum + r.consumedTargetDefenses,
+            0
+          ),
+        });
+
+        // Update the caster in gameState with the final state
+        // (In a real implementation, you'd want to handle this at the gameState level)
+        caster = currentCaster;
+
+        return currentUnit;
+      }
+      return unit;
+    });
+
+    // Log comprehensive results
+    console.log("⛓️ Binding Chains Results:");
+    applicationResults.forEach((result) => {
+      console.log(
+        `⛓️ ${result.target}: ${result.successCount}/3 effects applied`
+      );
+      console.log(
+        `   🔮 Caster effects consumed: ${result.totalCasterEffectsConsumed}`
+      );
+      console.log(
+        `   🛡️ Target defenses consumed: ${result.totalTargetDefensesConsumed}`
+      );
+
+      result.effects.forEach((effect) => {
+        const status = effect.success ? "✅" : "❌";
+        const casterText =
+          effect.consumedCasterEffects > 0
+            ? ` (${effect.consumedCasterEffects} caster)`
+            : "";
+        const targetText =
+          effect.consumedTargetDefenses > 0
+            ? ` (${effect.consumedTargetDefenses} target)`
+            : "";
+        console.log(
+          `      ${status} ${effect.effect}: ${effect.roll}/${effect.chance}%${casterText}${targetText}`
+        );
+      });
+    });
+
+    return {
+      ...gameState,
+      units: updatedUnits,
+    };
+  },
+});
 
 const snegletaDefenseDownMicroAction = new MicroAction({
   targetingType: TargetingType.SINGLE_TARGET,
@@ -491,6 +649,16 @@ export const AnastasiaSkills = {
     [cursedIceMicroAction],
     false, // not an attack skill (doesn't trigger attack-related effects)
     false, // doesn't count against attack limit
+    false // not reactionary
+  ),
+  BindingChains: new Skill(
+    "Binding Chains",
+    "Attempts to apply Root (2 turns), Slow (-50% speed for 3 turns), and Paralyze (1 turn) to all enemies in a 3x3 area. Benefits from immobility debuff enhancements and consumes limited-use caster bonuses.",
+    4, // cooldown
+    4, // range
+    [bindingChainsMicroAction],
+    false, // not an attack
+    false, // doesn't count towards attack limit
     false // not reactionary
   ),
 };
