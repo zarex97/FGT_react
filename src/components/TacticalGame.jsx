@@ -3818,7 +3818,7 @@ const TacticalGame = ({ username, roomId }) => {
           gameState.currentTurn +
           Math.floor(impl.cooldown * gameState.turnsPerRound);
 
-        console.log("Skill execution result:", {
+        console.log("Skill execution result on TacticalGame:", {
           success: result.success,
           updatedState: result.updatedGameState,
         });
