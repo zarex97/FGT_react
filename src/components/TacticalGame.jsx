@@ -12,8 +12,12 @@ import {
   Swords,
   Send,
   Target,
-  Save, // Add this icon
-  FolderOpen, // Add this icon
+  Save,
+  FolderOpen,
+  ChevronUp,
+  ChevronDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import { createMahalapraya } from "../game/skills/Mahalapraya";
@@ -60,8 +64,8 @@ const TacticalGame = ({ username, roomId }) => {
   const [previewCells, setPreviewCells] = useState(new Set());
   const [showServantSelector, setShowServantSelector] = useState(false);
   const [hoveredCell, setHoveredCell] = useState(null);
-  const isCellVisible = (x, y) => {
-    return gameState.visibleCells?.includes(`${x},${y}`);
+  const isCellVisible = (x, y, z = currentViewHeight) => {
+    return gameState.visibleCells?.includes(`${x},${y},${z}`);
   };
   const [detectionResults, setDetectionResults] = useState(null);
   const [detectionError, setDetectionError] = useState(null);
@@ -95,6 +99,12 @@ const TacticalGame = ({ username, roomId }) => {
   const [showAutosaveMenu, setShowAutosaveMenu] = useState(false);
   const [triggerNotifications, setTriggerNotifications] = useState([]);
 
+  // NEW: Height system states
+  const [currentViewHeight, setCurrentViewHeight] = useState(1);
+  const [showElevatorConfirm, setShowElevatorConfirm] = useState(false);
+  const [elevatorSelection, setElevatorSelection] = useState(null);
+  const [maxHeight, setMaxHeight] = useState(3); // Maximum height levels
+
   const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
     WS_URL,
@@ -113,6 +123,7 @@ const TacticalGame = ({ username, roomId }) => {
               id: 1,
               x: 1,
               y: 1,
+              z: 1,
               team: "player1",
               hp: 20,
               atk: 8,
@@ -157,6 +168,7 @@ const TacticalGame = ({ username, roomId }) => {
               id: 2,
               x: 3,
               y: 1,
+              z: 1,
               team: "player2",
               hp: 18,
               atk: 6,
@@ -203,6 +215,8 @@ const TacticalGame = ({ username, roomId }) => {
               baseLuck: 18,
             },
           ],
+          // NEW: Initialize terrain data
+          initialTerrain: null,
         });
       },
       onError: (error) => {
@@ -233,6 +247,12 @@ const TacticalGame = ({ username, roomId }) => {
       console.log("Received game state:", lastJsonMessage.gameState);
       setGameState(lastJsonMessage.gameState);
       setIsConnecting(false);
+      if (lastJsonMessage.gameState.terrain) {
+        const heights = Object.keys(lastJsonMessage.gameState.terrain).map(
+          Number
+        );
+        setMaxHeight(Math.max(...heights));
+      }
     } else if (lastJsonMessage?.type === "DETECTION_RESULTS") {
       setDetectionResults(lastJsonMessage.results);
       setTimeout(() => setDetectionResults(null), 3000);
@@ -343,6 +363,250 @@ const TacticalGame = ({ username, roomId }) => {
       </div>
     );
   }
+
+  // NEW: Generate initial terrain data
+  const generateInitialTerrain = () => {
+    const terrain = {};
+    const GRID_SIZE = 11;
+
+    for (let z = 1; z <= maxHeight; z++) {
+      terrain[z] = {};
+      for (let x = 0; x < GRID_SIZE; x++) {
+        terrain[z][x] = {};
+        for (let y = 0; y < GRID_SIZE; y++) {
+          terrain[z][x][y] = {
+            x,
+            y,
+            z,
+            isFloor: z === 1, // Only height 1 has floor by default
+            terrainType: getRandomTerrainType(x, y, z),
+            terrainEffects: getTerrainEffects(getRandomTerrainType(x, y, z)),
+          };
+        }
+      }
+    }
+
+    // Add some elevators at random positions
+    addElevators(terrain);
+
+    return terrain;
+  };
+
+  const getRandomTerrainType = (x, y, z) => {
+    // Add some variety to terrain
+    const random = Math.random();
+    if (random < 0.05) return "elevator";
+    if (random < 0.1) return "fire";
+    if (random < 0.15) return "ice";
+    if (random < 0.2) return "healing";
+    return "normal";
+  };
+
+  const getTerrainEffects = (terrainType) => {
+    switch (terrainType) {
+      case "fire":
+        return [
+          {
+            name: "Burn",
+            type: "DamageOverTime",
+            value: 2,
+            duration: 3,
+            description: "Takes 2 damage per turn for 3 turns",
+          },
+        ];
+      case "ice":
+        return [
+          {
+            name: "Slow",
+            type: "MovementReduction",
+            value: 1,
+            duration: 2,
+            description: "Movement reduced by 1 for 2 turns",
+          },
+        ];
+      case "healing":
+        return [
+          {
+            name: "Regeneration",
+            type: "HealOverTime",
+            value: 3,
+            duration: 2,
+            description: "Heals 3 HP per turn for 2 turns",
+          },
+        ];
+      default:
+        return [];
+    }
+  };
+
+  // NEW: Add elevators to terrain
+  const addElevators = (terrain) => {
+    const GRID_SIZE = 11;
+    const elevatorPositions = [
+      { x: 2, y: 2 },
+      { x: 8, y: 8 },
+      { x: 5, y: 1 },
+      { x: 1, y: 9 },
+    ];
+
+    elevatorPositions.forEach((pos) => {
+      for (let z = 1; z <= maxHeight; z++) {
+        if (terrain[z] && terrain[z][pos.x] && terrain[z][pos.x][pos.y]) {
+          terrain[z][pos.x][pos.y].terrainType = "elevator";
+          terrain[z][pos.x][pos.y].terrainEffects = [];
+          if (z > 1) {
+            terrain[z][pos.x][pos.y].isFloor = true; // Elevators are floors
+          }
+        }
+      }
+    });
+  };
+
+  // NEW: Check if unit can move to height
+  const canMoveToHeight = (unit, targetZ) => {
+    if (targetZ === unit.z) return true;
+
+    const currentCell = getCellAt(unit.x, unit.y, unit.z);
+    if (!currentCell || currentCell.terrainType !== "elevator") {
+      return false;
+    }
+
+    if (targetZ > unit.z) {
+      // Going up - check for valid floor space within 1 cell distance
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const checkX = unit.x + dx;
+          const checkY = unit.y + dy;
+          const targetCell = getCellAt(checkX, checkY, targetZ);
+          if (targetCell && targetCell.isFloor) {
+            return true;
+          }
+        }
+      }
+      return false;
+    } else {
+      // Going down - check if target level exists and has floor
+      const targetCell = getCellAt(unit.x, unit.y, targetZ);
+      return targetCell && targetCell.isFloor;
+    }
+  };
+
+  const getCellAt = (x, y, z) => {
+    return gameState?.terrain?.[z]?.[x]?.[y] || null;
+  };
+
+  // NEW: Height Control Component
+  const HeightControls = () => {
+    return (
+      <div className="fixed right-4 top-1/2 transform -translate-y-1/2 bg-white shadow-lg rounded-lg p-2 border">
+        <div className="text-center text-sm font-bold mb-2">Height</div>
+
+        <button
+          onClick={() =>
+            setCurrentViewHeight(Math.min(maxHeight, currentViewHeight + 1))
+          }
+          className={`w-8 h-8 flex items-center justify-center rounded mb-1 ${
+            currentViewHeight < maxHeight
+              ? "bg-blue-500 text-white hover:bg-blue-600"
+              : "bg-gray-300 text-gray-500"
+          }`}
+          disabled={currentViewHeight >= maxHeight}
+        >
+          <ChevronUp size={16} />
+        </button>
+
+        <div className="text-center text-lg font-bold my-2 px-2 py-1 bg-gray-100 rounded">
+          {currentViewHeight}
+        </div>
+
+        <button
+          onClick={() =>
+            setCurrentViewHeight(Math.max(1, currentViewHeight - 1))
+          }
+          className={`w-8 h-8 flex items-center justify-center rounded mt-1 ${
+            currentViewHeight > 1
+              ? "bg-blue-500 text-white hover:bg-blue-600"
+              : "bg-gray-300 text-gray-500"
+          }`}
+          disabled={currentViewHeight <= 1}
+        >
+          <ChevronDown size={16} />
+        </button>
+      </div>
+    );
+  };
+
+  // NEW: Elevator Confirmation Dialog
+  const ElevatorConfirmDialog = () => {
+    if (!showElevatorConfirm || !elevatorSelection) return null;
+
+    const { unit, targetZ } = elevatorSelection;
+    const canMove = canMoveToHeight(unit, targetZ);
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-[400px]">
+          <h3 className="text-xl font-bold mb-4">Height Transition</h3>
+
+          <div className="mb-4">
+            <p className="text-gray-700">
+              Do you want to move <strong>{unit.name}</strong> from height{" "}
+              <strong>{unit.z}</strong> to height <strong>{targetZ}</strong>?
+            </p>
+
+            {!canMove && (
+              <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded">
+                <p className="text-red-700 text-sm">
+                  Cannot move to height {targetZ}: No valid floor space
+                  available.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={() => {
+                setShowElevatorConfirm(false);
+                setElevatorSelection(null);
+              }}
+              className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+            >
+              Cancel
+            </button>
+
+            <button
+              onClick={() => {
+                if (canMove) {
+                  handleHeightTransition(unit, targetZ);
+                }
+                setShowElevatorConfirm(false);
+                setElevatorSelection(null);
+              }}
+              className={`px-4 py-2 rounded ${
+                canMove
+                  ? "bg-blue-500 text-white hover:bg-blue-600"
+                  : "bg-gray-400 text-gray-200 cursor-not-allowed"
+              }`}
+              disabled={!canMove}
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // NEW: Handle height transition
+  const handleHeightTransition = (unit, targetZ) => {
+    sendJsonMessage({
+      type: "GAME_ACTION",
+      action: "CHANGE_HEIGHT",
+      unitId: unit.id,
+      newZ: targetZ,
+    });
+  };
 
   const handleSaveGame = () => {
     sendJsonMessage({
@@ -2564,7 +2828,7 @@ const TacticalGame = ({ username, roomId }) => {
     setActiveUnit(unit);
   };
 
-  const moveUnit = (unit, newX, newY) => {
+  const moveUnit = (unit, newX, newY, newZ = unit.z) => {
     if (!unit || unit.movementLeft <= 0) return;
 
     const distance = calculateDistance(unit.x, unit.y, newX, newY);
@@ -2576,6 +2840,7 @@ const TacticalGame = ({ username, roomId }) => {
       unitId: unit.id,
       newX,
       newY,
+      newZ,
       newMovementLeft: unit.movementLeft - distance,
     });
 
@@ -3286,8 +3551,11 @@ const TacticalGame = ({ username, roomId }) => {
     for (let x = 0; x < GRID_SIZE; x++) {
       for (let y = 0; y < GRID_SIZE; y++) {
         const distance = calculateDistance(unit.x, unit.y, x, y);
-        if (distance <= range && distance > 0 && !getUnitAt(x, y)) {
-          moves.push({ x, y, distance });
+        if (distance <= range && distance > 0) {
+          const targetCell = getCellAt(x, y, unit.z);
+          if (targetCell && targetCell.isFloor && !getUnitAt(x, y, unit.z)) {
+            moves.push({ x, y, z: unit.z, distance });
+          }
         }
       }
     }
@@ -3527,7 +3795,7 @@ const TacticalGame = ({ username, roomId }) => {
 
     //logic for clicking when trying to move
 
-    const clickedUnit = getUnitAt(x, y);
+    const clickedUnit = getUnitAt(x, y, currentViewHeight);
     const playerTeam =
       gameState.players[
         Object.keys(gameState.players).find(
@@ -3536,24 +3804,50 @@ const TacticalGame = ({ username, roomId }) => {
       ].team;
 
     if (selectedUnit) {
-      if (
-        !clickedUnit &&
-        highlightedCells.some((move) => move.x === x && move.y === y)
-      ) {
-        moveUnit(selectedUnit, x, y);
+      // Check if this is a valid move
+      const validMove = highlightedCells.some(
+        (move) => move.x === x && move.y === y
+      );
+
+      if (!clickedUnit && validMove) {
+        // Regular movement
+        moveUnit(selectedUnit, x, y, selectedUnit.z);
       } else {
+        // NEW: Check for elevator interaction
+        const targetCell = getCellAt(x, y, selectedUnit.z);
+        if (
+          targetCell &&
+          targetCell.terrainType === "elevator" &&
+          selectedUnit.x === x &&
+          selectedUnit.y === y
+        ) {
+          // Show height selection for elevator
+          const availableHeights = [];
+          for (let z = 1; z <= maxHeight; z++) {
+            if (z !== selectedUnit.z && canMoveToHeight(selectedUnit, z)) {
+              availableHeights.push(z);
+            }
+          }
+
+          if (availableHeights.length > 0) {
+            // For simplicity, go to the next available height
+            const targetZ = availableHeights[0];
+            setElevatorSelection({ unit: selectedUnit, targetZ });
+            setShowElevatorConfirm(true);
+          }
+        }
+
         setSelectedUnit(null);
         setHighlightedCells([]);
       }
     } else if (clickedUnit && clickedUnit.team === playerTeam) {
-      // FIXED: Allow selection if it's player's unit AND either:
-      // 1. It's their turn, OR
-      // 2. The unit can counter (reactive abilities)
       const isPlayerTurn = clickedUnit.team === gameState.turn;
       const canCounter = clickedUnit.canCounter === true;
 
       if (isPlayerTurn || canCounter) {
         setSelectedUnit(clickedUnit);
+        // Switch to unit's height when selected
+        setCurrentViewHeight(clickedUnit.z);
       }
     }
   };
@@ -3620,6 +3914,8 @@ const TacticalGame = ({ username, roomId }) => {
           {unit.movementLeft}/{unit.movementRange}
         </span>
       </div>
+      {/* NEW: Show height */}
+      <div className="text-xs">Height: {unit.z}</div>
       {/* Show active trigger effects */}
       {unit.triggerEffects && unit.triggerEffects.length > 0 && (
         <div className="text-xs border-t border-gray-400 pt-1">
@@ -3654,18 +3950,46 @@ const TacticalGame = ({ username, roomId }) => {
     </div>
   );
 
+  // NEW: Get terrain color for cell visualization
+  const getTerrainColor = (terrainType) => {
+    switch (terrainType) {
+      case "fire":
+        return "bg-red-200";
+      case "ice":
+        return "bg-blue-200";
+      case "healing":
+        return "bg-green-200";
+      case "elevator":
+        return "bg-yellow-200";
+      default:
+        return "bg-green-100";
+    }
+  };
+
   const renderCell = (x, y) => {
-    const unit = getUnitAt(x, y);
+    const currentZ = currentViewHeight;
+    const unit = getUnitAt(x, y, currentZ);
+    const unitBelow = currentZ > 1 ? getUnitAt(x, y, currentZ - 1) : null;
+    const cell = getCellAt(x, y, currentZ);
+
     const isSelected = selectedUnit && selectedUnit.id === unit?.id;
     const isValidMove = highlightedCells.some(
       (move) => move.x === x && move.y === y
     );
-    //addition for skill use logic
     const isInPreview = previewCells.has(`${x},${y}`);
-    //addition for visibility
-    const isVisible = isCellVisible(x, y);
+    const isVisible = isCellVisible(x, y, currentZ);
 
-    let bgColor = "bg-green-100";
+    let bgColor = "bg-gray-800"; // Default for no floor
+
+    // Set background based on terrain and floor status
+    if (cell && cell.isFloor) {
+      bgColor = getTerrainColor(cell.terrainType);
+    }
+
+    // Show lower level if no floor on current level
+    if (!cell?.isFloor && unitBelow) {
+      bgColor = "bg-gray-600"; // Darken to show it's below
+    }
 
     if (!isVisible) {
       if (isInPreview) {
@@ -3767,6 +4091,11 @@ const TacticalGame = ({ username, roomId }) => {
       additionalClasses = "ring-2 ring-amber-400 ring-opacity-50"; // Add a golden ring
     }
 
+    // NEW: Add elevation indicator
+    if (cell?.terrainType === "elevator") {
+      additionalClasses += " ring-2 ring-yellow-500";
+    }
+
     return (
       <div
         key={`${x}-${y}`}
@@ -3797,6 +4126,38 @@ const TacticalGame = ({ username, roomId }) => {
           }
         }}
       >
+        {/* NEW: Terrain effect indicators */}
+        {cell?.terrainType === "elevator" && (
+          <div className="absolute top-0 right-0 w-3 h-3">
+            <div className="flex flex-col">
+              <ArrowUp size={8} className="text-yellow-600" />
+              <ArrowDown size={8} className="text-yellow-600" />
+            </div>
+          </div>
+        )}
+
+        {cell?.terrainType === "fire" && (
+          <div className="absolute top-0 left-0 text-red-600 text-xs">🔥</div>
+        )}
+
+        {cell?.terrainType === "ice" && (
+          <div className="absolute top-0 left-0 text-blue-600 text-xs">❄️</div>
+        )}
+
+        {cell?.terrainType === "healing" && (
+          <div className="absolute top-0 left-0 text-green-600 text-xs">💚</div>
+        )}
+
+        {/* Show unit below with reduced opacity if no floor above */}
+        {!cell?.isFloor && unitBelow && (
+          <div className="absolute inset-0 flex items-center justify-center opacity-30">
+            <img
+              src={unitBelow.sprite}
+              alt={unitBelow.name}
+              className="w-12 h-12 object-contain"
+            />
+          </div>
+        )}
         {/* Add special effects for NP targeting */}
         {npTargetingMode && isInPreview && (
           <div className="absolute inset-0 bg-amber-500 opacity-20 animate-pulse" />
@@ -3848,6 +4209,10 @@ const TacticalGame = ({ username, roomId }) => {
                     <Target size={10} className="text-white" />
                   </div>
                 )}
+                {/* Height indicator */}
+                <div className="absolute -bottom-1 -left-1 w-4 h-4 bg-gray-700 text-white text-xs rounded-full flex items-center justify-center">
+                  {unit.z}
+                </div>
                 {hoveredUnit?.id === unit.id && (
                   <UnitStatsTooltip unit={unit} />
                 )}
@@ -4096,7 +4461,8 @@ const TacticalGame = ({ username, roomId }) => {
             : `${gameState.turn}'s Turn`}
         </h2>
         <div className="text-sm text-gray-600">
-          Turn {gameState.currentTurn} | Round {gameState.currentRound}
+          Turn {gameState.currentTurn} | Round {gameState.currentRound} |
+          Viewing Height: {currentViewHeight}
         </div>
         <div className="text-right">
           <div className="text-sm text-gray-600">
@@ -4158,6 +4524,19 @@ const TacticalGame = ({ username, roomId }) => {
           </button>
         </div>
       </div>
+      {/* NEW: Height Controls */}
+      <HeightControls />
+
+      {/* <div className="inline-block border-2 border-gray-400 relative">
+        {Array.from({ length: GRID_SIZE }).map((_, y) => (
+          <div key={y} className="flex">
+            {Array.from({ length: GRID_SIZE }).map((_, x) => renderCell(x, y))}
+          </div>
+        ))}
+      </div> */}
+
+      {/* NEW: Elevator Confirmation Dialog */}
+      <ElevatorConfirmDialog />
 
       <div className="inline-block border-2 border-gray-400 relative">
         {Array.from({ length: GRID_SIZE }).map((_, y) => (

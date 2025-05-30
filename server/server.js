@@ -155,6 +155,245 @@ const broadcastTriggerNotification = (
   });
 };
 
+// NEW: Default terrain generation
+const generateDefaultTerrain = () => {
+  const terrain = {};
+  const GRID_SIZE = 11;
+  const MAX_HEIGHT = 3;
+
+  for (let z = 1; z <= MAX_HEIGHT; z++) {
+    terrain[z] = {};
+    for (let x = 0; x < GRID_SIZE; x++) {
+      terrain[z][x] = {};
+      for (let y = 0; y < GRID_SIZE; y++) {
+        terrain[z][x][y] = {
+          x,
+          y,
+          z,
+          isFloor: z === 1, // Only height 1 has floor by default
+          terrainType: getRandomTerrainType(x, y, z),
+          terrainEffects: getTerrainEffects(getRandomTerrainType(x, y, z)),
+        };
+      }
+    }
+  }
+
+  // Add some elevators at fixed positions
+  addElevators(terrain, MAX_HEIGHT);
+
+  return terrain;
+};
+
+// NEW: Get random terrain type
+const getRandomTerrainType = (x, y, z) => {
+  const random = Math.random();
+  if (random < 0.05) return "elevator";
+  if (random < 0.1) return "fire";
+  if (random < 0.15) return "ice";
+  if (random < 0.2) return "healing";
+  return "normal";
+};
+
+// NEW: Get terrain effects based on type
+const getTerrainEffects = (terrainType) => {
+  switch (terrainType) {
+    case "fire":
+      return [
+        {
+          name: "Burn",
+          type: "DamageOverTime",
+          value: 2,
+          duration: 3,
+          description: "Takes 2 damage per turn for 3 turns",
+          appliedAt: 0,
+        },
+      ];
+    case "ice":
+      return [
+        {
+          name: "Slow",
+          type: "MovementReduction",
+          value: 1,
+          duration: 2,
+          description: "Movement reduced by 1 for 2 turns",
+          appliedAt: 0,
+        },
+      ];
+    case "healing":
+      return [
+        {
+          name: "Regeneration",
+          type: "HealOverTime",
+          value: 3,
+          duration: 2,
+          description: "Heals 3 HP per turn for 2 turns",
+          appliedAt: 0,
+        },
+      ];
+    default:
+      return [];
+  }
+};
+
+// NEW: Add elevators to terrain
+const addElevators = (terrain, maxHeight) => {
+  const elevatorPositions = [
+    { x: 2, y: 2 },
+    { x: 8, y: 8 },
+    { x: 5, y: 1 },
+    { x: 1, y: 9 },
+  ];
+
+  elevatorPositions.forEach((pos) => {
+    for (let z = 1; z <= maxHeight; z++) {
+      if (terrain[z] && terrain[z][pos.x] && terrain[z][pos.x][pos.y]) {
+        terrain[z][pos.x][pos.y].terrainType = "elevator";
+        terrain[z][pos.x][pos.y].terrainEffects = [];
+        if (z > 1) {
+          terrain[z][pos.x][pos.y].isFloor = true; // Elevators are floors on all levels
+        }
+      }
+    }
+  });
+};
+
+// NEW: Apply terrain effects to unit
+const applyTerrainEffects = (unit, terrain, currentTurn) => {
+  const cell = terrain?.[unit.z]?.[unit.x]?.[unit.y];
+  if (!cell || !cell.terrainEffects || cell.terrainEffects.length === 0) {
+    return unit;
+  }
+
+  const updatedUnit = { ...unit };
+  const newEffects = [...(updatedUnit.effects || [])];
+
+  cell.terrainEffects.forEach((terrainEffect) => {
+    // Check if this effect is already applied and still active
+    const existingEffect = newEffects.find(
+      (e) =>
+        e.name === terrainEffect.name &&
+        e.source === "terrain" &&
+        e.appliedAt + e.duration > currentTurn
+    );
+
+    if (!existingEffect) {
+      // Apply new terrain effect
+      const effectToApply = {
+        ...terrainEffect,
+        appliedAt: currentTurn,
+        source: "terrain",
+      };
+
+      // Apply immediate effects
+      switch (terrainEffect.type) {
+        case "DamageOverTime":
+          // Damage will be applied during turn processing
+          newEffects.push(effectToApply);
+          console.log(`Applied ${terrainEffect.name} to ${unit.name}`);
+          break;
+        case "MovementReduction":
+          updatedUnit.movementRange = Math.max(
+            1,
+            updatedUnit.movementRange - terrainEffect.value
+          );
+          updatedUnit.movementLeft = Math.max(
+            0,
+            Math.min(updatedUnit.movementLeft, updatedUnit.movementRange)
+          );
+          newEffects.push(effectToApply);
+          console.log(`Applied ${terrainEffect.name} to ${unit.name}`);
+          break;
+        case "HealOverTime":
+          // Healing will be applied during turn processing
+          newEffects.push(effectToApply);
+          console.log(`Applied ${terrainEffect.name} to ${unit.name}`);
+          break;
+      }
+    }
+  });
+
+  updatedUnit.effects = newEffects;
+  return updatedUnit;
+};
+
+// NEW: Process ongoing terrain effects
+const processOngoingTerrainEffects = (unit, currentTurn) => {
+  if (!unit.effects || unit.effects.length === 0) return unit;
+
+  const updatedUnit = { ...unit };
+  let effectsChanged = false;
+
+  // Process damage over time and healing over time effects
+  updatedUnit.effects.forEach((effect) => {
+    if (
+      effect.source === "terrain" &&
+      effect.appliedAt + effect.duration > currentTurn
+    ) {
+      switch (effect.type) {
+        case "DamageOverTime":
+          updatedUnit.hp = Math.max(0, updatedUnit.hp - effect.value);
+          console.log(
+            `${unit.name} takes ${effect.value} damage from ${effect.name}`
+          );
+          effectsChanged = true;
+          break;
+        case "HealOverTime":
+          const maxHp = updatedUnit.maxHp || 100; // Default max HP if not set
+          updatedUnit.hp = Math.min(maxHp, updatedUnit.hp + effect.value);
+          console.log(
+            `${unit.name} heals ${effect.value} HP from ${effect.name}`
+          );
+          effectsChanged = true;
+          break;
+      }
+    }
+  });
+
+  // Remove expired effects
+  const activeEffects = updatedUnit.effects.filter((effect) => {
+    if (effect.source === "terrain") {
+      return effect.appliedAt + effect.duration > currentTurn;
+    }
+    return true; // Keep non-terrain effects as-is
+  });
+
+  if (activeEffects.length !== updatedUnit.effects.length) {
+    updatedUnit.effects = activeEffects;
+    effectsChanged = true;
+  }
+
+  return updatedUnit;
+};
+
+// NEW: Validate height movement
+const canMoveToHeight = (unit, targetZ, terrain) => {
+  if (targetZ === unit.z) return true;
+
+  const currentCell = terrain?.[unit.z]?.[unit.x]?.[unit.y];
+  if (!currentCell || currentCell.terrainType !== "elevator") {
+    return false;
+  }
+
+  if (targetZ > unit.z) {
+    // Going up - check for valid floor space within 1 cell distance
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const checkX = unit.x + dx;
+        const checkY = unit.y + dy;
+        const targetCell = terrain?.[targetZ]?.[checkX]?.[checkY];
+        if (targetCell && targetCell.isFloor) {
+          return true;
+        }
+      }
+    }
+    return false;
+  } else {
+    // Going down - check if target level exists and has floor
+    const targetCell = terrain?.[targetZ]?.[unit.x]?.[unit.y];
+    return targetCell && targetCell.isFloor;
+  }
+};
+
 const handleMessage = (bytes, uuid) => {
   const message = JSON.parse(bytes.toString());
   const player = playerStates[uuid];
@@ -173,6 +412,7 @@ const handleMessage = (bytes, uuid) => {
             players: {},
             detectionsThisTurn: [], // Initialize as array - Track who has used detection
             pendingCombatProcesses: false,
+            terrain: message.initialTerrain || generateDefaultTerrain(),
           },
         };
         // Load existing autosaves for this room
@@ -428,36 +668,69 @@ const handleMessage = (bytes, uuid) => {
       // Update game state based on action
       switch (message.action) {
         case "ADD_UNIT":
+          // NEW: Ensure new units have height coordinate
+          const newUnit = {
+            ...message.unit,
+            z: message.unit.z || 1, // Default to height 1 if not specified
+          };
           // Add the new unit to the game state
-          room.gameState.units.push(message.unit);
+          room.gameState.units.push(newUnit);
           broadcastToRoom(player.currentRoom);
           break;
 
         case "MOVE_UNIT":
+          // NEW: Enhanced movement with height and terrain support
+          const movingUnit = room.gameState.units.find(
+            (u) => u.id === message.unitId
+          );
+          if (!movingUnit) break;
+
+          const newZ = message.newZ || movingUnit.z;
+          const targetCell =
+            room.gameState.terrain?.[newZ]?.[message.newX]?.[message.newY];
+
+          // Validate movement
+          if (!targetCell || !targetCell.isFloor) {
+            console.log(
+              `Invalid move: No floor at ${message.newX},${message.newY},${newZ}`
+            );
+            break;
+          }
           // triggerEffectsLogic (Before)
           room.gameState = processTriggerEffectsForAction(
             room.gameState,
             EventTypes.MOVE_START,
             {
               unitId: message.unitId,
-              fromX: room.gameState.units.find((u) => u.id === message.unitId)
-                ?.x,
-              fromY: room.gameState.units.find((u) => u.id === message.unitId)
-                ?.y,
+              fromX: movingUnit.x,
+              fromY: movingUnit.y,
+              fromZ: movingUnit.z,
               toX: message.newX,
               toY: message.newY,
+              toZ: newZ,
               movementLeft: message.newMovementLeft,
             },
             room.roomId
           );
+          //actual movement
           room.gameState.units = room.gameState.units.map((unit) => {
             if (unit.id === message.unitId) {
-              return {
+              let updatedUnit = {
                 ...unit,
                 x: message.newX,
                 y: message.newY,
+                z: newZ,
                 movementLeft: message.newMovementLeft,
               };
+
+              // NEW: Apply terrain effects
+              updatedUnit = applyTerrainEffects(
+                updatedUnit,
+                room.gameState.terrain,
+                room.gameState.currentTurn
+              );
+
+              return updatedUnit;
             }
             return unit;
           });
@@ -468,16 +741,42 @@ const handleMessage = (bytes, uuid) => {
             EventTypes.MOVE_END,
             {
               unitId: message.unitId,
-              fromX: room.gameState.units.find((u) => u.id === message.unitId)
-                ?.x,
-              fromY: room.gameState.units.find((u) => u.id === message.unitId)
-                ?.y,
+              fromX: movingUnit.x,
+              fromY: movingUnit.y,
+              fromZ: movingUnit.z,
               toX: message.newX,
               toY: message.newY,
+              toZ: newZ,
               movementLeft: message.newMovementLeft,
             },
             room.roomId
           );
+
+          break;
+
+        case "CHANGE_HEIGHT":
+          const changingUnit = room.gameState.units.find(
+            (u) => u.id === message.unitId
+          );
+          if (!changingUnit) break;
+
+          // Validate height change
+          if (
+            !canMoveToHeight(changingUnit, message.newZ, room.gameState.terrain)
+          ) {
+            console.log(`Invalid height change for unit ${message.unitId}`);
+            break;
+          }
+
+          room.gameState.units = room.gameState.units.map((unit) => {
+            if (unit.id === message.unitId) {
+              return {
+                ...unit,
+                z: message.newZ,
+              };
+            }
+            return unit;
+          });
 
           break;
 
@@ -595,7 +894,9 @@ const handleMessage = (bytes, uuid) => {
           // Get all enemy units that could be visible (in range) but are concealed
           const concealedUnits = room.gameState.units.filter((unit) => {
             const isEnemy = unit.team !== detectingTeam;
-            const isInRange = visibleCellsSet.has(`${unit.x},${unit.y}`);
+            const isInRange = visibleCellsSet.has(
+              `${unit.x},${unit.y},${unit.z}`
+            );
             const hasConcealment = unit.effects?.some(
               (effect) =>
                 effect.name === "Presence Concealment" &&
@@ -655,6 +956,8 @@ const handleMessage = (bytes, uuid) => {
               }
             }
           );
+
+          broadcastToRoom(player.currentRoom);
 
           broadcastToRoom(player.currentRoom);
           break;
@@ -1400,10 +1703,12 @@ const handleClose = (uuid) => {
   delete playerStates[uuid];
 };
 
+// NEW: Enhanced visibility calculation for 3D grid
 const calculateVisibleCells = (unit, gridSize = 11) => {
   const visibleCells = new Set();
-  const visionRange = unit.visionRange || 3; // Default vision of 3 if not specified
-  // Calculate Manhattan distance for vision
+  const visionRange = unit.visionRange || 3;
+
+  // Calculate Manhattan distance for vision on the same height level
   for (
     let x = Math.max(0, unit.x - visionRange);
     x <= Math.min(gridSize - 1, unit.x + visionRange);
@@ -1416,7 +1721,17 @@ const calculateVisibleCells = (unit, gridSize = 11) => {
     ) {
       const distance = Math.max(Math.abs(unit.x - x), Math.abs(unit.y - y));
       if (distance <= visionRange) {
-        visibleCells.add(`${x},${y}`);
+        // Add visibility for the unit's current height
+        visibleCells.add(`${x},${y},${unit.z}`);
+
+        // NEW: Limited visibility to adjacent height levels
+        if (unit.z > 1) {
+          visibleCells.add(`${x},${y},${unit.z - 1}`);
+        }
+        if (unit.z < 3) {
+          // Assuming max height of 3
+          visibleCells.add(`${x},${y},${unit.z + 1}`);
+        }
       }
     }
   }
@@ -1425,7 +1740,6 @@ const calculateVisibleCells = (unit, gridSize = 11) => {
 
 // Update the getVisibleUnits function in server.js to handle True Sight
 const getVisibleUnits = (gameState, playerTeam) => {
-  // Get all cells visible to the player's units and check for True Sight
   const visibleCells = new Set();
   const unitsWithTrueSight = new Set();
 
@@ -1435,7 +1749,6 @@ const getVisibleUnits = (gameState, playerTeam) => {
       const unitVisibleCells = calculateVisibleCells(unit);
       unitVisibleCells.forEach((cell) => visibleCells.add(cell));
 
-      // Check if unit has True Sight
       if (
         unit.effects?.some(
           (effect) =>
@@ -1447,10 +1760,9 @@ const getVisibleUnits = (gameState, playerTeam) => {
       }
     });
 
-  // Filter units based on visibility and concealment
   const filteredUnits = gameState.units
     .map((unit) => {
-      const isVisible = visibleCells.has(`${unit.x},${unit.y}`);
+      const isVisible = visibleCells.has(`${unit.x},${unit.y},${unit.z}`);
       const isAlly = unit.team === playerTeam;
       const hasConcealment = unit.effects?.some(
         (effect) =>
@@ -1458,23 +1770,17 @@ const getVisibleUnits = (gameState, playerTeam) => {
           effect.appliedAt + effect.duration > gameState.currentTurn
       );
 
-      // Always show allied units
       if (isAlly) return unit;
-
-      // If unit is not in visible range, don't show it
       if (!isVisible) return null;
 
-      // If unit has concealment but there's a unit with True Sight that can see it, show it
       if (hasConcealment && unitsWithTrueSight.size > 0) {
         return unit;
       }
 
-      // If unit has concealment and no True Sight can see it, hide it
       if (hasConcealment) {
         return null;
       }
 
-      // Show visible enemies without concealment
       return unit;
     })
     .filter(Boolean);
