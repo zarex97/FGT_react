@@ -608,6 +608,106 @@ const TacticalGame = ({ username, roomId }) => {
     });
   };
 
+  const getHeightBaseColor = (height) => {
+    switch (height) {
+      case 1:
+        return "green"; // Z:1 = green tones
+      case 2:
+        return "blue"; // Z:2 = blue tones
+      case 3:
+        return "purple"; // Z:3 = purple tones
+      default:
+        return "gray";
+    }
+  };
+
+  const getTerrainColorForHeight = (terrainType, height) => {
+    const baseColor = getHeightBaseColor(height);
+
+    switch (terrainType) {
+      case "fire":
+        if (baseColor === "green") return "bg-red-200"; // Light red with green tint
+        if (baseColor === "blue") return "bg-red-300"; // Medium red with blue tint
+        if (baseColor === "purple") return "bg-red-400"; // Darker red with purple tint
+        return "bg-red-200";
+
+      case "ice":
+        if (baseColor === "green") return "bg-cyan-200"; // Light cyan with green tint
+        if (baseColor === "blue") return "bg-blue-200"; // Pure blue
+        if (baseColor === "purple") return "bg-indigo-300"; // Blue-purple
+        return "bg-blue-200";
+
+      case "healing":
+        if (baseColor === "green") return "bg-green-200"; // Pure green
+        if (baseColor === "blue") return "bg-teal-200"; // Green-blue
+        if (baseColor === "purple") return "bg-emerald-300"; // Green with purple tint
+        return "bg-green-200";
+
+      case "elevator":
+        if (baseColor === "green") return "bg-yellow-200"; // Light yellow
+        if (baseColor === "blue") return "bg-amber-200"; // Amber
+        if (baseColor === "purple") return "bg-orange-200"; // Orange
+        return "bg-yellow-200";
+
+      default: // normal terrain
+        if (baseColor === "green") return "bg-green-100"; // Light green
+        if (baseColor === "blue") return "bg-blue-100"; // Light blue
+        if (baseColor === "purple") return "bg-purple-100"; // Light purple
+        return "bg-green-100";
+    }
+  };
+
+  // 2. TACTICALGAME.JSX - Helper function to find the effective cell (looks down through heights)
+  const getEffectiveCell = (x, y, startHeight) => {
+    // Look down from startHeight to find the first floor
+    for (let z = startHeight; z >= 1; z--) {
+      const cell = getCellAt(x, y, z);
+      if (cell && cell.isFloor) {
+        return { cell, actualHeight: z };
+      }
+    }
+    // If no floor found, return null
+    return { cell: null, actualHeight: null };
+  };
+
+  // 3. TACTICALGAME.JSX - Helper function to get all units at a position across heights
+  const getAllUnitsAtPosition = (x, y, maxHeight = 3) => {
+    const units = [];
+    for (let z = 1; z <= maxHeight; z++) {
+      const unit = getUnitAt(x, y, z);
+      if (unit) {
+        units.push({ unit, height: z });
+      }
+    }
+    return units.sort((a, b) => b.height - a.height); // Highest first
+  };
+
+  // 5. TACTICALGAME.JSX - Add height legend component
+  const HeightLegend = () => {
+    return (
+      <div className="fixed top-4 left-4 bg-white shadow-lg rounded-lg p-3 border">
+        <div className="text-sm font-bold mb-2">Height Colors</div>
+        <div className="space-y-1 text-xs">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-green-100 border rounded"></div>
+            <span>Height 1 (Ground)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-blue-100 border rounded"></div>
+            <span>Height 2</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-purple-100 border rounded"></div>
+            <span>Height 3</span>
+          </div>
+        </div>
+        <div className="text-xs text-gray-600 mt-2 border-t pt-2">
+          Viewing: Height {currentViewHeight}
+        </div>
+      </div>
+    );
+  };
+
   const handleSaveGame = () => {
     sendJsonMessage({
       type: "SAVE_GAME",
@@ -3894,7 +3994,7 @@ const TacticalGame = ({ username, roomId }) => {
   };
 
   const UnitStatsTooltip = ({ unit }) => (
-    <div className="absolute -top-24 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-75 text-white p-2 rounded shadow-lg z-10">
+    <div className="absolute -top-32 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-75 text-white p-2 rounded shadow-lg z-10">
       <div className="text-sm font-bold mb-1">{unit.name}</div>
       <div className="flex gap-2 text-xs">
         <span className="flex items-center">
@@ -3914,8 +4014,20 @@ const TacticalGame = ({ username, roomId }) => {
           {unit.movementLeft}/{unit.movementRange}
         </span>
       </div>
-      {/* NEW: Show height */}
-      <div className="text-xs">Height: {unit.z}</div>
+
+      {/* Height and floor information - inline the function call */}
+      <div className="text-xs border-t border-gray-400 pt-1 mt-1">
+        <div>Height: {unit.z}</div>
+        {(() => {
+          const result = getEffectiveCell(unit.x, unit.y, currentViewHeight);
+          return result.actualHeight && result.actualHeight !== unit.z ? (
+            <div className="text-yellow-300">
+              Standing on Height {result.actualHeight} floor
+            </div>
+          ) : null;
+        })()}
+      </div>
+
       {/* Show active trigger effects */}
       {unit.triggerEffects && unit.triggerEffects.length > 0 && (
         <div className="text-xs border-t border-gray-400 pt-1">
@@ -3933,7 +4045,6 @@ const TacticalGame = ({ username, roomId }) => {
         </div>
       )}
 
-      {/* Show special effects that might create triggers */}
       {unit.effects && unit.effects.some((e) => e.type === "SpecialBuff") && (
         <div className="text-xs border-t border-gray-400 pt-1">
           <div className="text-yellow-300 font-semibold">Special Effects:</div>
@@ -3968,27 +4079,41 @@ const TacticalGame = ({ username, roomId }) => {
 
   const renderCell = (x, y) => {
     const currentZ = currentViewHeight;
+
+    // Get the effective cell (looks down through heights to find floor)
+    const { cell: effectiveCell, actualHeight: effectiveHeight } =
+      getEffectiveCell(x, y, currentZ);
+
+    // SIMPLIFIED: Just get the unit at current height, don't overcomplicate stacking
     const unit = getUnitAt(x, y, currentZ);
-    const unitBelow = currentZ > 1 ? getUnitAt(x, y, currentZ - 1) : null;
-    const cell = getCellAt(x, y, currentZ);
 
     const isSelected = selectedUnit && selectedUnit.id === unit?.id;
     const isValidMove = highlightedCells.some(
       (move) => move.x === x && move.y === y
     );
     const isInPreview = previewCells.has(`${x},${y}`);
-    const isVisible = isCellVisible(x, y, currentZ);
 
-    let bgColor = "bg-gray-800"; // Default for no floor
+    // Check visibility - use effective height if no floor at current height
+    const checkHeight = effectiveHeight || currentZ;
+    const isVisible = isCellVisible(x, y, checkHeight);
 
-    // Set background based on terrain and floor status
-    if (cell && cell.isFloor) {
-      bgColor = getTerrainColor(cell.terrainType);
-    }
+    let bgColor = "bg-gray-800"; // Default for no floor anywhere
+    let floorIndicator = null;
 
-    // Show lower level if no floor on current level
-    if (!cell?.isFloor && unitBelow) {
-      bgColor = "bg-gray-600"; // Darken to show it's below
+    if (isVisible && effectiveCell) {
+      // Use the terrain color for the effective height
+      bgColor = getTerrainColorForHeight(
+        effectiveCell.terrainType,
+        effectiveHeight
+      );
+
+      // Add height indicator if we're showing a floor from a different height
+      if (effectiveHeight !== currentZ) {
+        floorIndicator = effectiveHeight;
+      }
+    } else if (!isVisible) {
+      // Fog of war
+      bgColor = "bg-gray-900";
     }
 
     if (!isVisible) {
@@ -3998,7 +4123,8 @@ const TacticalGame = ({ username, roomId }) => {
       } else {
         bgColor = "bg-gray-900";
       }
-    } else if (isInPreview) {
+    }
+    if (isVisible && isInPreview) {
       if (skillTargetingMode) {
         // Different colors for different targeting types
         if (
@@ -4084,16 +4210,20 @@ const TacticalGame = ({ username, roomId }) => {
       }
       return false;
     };
-
-    // Add special effects for NP targeting
     let additionalClasses = "";
+    // Add special effects for NP targeting
     if (npTargetingMode && isInPreview) {
-      additionalClasses = "ring-2 ring-amber-400 ring-opacity-50"; // Add a golden ring
+      additionalClasses = "ring-2 ring-amber-400 ring-opacity-50";
     }
 
-    // NEW: Add elevation indicator
-    if (cell?.terrainType === "elevator") {
+    // Add elevation indicator for elevators
+    if (effectiveCell?.terrainType === "elevator") {
       additionalClasses += " ring-2 ring-yellow-500";
+    }
+
+    // Add subtle border to indicate when showing lower floor
+    if (floorIndicator && floorIndicator !== currentZ) {
+      additionalClasses += " ring-1 ring-gray-400 ring-opacity-50";
     }
 
     return (
@@ -4126,8 +4256,15 @@ const TacticalGame = ({ username, roomId }) => {
           }
         }}
       >
-        {/* NEW: Terrain effect indicators */}
-        {cell?.terrainType === "elevator" && (
+        {/* Floor height indicator (show in corner if displaying lower floor) */}
+        {floorIndicator && floorIndicator !== currentZ && (
+          <div className="absolute top-0 left-0 w-3 h-3 bg-gray-600 text-white text-xs rounded-br flex items-center justify-center">
+            {floorIndicator}
+          </div>
+        )}
+
+        {/* Terrain effect indicators - show from effective cell */}
+        {isVisible && effectiveCell?.terrainType === "elevator" && (
           <div className="absolute top-0 right-0 w-3 h-3">
             <div className="flex flex-col">
               <ArrowUp size={8} className="text-yellow-600" />
@@ -4136,41 +4273,33 @@ const TacticalGame = ({ username, roomId }) => {
           </div>
         )}
 
-        {cell?.terrainType === "fire" && (
-          <div className="absolute top-0 left-0 text-red-600 text-xs">🔥</div>
-        )}
-
-        {cell?.terrainType === "ice" && (
-          <div className="absolute top-0 left-0 text-blue-600 text-xs">❄️</div>
-        )}
-
-        {cell?.terrainType === "healing" && (
-          <div className="absolute top-0 left-0 text-green-600 text-xs">💚</div>
-        )}
-
-        {/* Show unit below with reduced opacity if no floor above */}
-        {!cell?.isFloor && unitBelow && (
-          <div className="absolute inset-0 flex items-center justify-center opacity-30">
-            <img
-              src={unitBelow.sprite}
-              alt={unitBelow.name}
-              className="w-12 h-12 object-contain"
-            />
+        {isVisible && effectiveCell?.terrainType === "fire" && (
+          <div className="absolute top-0 left-0 text-red-600 text-xs ml-3">
+            🔥
           </div>
         )}
-        {/* Add special effects for NP targeting */}
-        {npTargetingMode && isInPreview && (
-          <div className="absolute inset-0 bg-amber-500 opacity-20 animate-pulse" />
+
+        {isVisible && effectiveCell?.terrainType === "ice" && (
+          <div className="absolute top-0 left-0 text-blue-600 text-xs ml-3">
+            ❄️
+          </div>
         )}
+
+        {isVisible && effectiveCell?.terrainType === "healing" && (
+          <div className="absolute top-0 left-0 text-green-600 text-xs ml-3">
+            💚
+          </div>
+        )}
+
         {unit && isVisible && (
           <div
             className={`absolute inset-0 flex items-center justify-center 
-                            ${
-                              unit.team === playerTeam
-                                ? "text-blue-600"
-                                : "text-red-600"
-                            }
-                            ${unit.movementLeft === 0 ? "opacity-50" : ""}`}
+                          ${
+                            unit.team === playerTeam
+                              ? "text-blue-600"
+                              : "text-red-600"
+                          }
+                          ${unit.movementLeft === 0 ? "opacity-50" : ""}`}
             onMouseEnter={() => setHoveredUnit(unit)}
             onMouseLeave={() => setHoveredUnit(null)}
           >
@@ -4179,51 +4308,66 @@ const TacticalGame = ({ username, roomId }) => {
               alt={unit.name}
               className={`w-16 h-16 object-contain ${
                 npTargetingMode && isInPreview ? "filter brightness-110" : ""
-              }`}
+              } ${unit.canCounter ? "ring-2 ring-orange-400" : ""}`}
             />
-            {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
-            {unit && isVisible && (
-              <div
-                className={`absolute inset-0 flex items-center justify-center 
-                          ${
-                            unit.team === playerTeam
-                              ? "text-blue-600"
-                              : "text-red-600"
-                          }
-                          ${unit.movementLeft === 0 ? "opacity-50" : ""}`}
-                onMouseEnter={() => setHoveredUnit(unit)}
-                onMouseLeave={() => setHoveredUnit(null)}
-              >
-                <img
-                  src={unit.sprite}
-                  alt={unit.name}
-                  className={`w-16 h-16 object-contain ${
-                    npTargetingMode && isInPreview
-                      ? "filter brightness-110"
-                      : ""
-                  } ${unit.canCounter ? "ring-2 ring-orange-400" : ""}`}
-                />
-                {/* Counter indicator */}
-                {unit.canCounter && (
-                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
-                    <Target size={10} className="text-white" />
-                  </div>
-                )}
-                {/* Height indicator */}
-                <div className="absolute -bottom-1 -left-1 w-4 h-4 bg-gray-700 text-white text-xs rounded-full flex items-center justify-center">
-                  {unit.z}
-                </div>
-                {hoveredUnit?.id === unit.id && (
-                  <UnitStatsTooltip unit={unit} />
-                )}
+
+            {/* Counter indicator */}
+            {unit.canCounter && (
+              <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                <Target size={10} className="text-white" />
               </div>
             )}
 
-            {/* Add ReceiveAttackButton if unit has pending combat */}
-            {/* <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2">
-                        <ReceiveAttackButton unit={unit} />
-                    </div> */}
+            {/* Height indicator */}
+            <div
+              className={`absolute -bottom-1 -left-1 w-4 h-4 text-white text-xs rounded-full flex items-center justify-center ${
+                getHeightBaseColor(unit.z) === "green"
+                  ? "bg-green-700"
+                  : getHeightBaseColor(unit.z) === "blue"
+                  ? "bg-blue-700"
+                  : "bg-purple-700"
+              }`}
+            >
+              {unit.z}
+            </div>
+
+            {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
           </div>
+        )}
+
+        {/* OPTIONAL: Show units from lower heights with reduced opacity (only if no unit at current height) */}
+        {!unit &&
+          isVisible &&
+          (() => {
+            // Only show lower units if there's no unit at current height
+            for (let checkZ = currentZ - 1; checkZ >= 1; checkZ--) {
+              const lowerUnit = getUnitAt(x, y, checkZ);
+              if (lowerUnit && isCellVisible(x, y, checkZ)) {
+                return (
+                  <div
+                    key={`lower-${lowerUnit.id}`}
+                    className="absolute inset-0 flex items-center justify-center opacity-40"
+                    onMouseEnter={() => setHoveredUnit(lowerUnit)}
+                    onMouseLeave={() => setHoveredUnit(null)}
+                  >
+                    <img
+                      src={lowerUnit.sprite}
+                      alt={lowerUnit.name}
+                      className="w-14 h-14 object-contain filter brightness-75"
+                    />
+                    <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-gray-600 text-white text-xs rounded-full flex items-center justify-center">
+                      {lowerUnit.z}
+                    </div>
+                  </div>
+                );
+              }
+            }
+            return null;
+          })()}
+
+        {/* NP targeting effects */}
+        {npTargetingMode && isInPreview && (
+          <div className="absolute inset-0 bg-amber-500 opacity-20 animate-pulse" />
         )}
       </div>
     );
