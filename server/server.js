@@ -173,6 +173,9 @@ const generateDefaultTerrain = () => {
           isFloor: z === 1, // Only height 1 has floor by default
           terrainType: getRandomTerrainType(x, y, z),
           terrainEffects: getTerrainEffects(getRandomTerrainType(x, y, z)),
+          // NEW: Add visibility properties that default to true
+          canBeSeenFromBelow: true,
+          canBeSeenFromAbove: true,
         };
       }
     }
@@ -1704,11 +1707,15 @@ const handleClose = (uuid) => {
 };
 
 // NEW: Enhanced visibility calculation for 3D grid
-const calculateVisibleCells = (unit, gridSize = 11) => {
+const calculateVisibleCells = (unit, terrain, gridSize = 11, maxHeight = 3) => {
   const visibleCells = new Set();
   const visionRange = unit.visionRange || 3;
 
-  // Calculate Manhattan distance for vision on the same height level
+  console.log(
+    `🔍 Calculating visibility for ${unit.name} at ${unit.x},${unit.y},${unit.z} with range ${visionRange}`
+  );
+
+  // Calculate Manhattan distance for vision
   for (
     let x = Math.max(0, unit.x - visionRange);
     x <= Math.min(gridSize - 1, unit.x + visionRange);
@@ -1721,20 +1728,35 @@ const calculateVisibleCells = (unit, gridSize = 11) => {
     ) {
       const distance = Math.max(Math.abs(unit.x - x), Math.abs(unit.y - y));
       if (distance <= visionRange) {
-        // Add visibility for the unit's current height
-        visibleCells.add(`${x},${y},${unit.z}`);
+        // NEW: Check visibility for ALL height levels, not just adjacent ones
+        for (let z = 1; z <= maxHeight; z++) {
+          const cell = terrain?.[z]?.[x]?.[y];
+          if (cell) {
+            let canSee = false;
 
-        // NEW: Limited visibility to adjacent height levels
-        if (unit.z > 1) {
-          visibleCells.add(`${x},${y},${unit.z - 1}`);
-        }
-        if (unit.z < 3) {
-          // Assuming max height of 3
-          visibleCells.add(`${x},${y},${unit.z + 1}`);
+            if (z === unit.z) {
+              // Same height - always visible
+              canSee = true;
+            } else if (z < unit.z) {
+              // Looking down - check canBeSeenFromAbove
+              canSee = cell.canBeSeenFromAbove !== false;
+            } else {
+              // Looking up - check canBeSeenFromBelow
+              canSee = cell.canBeSeenFromBelow !== false;
+            }
+
+            if (canSee) {
+              visibleCells.add(`${x},${y},${z}`);
+            }
+          }
         }
       }
     }
   }
+
+  console.log(
+    `🔍 Unit ${unit.name} can see ${visibleCells.size} cells across all heights`
+  );
   return visibleCells;
 };
 
@@ -1743,10 +1765,13 @@ const getVisibleUnits = (gameState, playerTeam) => {
   const visibleCells = new Set();
   const unitsWithTrueSight = new Set();
 
+  console.log(`🔍 Calculating team visibility for ${playerTeam}`);
+
   gameState.units
     .filter((unit) => unit.team === playerTeam)
     .forEach((unit) => {
-      const unitVisibleCells = calculateVisibleCells(unit);
+      // NEW: Pass terrain data to visibility calculation
+      const unitVisibleCells = calculateVisibleCells(unit, gameState.terrain);
       unitVisibleCells.forEach((cell) => visibleCells.add(cell));
 
       if (
@@ -1759,6 +1784,10 @@ const getVisibleUnits = (gameState, playerTeam) => {
         unitsWithTrueSight.add(unit.id);
       }
     });
+
+  console.log(
+    `🔍 Team ${playerTeam} can see ${visibleCells.size} total cells across all heights`
+  );
 
   const filteredUnits = gameState.units
     .map((unit) => {
