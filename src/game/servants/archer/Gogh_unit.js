@@ -591,6 +591,8 @@ export const GoghAttributes = {
   maxHp: 1200,
   baseDef: 1,
   baseMovementRange: 5,
+  movementRange: 5,
+  movementLeft: 5,
   rangeOfBasicAttack: 2,
   // Combat Stats
   strength: 200, // Physical attack power
@@ -631,6 +633,9 @@ export const GoghAttributes = {
       removable: false,
     },
   ],
+  aboardVehicle: null, // ID of vehicle this unit is aboard, null if not aboard
+  vehicleRelativePosition: null, // {x, y} relative position within vehicle
+  isVehicle: false, // Mark regular units as not vehicles
 };
 
 // Export complete Gogh unit template
