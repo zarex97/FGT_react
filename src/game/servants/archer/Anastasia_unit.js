@@ -9,6 +9,52 @@ import { NoblePhantasm } from "../../NoblePhantasm.js";
 import { TriggerEffect } from "../../TriggerEffect.js";
 import { EventTypes } from "../../EventTypes.js";
 import { applyEffect } from "../../EffectApplication.js";
+import { createIceGolem } from "../materials/archer/ArcherMaterials.js";
+
+// ===== ANASTASIA'S SUMMONING SKILL =====
+
+// Golem summoning MicroAction for Anastasia
+const summonIceGolemMicroAction = new MicroAction({
+  targetingType: TargetingType.POINT,
+  range: 3,
+  effectLogic: (gameState, caster, affectedCells) => {
+    console.log("❄️🤖 Anastasia summoning Ice Golem");
+
+    // Check summon limit
+    const existingGolems = gameState.units.filter(
+      (unit) => unit.summoner === caster.id && unit.type === "Golem"
+    );
+
+    if (existingGolems.length >= 2) {
+      console.log(
+        `❌ Cannot summon: ${caster.name} already has ${existingGolems.length}/ 2 golems`
+      );
+      return gameState;
+    }
+
+    // Find an empty cell to place the golem
+    const [x] = caster.x;
+    const [y] = caster.y;
+
+    // Check if cell is empty
+    const isOccupied = gameState.units.some(
+      (unit) => unit.x === x && unit.y === y
+    );
+    if (isOccupied) {
+      console.log("❌ Cannot summon golem: Target cell is occupied");
+      return gameState;
+    }
+
+    // Create the ice golem
+    const iceGolem = createIceGolem(caster, { x, y }, gameState);
+    console.log(`✅ ${iceGolem.name} summoned at (${x}, ${y})`);
+
+    return {
+      ...gameState,
+      units: [...gameState.units, iceGolem],
+    };
+  },
+});
 
 const bindingChainsMicroAction = new MicroAction({
   targetingType: TargetingType.AOE_FROM_POINT,
@@ -662,6 +708,16 @@ export const AnastasiaSkills = {
     false, // doesn't count towards attack limit
     false // not reactionary
   ),
+  SummonIceGolem: new Skill(
+    "Summon Ice Golem",
+    "Creates an ice golem ally that fights for 10 turns. Max 2 golems at once.",
+    8, // long cooldown
+    3, // range
+    [summonIceGolemMicroAction],
+    false, // not an attack
+    false, // doesn't count towards attack limit
+    false // not reactionary
+  ),
 };
 
 // Define Anastasia's base stats and attributes
@@ -737,6 +793,12 @@ export const AnastasiaTemplate = {
     },
     {
       id: "BindingChains",
+      onCooldownUntil: 0,
+      isAttack: false,
+      affectsAttackCount: false,
+    },
+    {
+      id: "SummonIceGolem",
       onCooldownUntil: 0,
       isAttack: false,
       affectsAttackCount: false,
