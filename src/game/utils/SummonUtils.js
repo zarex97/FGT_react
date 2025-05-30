@@ -5,7 +5,7 @@ export const SummonUtils = {
   // Remove expired summons
   removeExpiredSummons: (gameState) => {
     const updatedUnits = gameState.units.filter((unit) => {
-      if (unit.type === "Golem" && unit.summonDuration) {
+      if (unit.type === "Summon" && unit.summonDuration) {
         const turnsAlive = gameState.currentTurn - unit.summonedAt;
         if (turnsAlive >= unit.summonDuration) {
           console.log(
@@ -63,7 +63,7 @@ export const SummonUtils = {
   // Update all summons' duration counters (call each turn)
   updateSummonDurations: (gameState) => {
     const updatedUnits = gameState.units.map((unit) => {
-      if (unit.type === "Golem" && unit.summonDuration) {
+      if (unit.type === "Summon" && unit.summonDuration) {
         const remainingDuration = SummonUtils.getRemainingDuration(
           unit,
           gameState

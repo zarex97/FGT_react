@@ -45,6 +45,11 @@ import { TargetingType } from "../game/targeting/TargetingTypes";
 import { TargetingLogic } from "../game/targeting/TargetingLogic";
 import ServantSelector from "./ServantSelector";
 import { Combat } from "../game/Combat";
+import { VehicleUtils } from "../game/utils/VehicleUtils.js";
+import {
+  VehiclePassengerManager,
+  VehicleInspector,
+} from "./VehicleUIComponents.jsx";
 
 const TacticalGame = ({ username, roomId }) => {
   console.log("TacticalGame props:", { username, roomId });
@@ -105,6 +110,11 @@ const TacticalGame = ({ username, roomId }) => {
   const [elevatorSelection, setElevatorSelection] = useState(null);
   const [maxHeight, setMaxHeight] = useState(3); // Maximum height levels
 
+  const [showVehiclePassengerManager, setShowVehiclePassengerManager] =
+    useState(false);
+  const [showVehicleInspector, setShowVehicleInspector] = useState(false);
+  const [selectedVehicle, setSelectedVehicle] = useState(null);
+
   const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
     WS_URL,
@@ -128,6 +138,7 @@ const TacticalGame = ({ username, roomId }) => {
               hp: 20,
               atk: 8,
               def: 5,
+              baseMovementRange: 5,
               movementRange: 5,
               visionRange: 4,
               movementLeft: 5,
@@ -161,6 +172,9 @@ const TacticalGame = ({ username, roomId }) => {
               processedCombatReceived: [],
               canCounter: false,
               counteringAgainstWho: null,
+              aboardVehicle: null, // ID of vehicle this unit is aboard, null if not aboard
+              vehicleRelativePosition: null, // {x, y} relative position within vehicle
+              isVehicle: false, // Mark regular units as not vehicles
             },
             // Add other initial units here
 
@@ -173,6 +187,7 @@ const TacticalGame = ({ username, roomId }) => {
               hp: 18,
               atk: 6,
               def: 7,
+              baseMovementRange: 3,
               movementRange: 3, // Heavy armored unit with low movement
               movementLeft: 3,
               hasAttacked: false,
@@ -213,6 +228,9 @@ const TacticalGame = ({ username, roomId }) => {
               luckChecks: null,
               baseAgility: 3,
               baseLuck: 18,
+              aboardVehicle: null, // ID of vehicle this unit is aboard, null if not aboard
+              vehicleRelativePosition: null, // {x, y} relative position within vehicle
+              isVehicle: false, // Mark regular units as not vehicles
             },
           ],
           // NEW: Initialize terrain data
@@ -2947,6 +2965,50 @@ const TacticalGame = ({ username, roomId }) => {
     setSelectedUnit(null);
     setHighlightedCells([]);
   };
+  const moveVehicle = (vehicle, newX, newY, newZ) => {
+    if (!vehicle || !vehicle.isVehicle || vehicle.movementLeft <= 0) {
+      console.log("Cannot move vehicle: invalid vehicle or no movement left");
+      return;
+    }
+
+    const distance = calculateDistance(vehicle.x, vehicle.y, newX, newY);
+    if (distance > vehicle.movementLeft) {
+      console.log("Cannot move vehicle: distance exceeds movement range");
+      return;
+    }
+
+    // Final validation
+    if (
+      !VehicleUtils.canVehicleMoveTo(
+        vehicle,
+        newX,
+        newY,
+        newZ,
+        gameState,
+        GRID_SIZE
+      )
+    ) {
+      console.log("Cannot move vehicle: position validation failed");
+      return;
+    }
+
+    console.log(
+      `Moving vehicle ${vehicle.name} from (${vehicle.x},${vehicle.y}) to (${newX},${newY})`
+    );
+
+    sendJsonMessage({
+      type: "GAME_ACTION",
+      action: "MOVE_VEHICLE",
+      vehicleId: vehicle.id,
+      newX,
+      newY,
+      newZ,
+      newMovementLeft: vehicle.movementLeft - distance,
+    });
+
+    setSelectedUnit(null);
+    setHighlightedCells([]);
+  };
 
   const handleAttack = (attacker, target) => {
     // Calculate damage
@@ -3636,8 +3698,25 @@ const TacticalGame = ({ username, roomId }) => {
 
   const GRID_SIZE = 11;
 
-  const getUnitAt = (x, y) => {
-    return gameState?.units.find((unit) => unit.x === x && unit.y === y);
+  const getUnitAt = (x, y, z = currentViewHeight) => {
+    if (!gameState?.units) return null;
+
+    // First check for regular units at exact position
+    const regularUnit = gameState.units.find((unit) => {
+      return !unit.isVehicle && unit.x === x && unit.y === y && unit.z === z;
+    });
+
+    if (regularUnit) {
+      return regularUnit;
+    }
+
+    // Then check for vehicles that occupy this position
+    const vehicle = gameState.units.find((unit) => {
+      if (!unit.isVehicle) return false;
+      return VehicleUtils.isPositionInVehicle(unit, x, y, z);
+    });
+
+    return vehicle || null;
   };
 
   const calculateDistance = (x1, y1, x2, y2) => {
@@ -3645,22 +3724,26 @@ const TacticalGame = ({ username, roomId }) => {
   };
 
   const getPossibleMoves = (unit) => {
-    const moves = [];
-    const range = unit.movementLeft;
+    if (unit.isVehicle) {
+      return VehicleUtils.getPossibleVehicleMoves(unit, gameState, GRID_SIZE);
+    } else {
+      //  unit movement logic
+      const moves = [];
+      const range = unit.movementLeft;
 
-    for (let x = 0; x < GRID_SIZE; x++) {
-      for (let y = 0; y < GRID_SIZE; y++) {
-        const distance = calculateDistance(unit.x, unit.y, x, y);
-        if (distance <= range && distance > 0) {
-          const targetCell = getCellAt(x, y, unit.z);
-          if (targetCell && targetCell.isFloor && !getUnitAt(x, y, unit.z)) {
-            moves.push({ x, y, z: unit.z, distance });
+      for (let x = 0; x < GRID_SIZE; x++) {
+        for (let y = 0; y < GRID_SIZE; y++) {
+          const distance = calculateDistance(unit.x, unit.y, x, y);
+          if (distance <= range && distance > 0) {
+            const targetCell = getCellAt(x, y, unit.z);
+            if (targetCell && targetCell.isFloor && !getUnitAt(x, y, unit.z)) {
+              moves.push({ x, y, z: unit.z, distance });
+            }
           }
         }
       }
+      return moves;
     }
-
-    return moves;
   };
 
   const handleAction = (action, unit) => {
@@ -3904,50 +3987,122 @@ const TacticalGame = ({ username, roomId }) => {
       ].team;
 
     if (selectedUnit) {
-      // Check if this is a valid move
-      const validMove = highlightedCells.some(
-        (move) => move.x === x && move.y === y
-      );
+      if (selectedUnit.isVehicle) {
+        // Handle vehicle movement
+        const validMove = highlightedCells.some(
+          (move) => move.x === x && move.y === y
+        );
 
-      if (!clickedUnit && validMove) {
-        // Regular movement
-        moveUnit(selectedUnit, x, y, selectedUnit.z);
+        if (validMove) {
+          // Check if the move is actually valid (double-check)
+          if (
+            VehicleUtils.canVehicleMoveTo(
+              selectedUnit,
+              x,
+              y,
+              selectedUnit.z,
+              gameState,
+              GRID_SIZE
+            )
+          ) {
+            moveVehicle(selectedUnit, x, y, selectedUnit.z);
+          } else {
+            console.log("Vehicle move validation failed");
+            setSelectedUnit(null);
+            setHighlightedCells([]);
+          }
+        } else {
+          // Check for elevator interaction or invalid move
+          const targetCell = getCellAt(x, y, selectedUnit.z);
+          if (
+            targetCell &&
+            targetCell.terrainType === "elevator" &&
+            selectedUnit.x === x &&
+            selectedUnit.y === y
+          ) {
+            // Handle elevator for vehicles (if desired)
+            console.log("Vehicle elevator interaction not implemented yet");
+          }
+
+          setSelectedUnit(null);
+          setHighlightedCells([]);
+        }
       } else {
-        // NEW: Check for elevator interaction
-        const targetCell = getCellAt(x, y, selectedUnit.z);
-        if (
-          targetCell &&
-          targetCell.terrainType === "elevator" &&
-          selectedUnit.x === x &&
-          selectedUnit.y === y
-        ) {
-          // Show height selection for elevator
-          const availableHeights = [];
-          for (let z = 1; z <= maxHeight; z++) {
-            if (z !== selectedUnit.z && canMoveToHeight(selectedUnit, z)) {
-              availableHeights.push(z);
+        // Handle regular unit movement
+        const clickedUnit = getUnitAt(x, y, currentViewHeight);
+        const validMove = highlightedCells.some(
+          (move) => move.x === x && move.y === y
+        );
+
+        if (!clickedUnit && validMove) {
+          // Regular movement
+          moveUnit(selectedUnit, x, y, selectedUnit.z);
+        } else {
+          // Check for elevator interaction
+          const targetCell = getCellAt(x, y, selectedUnit.z);
+          if (
+            targetCell &&
+            targetCell.terrainType === "elevator" &&
+            selectedUnit.x === x &&
+            selectedUnit.y === y
+          ) {
+            // Show height selection for elevator
+            const availableHeights = [];
+            for (let z = 1; z <= maxHeight; z++) {
+              if (z !== selectedUnit.z && canMoveToHeight(selectedUnit, z)) {
+                availableHeights.push(z);
+              }
+            }
+
+            if (availableHeights.length > 0) {
+              // For simplicity, go to the next available height
+              const targetZ = availableHeights[0];
+              setElevatorSelection({ unit: selectedUnit, targetZ });
+              setShowElevatorConfirm(true);
             }
           }
 
-          if (availableHeights.length > 0) {
-            // For simplicity, go to the next available height
-            const targetZ = availableHeights[0];
-            setElevatorSelection({ unit: selectedUnit, targetZ });
-            setShowElevatorConfirm(true);
+          setSelectedUnit(null);
+          setHighlightedCells([]);
+        }
+      }
+    } else {
+      // Selection logic - check for both units and vehicles
+      const clickedUnit = getUnitAt(x, y, currentViewHeight);
+
+      if (clickedUnit && clickedUnit.team === playerTeam) {
+        const isPlayerTurn = clickedUnit.team === gameState.turn;
+        const canCounter = clickedUnit.canCounter === true;
+
+        if (isPlayerTurn || canCounter) {
+          setSelectedUnit(clickedUnit);
+          // Switch to unit's height when selected
+          setCurrentViewHeight(clickedUnit.z);
+
+          // If it's a vehicle, show different highlighting
+          if (clickedUnit.isVehicle) {
+            console.log(`Selected vehicle: ${clickedUnit.name}`);
           }
         }
+      } else {
+        // No unit clicked, check if there's a vehicle at this position
+        const clickedVehicle = VehicleUtils.findVehicleAtPosition(
+          gameState,
+          x,
+          y,
+          currentViewHeight
+        );
 
-        setSelectedUnit(null);
-        setHighlightedCells([]);
-      }
-    } else if (clickedUnit && clickedUnit.team === playerTeam) {
-      const isPlayerTurn = clickedUnit.team === gameState.turn;
-      const canCounter = clickedUnit.canCounter === true;
+        if (clickedVehicle && clickedVehicle.team === playerTeam) {
+          const isPlayerTurn = clickedVehicle.team === gameState.turn;
+          const canCounter = clickedVehicle.canCounter === true;
 
-      if (isPlayerTurn || canCounter) {
-        setSelectedUnit(clickedUnit);
-        // Switch to unit's height when selected
-        setCurrentViewHeight(clickedUnit.z);
+          if (isPlayerTurn || canCounter) {
+            setSelectedUnit(clickedVehicle);
+            setCurrentViewHeight(clickedVehicle.z);
+            console.log(`Selected vehicle: ${clickedVehicle.name}`);
+          }
+        }
       }
     }
   };
@@ -4086,6 +4241,9 @@ const TacticalGame = ({ username, roomId }) => {
 
     // SIMPLIFIED: Just get the unit at current height, don't overcomplicate stacking
     const unit = getUnitAt(x, y, currentZ);
+    const vehicle = !unit
+      ? VehicleUtils.findVehicleAtPosition(gameState, x, y, currentZ)
+      : null;
 
     const isSelected = selectedUnit && selectedUnit.id === unit?.id;
     const isValidMove = highlightedCells.some(
@@ -4311,6 +4469,22 @@ const TacticalGame = ({ username, roomId }) => {
               } ${unit.canCounter ? "ring-2 ring-orange-400" : ""}`}
             />
 
+            {/* Vehicle size indicator */}
+            {unit.isVehicle && (
+              <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 rounded">
+                {unit.dimensions.width}×{unit.dimensions.height}
+              </div>
+            )}
+
+            {/* Passenger count for vehicles */}
+            {unit.isVehicle &&
+              unit.containedUnits &&
+              unit.containedUnits.length > 0 && (
+                <div className="absolute bottom-0 left-0 bg-green-500 text-white text-xs px-1 rounded">
+                  👥{unit.containedUnits.length}
+                </div>
+              )}
+
             {/* Counter indicator */}
             {unit.canCounter && (
               <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
@@ -4330,7 +4504,14 @@ const TacticalGame = ({ username, roomId }) => {
             >
               {unit.z}
             </div>
-
+            {/* Vehicle outline when no unit is on top */}
+            {!unit && vehicle && isVisible && (
+              <div className="absolute inset-0 border-2 border-blue-400 border-dashed bg-blue-100 bg-opacity-30 flex items-center justify-center">
+                <div className="text-blue-600 text-xs font-bold">
+                  {vehicle.name}
+                </div>
+              </div>
+            )}
             {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
           </div>
         )}

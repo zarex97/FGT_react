@@ -9,34 +9,84 @@ import { NoblePhantasm } from "../../NoblePhantasm.js";
 import { TriggerEffect } from "../../TriggerEffect.js";
 import { EventTypes } from "../../EventTypes.js";
 import { applyEffect } from "../../EffectApplication.js";
+import { VehicleUtils } from "../../utils/VehicleUtils.js";
 import { createIceGolem } from "../materials/archer/ArcherMaterials.js";
+import { createWaterBoat } from "../materials/archer/ArcherMaterials.js";
 
 // ===== ANASTASIA'S SUMMONING SKILL =====
 
-// Golem summoning MicroAction for Anastasia
-const summonIceGolemMicroAction = new MicroAction({
-  targetingType: TargetingType.POINT,
+const CreateWaterBoatMicroAction = new MicroAction({
+  targetingType: TargetingType.SINGLE_TARGET,
   range: 3,
   effectLogic: (gameState, caster, affectedCells) => {
-    console.log("❄️🤖 Anastasia summoning Ice Golem");
+    console.log("🚤❄️ Anastasia summoning Water Boat");
 
-    // Check summon limit
-    const existingGolems = gameState.units.filter(
-      (unit) => unit.summoner === caster.id && unit.type === "Golem"
+    // Check summon limit (FIXED)
+    const existingWaterBoats = gameState.units.filter(
+      (unit) => unit.summoner === caster.id && unit.name === "Water Boat"
     );
 
-    if (existingGolems.length >= 2) {
+    if (existingWaterBoats.length >= 1) {
       console.log(
-        `❌ Cannot summon: ${caster.name} already has ${existingGolems.length}/ 2 golems`
+        `❌ Cannot summon: ${caster.name} already has ${existingWaterBoats.length}/1 Water Boats`
       );
       return gameState;
     }
 
-    // Find an empty cell to place the golem
-    const [x] = caster.x;
-    const [y] = caster.y;
+    // Get target position from affectedCells
+    const targetCell = Array.from(affectedCells)[0];
+    const [x, y] = targetCell.split(",").map(Number);
 
-    // Check if cell is empty
+    // Check if area is clear for 3x3 vehicle (FIXED)
+    const canPlace = VehicleUtils.canVehicleMoveTo(
+      { dimensions: { width: 3, height: 3 } }, // temporary object for checking
+      x,
+      y,
+      1, // z level
+      gameState,
+      11 // grid size
+    );
+
+    if (!canPlace) {
+      console.log("❌ Cannot summon water boat: Area is not clear");
+      return gameState;
+    }
+
+    // Create the water boat (FIXED)
+    const waterBoat = createWaterBoat(caster, { x, y }, gameState);
+    console.log(`✅ ${waterBoat.name} summoned at (${x}, ${y})`);
+
+    return {
+      ...gameState,
+      units: [...gameState.units, waterBoat],
+    };
+  },
+});
+
+// Golem summoning MicroAction for Anastasia
+const summonIceGolemMicroAction = new MicroAction({
+  targetingType: TargetingType.SINGLE_TARGET,
+  range: 3,
+  effectLogic: (gameState, caster, affectedCells) => {
+    console.log("❄️🤖 Anastasia summoning Ice Golem");
+
+    // Check summon limit (FIXED)
+    const existingGolems = gameState.units.filter(
+      (unit) => unit.summoner === caster.id && unit.type === "Ice Golem"
+    );
+
+    if (existingGolems.length >= 2) {
+      console.log(
+        `❌ Cannot summon: ${caster.name} already has ${existingGolems.length}/2 golems`
+      );
+      return gameState;
+    }
+
+    // Get target position from affectedCells (FIXED)
+    const targetCell = Array.from(affectedCells)[0];
+    const [x, y] = targetCell.split(",").map(Number);
+
+    // Check if cell is empty (FIXED)
     const isOccupied = gameState.units.some(
       (unit) => unit.x === x && unit.y === y
     );
@@ -45,7 +95,7 @@ const summonIceGolemMicroAction = new MicroAction({
       return gameState;
     }
 
-    // Create the ice golem
+    // Create the ice golem (FIXED)
     const iceGolem = createIceGolem(caster, { x, y }, gameState);
     console.log(`✅ ${iceGolem.name} summoned at (${x}, ${y})`);
 
@@ -718,6 +768,16 @@ export const AnastasiaSkills = {
     false, // doesn't count towards attack limit
     false // not reactionary
   ),
+  CreateWaterBoat: new Skill(
+    "Summons a Water Boat",
+    "Creates a waterBoat",
+    8, // long cooldown
+    3, // range
+    [CreateWaterBoatMicroAction],
+    false, // not an attack
+    false, // doesn't count towards attack limit
+    false // not reactionary
+  ),
 };
 
 // Define Anastasia's base stats and attributes
@@ -729,6 +789,8 @@ export const AnastasiaAttributes = {
   maxHp: 500,
   baseDef: 1,
   baseMovementRange: 5,
+  movementRange: 5,
+  movementLeft: 5,
   rangeOfBasicAttack: 2,
   // Combat Stats
   strength: 80, // Physical attack power
@@ -753,6 +815,9 @@ export const AnastasiaAttributes = {
   counteringAgainstWho: null,
   agilityChecks: null,
   luckChecks: null,
+  aboardVehicle: null, // ID of vehicle this unit is aboard, null if not aboard
+  vehicleRelativePosition: null, // {x, y} relative position within vehicle
+  isVehicle: false, // Mark regular units as not vehicles
 };
 
 export const AnastasiaTriggerEffects = {};
@@ -799,6 +864,12 @@ export const AnastasiaTemplate = {
     },
     {
       id: "SummonIceGolem",
+      onCooldownUntil: 0,
+      isAttack: false,
+      affectsAttackCount: false,
+    },
+    {
+      id: "CreateWaterBoat",
       onCooldownUntil: 0,
       isAttack: false,
       affectsAttackCount: false,

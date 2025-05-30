@@ -9,6 +9,7 @@ import { EventTypes } from "../src/game/EventTypes.js";
 import "../src/game/registry_triggers.js";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import { VehicleUtils } from "./../src/game/utils/VehicleUtils.js";
 
 const server = http.createServer();
 const wsServer = new WebSocketServer({ server });
@@ -262,7 +263,18 @@ const addElevators = (terrain, maxHeight) => {
 
 // NEW: Apply terrain effects to unit
 const applyTerrainEffects = (unit, terrain, currentTurn) => {
+  if (unit.aboardVehicle) {
+    // Units aboard vehicles don't get terrain effects from ground
+    return unit;
+  }
+
   const cell = terrain?.[unit.z]?.[unit.x]?.[unit.y];
+
+  if (cell?.isVehicleFloor) {
+    // Unit is standing on a vehicle floor, no terrain effects
+    return unit;
+  }
+
   if (!cell || !cell.terrainEffects || cell.terrainEffects.length === 0) {
     return unit;
   }
@@ -676,8 +688,30 @@ const handleMessage = (bytes, uuid) => {
             ...message.unit,
             z: message.unit.z || 1, // Default to height 1 if not specified
           };
-          // Add the new unit to the game state
-          room.gameState.units.push(newUnit);
+          // If this is a vehicle, set up vehicle-specific properties
+          if (newUnit.isVehicle) {
+            console.log(`🚤 Adding vehicle: ${newUnit.name}`);
+
+            // Ensure vehicle has all required properties
+            if (!newUnit.containedUnits) newUnit.containedUnits = [];
+            if (!newUnit.boardCells) {
+              newUnit.boardCells = VehicleUtils.generateBoardCells(
+                newUnit.dimensions,
+                newUnit.x,
+                newUnit.y,
+                newUnit.z
+              );
+            }
+
+            // Apply vehicle terrain effects after adding
+            room.gameState.units.push(newUnit);
+            room.gameState = VehicleUtils.applyVehicleTerrainEffects(
+              room.gameState
+            );
+          } else {
+            // Regular unit
+            room.gameState.units.push(newUnit);
+          }
           broadcastToRoom(player.currentRoom);
           break;
 
@@ -783,6 +817,193 @@ const handleMessage = (bytes, uuid) => {
 
           break;
 
+        case "MOVE_VEHICLE":
+          const vehicle = room.gameState.units.find(
+            (u) => u.id === message.vehicleId
+          );
+          if (!vehicle || !vehicle.isVehicle) break;
+
+          console.log(
+            `🚤 Moving vehicle ${vehicle.name} from (${vehicle.x},${vehicle.y}) to (${message.newX},${message.newY})`
+          );
+
+          // Validate the move
+          if (
+            !VehicleUtils.canVehicleMoveTo(
+              vehicle,
+              message.newX,
+              message.newY,
+              message.newZ,
+              room.gameState,
+              11
+            )
+          ) {
+            console.log("❌ Invalid vehicle move attempted");
+            break;
+          }
+
+          // Move the vehicle and all passengers
+          const moveResult = VehicleUtils.moveVehicle(
+            vehicle,
+            message.newX,
+            message.newY,
+            message.newZ,
+            room.gameState
+          );
+
+          // Update the game state
+          room.gameState = moveResult.updatedGameState;
+
+          // Update vehicle movement points
+          room.gameState.units = room.gameState.units.map((unit) => {
+            if (unit.id === message.vehicleId) {
+              return {
+                ...unit,
+                movementLeft: message.newMovementLeft,
+              };
+            }
+            return unit;
+          });
+
+          // Apply vehicle terrain effects
+          room.gameState = VehicleUtils.applyVehicleTerrainEffects(
+            room.gameState
+          );
+
+          console.log(`✅ Vehicle moved successfully`);
+          break;
+
+        case "BOARD_VEHICLE":
+          const boardingVehicle = room.gameState.units.find(
+            (u) => u.id === message.vehicleId
+          );
+          const boardingUnit = room.gameState.units.find(
+            (u) => u.id === message.unitId
+          );
+
+          if (!boardingVehicle || !boardingUnit) {
+            console.log("❌ Vehicle or unit not found for boarding");
+            break;
+          }
+
+          if (!boardingVehicle.isVehicle) {
+            console.log("❌ Target is not a vehicle");
+            break;
+          }
+
+          // Check if vehicle has space
+          if (
+            boardingVehicle.containedUnits.length >=
+            boardingVehicle.maxPassengers
+          ) {
+            console.log("❌ Vehicle is at maximum capacity");
+            break;
+          }
+
+          // Check if unit is adjacent to vehicle
+          const vehiclePositions = VehicleUtils.getDisembarkPositions(
+            boardingVehicle,
+            room.gameState
+          );
+          const isAdjacent = vehiclePositions.some(
+            (pos) =>
+              pos.x === boardingUnit.x &&
+              pos.y === boardingUnit.y &&
+              pos.z === boardingUnit.z
+          );
+
+          if (!isAdjacent) {
+            console.log("❌ Unit is not adjacent to vehicle");
+            break;
+          }
+
+          console.log(
+            `🚌 ${boardingUnit.name} boarding ${boardingVehicle.name}`
+          );
+
+          const boardResult = VehicleUtils.boardUnit(
+            boardingVehicle,
+            boardingUnit,
+            message.relativeX,
+            message.relativeY
+          );
+
+          room.gameState.units = room.gameState.units.map((unit) => {
+            if (unit.id === boardingVehicle.id)
+              return boardResult.updatedVehicle;
+            if (unit.id === boardingUnit.id) return boardResult.updatedUnit;
+            return unit;
+          });
+
+          console.log(
+            `✅ ${boardingUnit.name} successfully boarded ${boardingVehicle.name}`
+          );
+          break;
+
+        case "DISEMBARK_VEHICLE":
+          const disembarkVehicle = room.gameState.units.find(
+            (u) => u.id === message.vehicleId
+          );
+          const disembarkUnit = room.gameState.units.find(
+            (u) => u.id === message.unitId
+          );
+
+          if (!disembarkVehicle || !disembarkUnit) {
+            console.log("❌ Vehicle or unit not found for disembarking");
+            break;
+          }
+
+          if (!disembarkVehicle.isVehicle) {
+            console.log("❌ Target is not a vehicle");
+            break;
+          }
+
+          // Check if unit is actually aboard this vehicle
+          if (disembarkUnit.aboardVehicle !== disembarkVehicle.id) {
+            console.log("❌ Unit is not aboard this vehicle");
+            break;
+          }
+
+          // Validate disembark position
+          const disembarkPositions = VehicleUtils.getDisembarkPositions(
+            disembarkVehicle,
+            room.gameState
+          );
+          const validPosition = disembarkPositions.some(
+            (pos) =>
+              pos.x === message.targetX &&
+              pos.y === message.targetY &&
+              pos.z === message.targetZ
+          );
+
+          if (!validPosition) {
+            console.log("❌ Invalid disembark position");
+            break;
+          }
+
+          console.log(
+            `🚶 ${disembarkUnit.name} disembarking from ${disembarkVehicle.name}`
+          );
+
+          const disembarkResult = VehicleUtils.disembarkUnit(
+            disembarkVehicle,
+            disembarkUnit,
+            message.targetX,
+            message.targetY,
+            message.targetZ
+          );
+
+          room.gameState.units = room.gameState.units.map((unit) => {
+            if (unit.id === disembarkVehicle.id)
+              return disembarkResult.updatedVehicle;
+            if (unit.id === disembarkUnit.id)
+              return disembarkResult.updatedUnit;
+            return unit;
+          });
+
+          console.log(`✅ ${disembarkUnit.name} successfully disembarked`);
+          break;
+
         case "ATTACK":
           // Handle attack action
           room.gameState.units = room.gameState.units.map((unit) => {
@@ -862,6 +1083,53 @@ const handleMessage = (bytes, uuid) => {
               currentRound: newRound,
             },
             room.roomId
+          );
+
+          const cleanedUnits = updatedUnits.filter((unit) => {
+            if (unit.summonDuration !== undefined) {
+              const turnsAlive = currentTurn - unit.summonedAt;
+              if (turnsAlive >= unit.summonDuration) {
+                console.log(
+                  `🚤💀 ${unit.name} duration expired, removing from game`
+                );
+
+                // If it's a vehicle, disembark all passengers first
+                if (unit.isVehicle && unit.containedUnits.length > 0) {
+                  const disembarkPositions = VehicleUtils.getDisembarkPositions(
+                    unit,
+                    room.gameState
+                  );
+
+                  // Force disembark all passengers to available positions
+                  unit.containedUnits.forEach((passengerId, index) => {
+                    const passenger = updatedUnits.find(
+                      (u) => u.id === passengerId
+                    );
+                    if (passenger && disembarkPositions[index]) {
+                      const pos = disembarkPositions[index];
+                      passenger.x = pos.x;
+                      passenger.y = pos.y;
+                      passenger.z = pos.z;
+                      passenger.aboardVehicle = null;
+                      passenger.vehicleRelativePosition = null;
+                      console.log(
+                        `🚶 Force disembarked ${passenger.name} due to vehicle expiration`
+                      );
+                    }
+                  });
+                }
+
+                return false; // Remove the vehicle/summon
+              }
+            }
+            return true; // Keep the unit
+          });
+
+          room.gameState.units = cleanedUnits;
+
+          // Reapply vehicle terrain effects after cleanup
+          room.gameState = VehicleUtils.applyVehicleTerrainEffects(
+            room.gameState
           );
 
           broadcastToRoom(player.currentRoom);
