@@ -4969,7 +4969,7 @@ const TacticalGame = ({ username, roomId }) => {
             {Array.from({ length: GRID_SIZE }).map((_, x) => renderCell(x, y))}
           </div>
         ))}
-        <VisionRangeOverlay />
+        {/* <VisionRangeOverlay /> */}
       </div>
 
       {contextMenu && activeUnit && (
