@@ -829,7 +829,7 @@ const handleMessage = (bytes, uuid) => {
             `🚤 Moving vehicle ${vehicle.name} from (${vehicle.x},${vehicle.y}) to (${message.newX},${message.newY})`
           );
 
-          // Validate the move
+          // Validate the move (now allows movement through allied units)
           if (
             !VehicleUtils.canVehicleMoveTo(
               vehicle,
@@ -844,7 +844,7 @@ const handleMessage = (bytes, uuid) => {
             break;
           }
 
-          // Move the vehicle and all passengers
+          // Move the vehicle and handle auto-boarding
           const moveResult = VehicleUtils.moveVehicle(
             vehicle,
             message.newX,
@@ -853,7 +853,7 @@ const handleMessage = (bytes, uuid) => {
             room.gameState
           );
 
-          // Update the game state
+          // Update the game state with the move result
           room.gameState = moveResult.updatedGameState;
 
           // Update vehicle movement points
@@ -872,7 +872,7 @@ const handleMessage = (bytes, uuid) => {
             room.gameState
           );
 
-          console.log(`✅ Vehicle moved successfully`);
+          console.log(`✅ Vehicle moved successfully with auto-boarding`);
           break;
 
         case "BOARD_VEHICLE":
