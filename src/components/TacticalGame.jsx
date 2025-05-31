@@ -114,6 +114,8 @@ const TacticalGame = ({ username, roomId }) => {
     useState(false);
   const [showVehicleInspector, setShowVehicleInspector] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [vehicleMovementDestinations, setVehicleMovementDestinations] =
+    useState([]);
 
   const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
@@ -3772,51 +3774,11 @@ const TacticalGame = ({ username, roomId }) => {
   };
 
   const getPossibleMoves = (unit) => {
-    if (unit.isBiggerThanOneCell || unit.isVehicle) {
-      // For vehicles, get possible destinations and then expand to show all occupied cells
-      const vehicleMoves = VehicleUtils.getPossibleVehicleMoves(
-        unit,
-        gameState,
-        GRID_SIZE
-      );
-      const allMoveCells = [];
-
-      vehicleMoves.forEach((move) => {
-        // For each possible destination, calculate all cells the vehicle would occupy
-        for (let dx = 0; dx < unit.dimensions.width; dx++) {
-          for (let dy = 0; dy < unit.dimensions.height; dy++) {
-            const cellX = move.x + dx;
-            const cellY = move.y + dy;
-
-            // Ensure the cell is within grid bounds
-            if (
-              cellX >= 0 &&
-              cellX < GRID_SIZE &&
-              cellY >= 0 &&
-              cellY < GRID_SIZE
-            ) {
-              allMoveCells.push({
-                x: cellX,
-                y: cellY,
-                z: move.z,
-                distance: move.distance,
-                isVehicleOrigin: dx === 0 && dy === 0, // Mark the origin cell
-                vehicleDestination: { x: move.x, y: move.y, z: move.z }, // Store the destination info
-              });
-            }
-          }
-        }
-      });
-
-      console.log(`🚤 Vehicle ${unit.name} movement preview:`, {
-        possibleDestinations: vehicleMoves.length,
-        totalHighlightedCells: allMoveCells.length,
-        movementLeft: unit.movementLeft,
-      });
-
-      return allMoveCells;
+    if (unit.isVehicle || unit.isBiggerThanOneCell) {
+      // For vehicles/multi-cell units, show destination footprints
+      return getVehicleDestinationFootprints(unit);
     } else {
-      // Regular unit movement logic (existing code)
+      // Regular unit movement logic (existing)
       const moves = [];
       const range = unit.movementLeft;
 
@@ -3833,6 +3795,54 @@ const TacticalGame = ({ username, roomId }) => {
       }
       return moves;
     }
+  };
+
+  const getVehicleDestinationFootprints = (vehicle) => {
+    const destinations = [];
+    const range = vehicle.movementLeft;
+
+    // Get all possible destination positions (origin points for the vehicle)
+    for (let x = 0; x < GRID_SIZE - vehicle.dimensions.width + 1; x++) {
+      for (let y = 0; y < GRID_SIZE - vehicle.dimensions.height + 1; y++) {
+        const distance = calculateDistance(vehicle.x, vehicle.y, x, y);
+        if (distance <= range && distance > 0) {
+          // Check if vehicle can move to this position
+          const canMove = VehicleUtils.canVehicleMoveTo(
+            vehicle,
+            x,
+            y,
+            vehicle.z,
+            gameState,
+            GRID_SIZE
+          );
+
+          if (canMove) {
+            // Use targeting logic to get all cells this vehicle would occupy
+            const footprintCells = TargetingLogic.getAffectedCells({
+              targetingType: TargetingType.AOE_FROM_POINT,
+              casterX: x, // Use destination as "caster"
+              casterY: y,
+              range: 0, // No range restriction since we're showing the footprint
+              targetX: x,
+              targetY: y,
+              dimensions: vehicle.dimensions,
+              gridSize: GRID_SIZE,
+            });
+
+            // Add destination info
+            destinations.push({
+              originX: x,
+              originY: y,
+              z: vehicle.z,
+              distance,
+              footprintCells, // Set of cells like "5,7", "5,8", "6,7", etc.
+            });
+          }
+        }
+      }
+    }
+
+    return destinations;
   };
 
   const handleAction = (action, unit) => {
@@ -3864,13 +3874,19 @@ const TacticalGame = ({ username, roomId }) => {
     }
 
     if (action === "move") {
+      // Get movement possibilities based on unit type
       const possibleMoves = getPossibleMoves(unit);
-      console.log(`🎯 Movement action for ${unit.name}:`, {
-        unitType: unit.isBiggerThanOneCell ? "Multi-cell" : "Single-cell",
-        possibleMovesCount: possibleMoves.length,
-        isVehicle: unit.isVehicle,
-      });
-      setHighlightedCells(getPossibleMoves(unit));
+
+      if (unit.isVehicle || unit.isBiggerThanOneCell) {
+        // For vehicles, store the destination footprints for rendering
+        setVehicleMovementDestinations(possibleMoves);
+        setHighlightedCells([]); // Clear regular highlights
+      } else {
+        // For regular units, use the existing system
+        setHighlightedCells(possibleMoves);
+        setVehicleMovementDestinations([]); // Clear vehicle highlights
+      }
+
       setContextMenu(null);
     } else if (action === "basic-attack") {
       // Handle attack action
@@ -4084,96 +4100,40 @@ const TacticalGame = ({ username, roomId }) => {
       ].team;
 
     if (selectedUnit) {
-      if (selectedUnit.isBiggerThanOneCell || selectedUnit.isVehicle) {
-        // Handle vehicle movement
-        const validMove = highlightedCells.some(
-          (move) => move.x === x && move.y === y
-        );
+      if (selectedUnit.isVehicle || selectedUnit.isBiggerThanOneCell) {
+        // Handle vehicle movement with destination checking
+        const validDestination = vehicleMovementDestinations.find((dest) => {
+          // Check if clicked cell is part of any destination footprint
+          return dest.footprintCells.has(`${x},${y}`);
+        });
 
-        if (validMove) {
-          // Get the actual destination coordinates (origin of the vehicle)
-          const destination =
-            validMove.vehicleDestination ||
-            highlightedCells.find(
-              (cell) =>
-                cell.isVehicleOrigin &&
-                cell.vehicleDestination &&
-                VehicleUtils.canVehicleMoveTo(
-                  selectedUnit,
-                  cell.vehicleDestination.x,
-                  cell.vehicleDestination.y,
-                  selectedUnit.z,
-                  gameState,
-                  GRID_SIZE
-                )
-            )?.vehicleDestination;
-
-          if (destination) {
-            console.log(`🚤 Moving vehicle to destination:`, destination);
-
-            if (
-              VehicleUtils.canVehicleMoveTo(
-                selectedUnit,
-                destination.x,
-                destination.y,
-                selectedUnit.z,
-                gameState,
-                GRID_SIZE
-              )
-            ) {
-              moveVehicle(
-                selectedUnit,
-                destination.x,
-                destination.y,
-                selectedUnit.z
-              );
-            } else {
-              console.log("❌ Vehicle move validation failed");
-              setSelectedUnit(null);
-              setHighlightedCells([]);
-            }
-          } else {
-            // Find the vehicle origin from the clicked cell
-            const originCell = highlightedCells.find(
-              (cell) =>
-                cell.isVehicleOrigin &&
-                Math.abs(cell.x - x) < selectedUnit.dimensions.width &&
-                Math.abs(cell.y - y) < selectedUnit.dimensions.height
-            );
-
-            if (originCell && originCell.vehicleDestination) {
-              console.log(
-                `🚤 Moving vehicle via origin cell:`,
-                originCell.vehicleDestination
-              );
-              moveVehicle(
-                selectedUnit,
-                originCell.vehicleDestination.x,
-                originCell.vehicleDestination.y,
-                selectedUnit.z
-              );
-            } else {
-              console.log("❌ Could not determine vehicle destination");
-              setSelectedUnit(null);
-              setHighlightedCells([]);
-            }
-          }
-        } else {
-          // Check for elevator interaction or invalid move
-          const targetCell = getCellAt(x, y, selectedUnit.z);
+        if (validDestination) {
+          // Move vehicle to the destination origin
           if (
-            targetCell &&
-            targetCell.terrainType === "elevator" &&
-            selectedUnit.x === x &&
-            selectedUnit.y === y
+            VehicleUtils.canVehicleMoveTo(
+              selectedUnit,
+              validDestination.originX,
+              validDestination.originY,
+              selectedUnit.z,
+              gameState,
+              GRID_SIZE
+            )
           ) {
-            // Handle elevator for vehicles (if desired)
-            console.log("Vehicle elevator interaction not implemented yet");
+            moveVehicle(
+              selectedUnit,
+              validDestination.originX,
+              validDestination.originY,
+              selectedUnit.z
+            );
+          } else {
+            console.log("Vehicle move validation failed");
           }
-
-          setSelectedUnit(null);
-          setHighlightedCells([]);
         }
+
+        // Clear highlights
+        setSelectedUnit(null);
+        setVehicleMovementDestinations([]);
+        setHighlightedCells([]);
       } else {
         // Handle regular unit movement
         const clickedUnit = getUnitAt(x, y, currentViewHeight);
@@ -4225,7 +4185,9 @@ const TacticalGame = ({ username, roomId }) => {
           setSelectedUnit(clickedUnit);
           // Switch to unit's height when selected
           setCurrentViewHeight(clickedUnit.z);
-
+          // Clear any existing movement highlights
+          setHighlightedCells([]);
+          setVehicleMovementDestinations([]);
           // If it's a vehicle, show different highlighting
           if (clickedUnit.isVehicle) {
             console.log(`Selected vehicle: ${clickedUnit.name}`);
@@ -4293,6 +4255,48 @@ const TacticalGame = ({ username, roomId }) => {
         setPreviewCells(affectedCells);
       }
     }
+  };
+
+  const VehicleMovementOverlay = () => {
+    if (vehicleMovementDestinations.length === 0) return null;
+
+    return (
+      <div className="absolute inset-0 pointer-events-none z-20">
+        {vehicleMovementDestinations.map((destination, destIndex) => (
+          <div key={destIndex}>
+            {Array.from(destination.footprintCells).map((cellCoord) => {
+              const [cellX, cellY] = cellCoord.split(",").map(Number);
+
+              // Only render if cell is on current viewing height
+              if (destination.z !== currentViewHeight) return null;
+
+              return (
+                <div
+                  key={cellCoord}
+                  className="absolute bg-blue-400 bg-opacity-50 border-2 border-blue-600 border-opacity-70"
+                  style={{
+                    left: `${cellX * 64}px`,
+                    top: `${cellY * 64}px`,
+                    width: "64px",
+                    height: "64px",
+                  }}
+                >
+                  {/* Show distance indicator on the origin cell */}
+                  {cellX === destination.originX &&
+                    cellY === destination.originY && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="bg-blue-600 text-white text-xs px-1 rounded font-bold">
+                          {destination.distance}
+                        </div>
+                      </div>
+                    )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    );
   };
 
   const UnitStatsTooltip = ({ unit }) => (
@@ -5087,6 +5091,8 @@ const TacticalGame = ({ username, roomId }) => {
             {Array.from({ length: GRID_SIZE }).map((_, x) => renderCell(x, y))}
           </div>
         ))}
+        {/* NEW: Vehicle movement overlay - rendered above everything else */}
+        <VehicleMovementOverlay />
         <VisionRangeOverlay />
       </div>
 
