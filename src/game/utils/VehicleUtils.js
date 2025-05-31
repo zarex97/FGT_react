@@ -75,6 +75,7 @@ export const VehicleUtils = {
   },
 
   // IMPROVED: Move vehicle and all contained units using relative positions
+  // Also auto-board any allied units that the vehicle moves over
   moveVehicle: (vehicle, newX, newY, newZ, gameState) => {
     const deltaX = newX - vehicle.x;
     const deltaY = newY - vehicle.y;
@@ -83,6 +84,68 @@ export const VehicleUtils = {
     console.log(
       `🚤 Moving vehicle ${vehicle.name} by delta (${deltaX}, ${deltaY}, ${deltaZ})`
     );
+
+    // Find allied units that should be auto-boarded
+    const unitsToAutoBoard = [];
+    for (let dx = 0; dx < vehicle.dimensions.width; dx++) {
+      for (let dy = 0; dy < vehicle.dimensions.height; dy++) {
+        const checkX = newX + dx;
+        const checkY = newY + dy;
+
+        // Find units at this position that should be auto-boarded
+        const unitAtPosition = gameState.units.find(
+          (unit) =>
+            unit.x === checkX &&
+            unit.y === checkY &&
+            unit.z === newZ &&
+            unit.team === vehicle.team &&
+            !unit.isVehicle &&
+            !unit.aboardVehicle &&
+            unit.id !== vehicle.id
+        );
+
+        if (unitAtPosition) {
+          // Check if there's space on the vehicle
+          const currentPassengers =
+            vehicle.containedUnits.length + unitsToAutoBoard.length;
+          if (currentPassengers < (vehicle.maxPassengers || 10)) {
+            // Find available relative position
+            for (let relY = 0; relY < vehicle.dimensions.height; relY++) {
+              for (let relX = 0; relX < vehicle.dimensions.width; relX++) {
+                const isOccupied =
+                  vehicle.containedUnits.some((passengerId) => {
+                    const passenger = gameState.units.find(
+                      (u) => u.id === passengerId
+                    );
+                    return (
+                      passenger?.vehicleRelativePosition?.x === relX &&
+                      passenger?.vehicleRelativePosition?.y === relY
+                    );
+                  }) ||
+                  unitsToAutoBoard.some(
+                    (entry) =>
+                      entry.relativeX === relX && entry.relativeY === relY
+                  );
+
+                if (!isOccupied) {
+                  unitsToAutoBoard.push({
+                    unit: unitAtPosition,
+                    relativeX: relX,
+                    relativeY: relY,
+                  });
+                  console.log(
+                    `🚌 Auto-boarding ${unitAtPosition.name} at relative (${relX}, ${relY})`
+                  );
+                  // Break out of both loops
+                  relY = vehicle.dimensions.height;
+                  relX = vehicle.dimensions.width;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
 
     // Update vehicle position and board cells
     const updatedVehicle = {
@@ -96,10 +159,15 @@ export const VehicleUtils = {
         newY,
         newZ
       ),
+      containedUnits: [
+        ...vehicle.containedUnits,
+        ...unitsToAutoBoard.map((entry) => entry.unit.id),
+      ],
     };
 
     // Update all contained units using their relative positions
     const updatedUnits = gameState.units.map((unit) => {
+      // Handle existing passengers
       if (vehicle.containedUnits.includes(unit.id)) {
         // Use relative position if available, otherwise calculate from current position
         let newUnitPos;
@@ -147,6 +215,37 @@ export const VehicleUtils = {
           z: newUnitPos.z,
         };
       }
+
+      // Handle newly auto-boarded units
+      const autoBoard = unitsToAutoBoard.find(
+        (entry) => entry.unit.id === unit.id
+      );
+      if (autoBoard) {
+        const worldPos = VehicleUtils.relativeToWorld(
+          updatedVehicle,
+          autoBoard.relativeX,
+          autoBoard.relativeY
+        );
+
+        console.log(
+          `🚌 Auto-boarded unit ${unit.name || unit.id} at world (${
+            worldPos.x
+          }, ${worldPos.y}, ${worldPos.z})`
+        );
+
+        return {
+          ...unit,
+          x: worldPos.x,
+          y: worldPos.y,
+          z: worldPos.z,
+          aboardVehicle: vehicle.id,
+          vehicleRelativePosition: {
+            x: autoBoard.relativeX,
+            y: autoBoard.relativeY,
+          },
+        };
+      }
+
       return unit;
     });
 
@@ -207,6 +306,35 @@ export const VehicleUtils = {
 
   // Board a unit automatically to the first available position
   boardUnitAuto: (vehicle, unit, gameState) => {
+    console.log(
+      `Attempting to auto-board ${unit.name || unit.id} onto ${
+        vehicle.name || vehicle.id
+      }`
+    );
+
+    // Check basic requirements
+    if (!vehicle.isVehicle) {
+      console.error("Target is not a vehicle");
+      return null;
+    }
+
+    if (unit.aboardVehicle) {
+      console.error("Unit is already aboard a vehicle");
+      return null;
+    }
+
+    // Initialize containedUnits if needed
+    if (!vehicle.containedUnits) {
+      vehicle.containedUnits = [];
+    }
+
+    // Check capacity
+    const maxPassengers = vehicle.maxPassengers || 10;
+    if (vehicle.containedUnits.length >= maxPassengers) {
+      console.error("Vehicle is at capacity");
+      return null;
+    }
+
     // Find first available position
     for (let y = 0; y < vehicle.dimensions.height; y++) {
       for (let x = 0; x < vehicle.dimensions.width; x++) {
@@ -222,6 +350,11 @@ export const VehicleUtils = {
         });
 
         if (!isOccupied) {
+          console.log(
+            `Found available position at (${x}, ${y}) for ${
+              unit.name || unit.id
+            }`
+          );
           return VehicleUtils.boardUnit(vehicle, unit, x, y);
         }
       }
@@ -316,10 +449,9 @@ export const VehicleUtils = {
           pos.x >= 0 &&
           pos.x < gridSize &&
           pos.y >= 0 &&
-          pos.y < gridSize
-          // &&
-          // !VehicleUtils.isPositionInVehicle(vehicle, pos.x, pos.y, pos.z) &&
-          // !VehicleUtils.isPositionOccupied(gameState, pos.x, pos.y, pos.z)
+          pos.y < gridSize &&
+          !VehicleUtils.isPositionInVehicle(vehicle, pos.x, pos.y, pos.z) &&
+          !VehicleUtils.isPositionOccupied(gameState, pos.x, pos.y, pos.z)
         ) {
           if (
             !positions.some(
@@ -336,7 +468,8 @@ export const VehicleUtils = {
   },
 
   // Check if a position is occupied by any unit or vehicle
-  isPositionOccupied: (gameState, x, y, z) => {
+  // excludeTeam: if provided, units of this team won't count as "occupied" (for allied movement)
+  isPositionOccupied: (gameState, x, y, z, excludeTeam = null) => {
     if (!gameState || !gameState.units) {
       return false;
     }
@@ -345,6 +478,8 @@ export const VehicleUtils = {
       if (!unit) return false;
       // Skip units that are aboard vehicles (they don't block ground positions)
       if (unit.aboardVehicle) return false;
+      // Skip allied units if excludeTeam is specified
+      if (excludeTeam && unit.team === excludeTeam) return false;
       return VehicleUtils.doesUnitOccupyPosition(unit, x, y, z);
     });
   },
@@ -408,8 +543,16 @@ export const VehicleUtils = {
           continue;
         }
 
-        // Check if position would be occupied by another unit/vehicle
-        if (VehicleUtils.isPositionOccupied(gameState, checkX, checkY, newZ)) {
+        // Check if position would be occupied by enemy units/vehicles (allies can be auto-boarded)
+        if (
+          VehicleUtils.isPositionOccupied(
+            gameState,
+            checkX,
+            checkY,
+            newZ,
+            vehicle.team
+          )
+        ) {
           return false;
         }
 

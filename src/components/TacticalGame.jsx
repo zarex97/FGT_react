@@ -3154,18 +3154,104 @@ const TacticalGame = ({ username, roomId }) => {
     setHighlightedCells([]);
   };
 
+  const debugVehicleBoarding = (unit) => {
+    console.log("=== VEHICLE BOARDING DEBUG ===");
+    console.log("Unit:", unit.name, "at position", unit.x, unit.y, unit.z);
+    console.log("Unit team:", unit.team);
+    console.log("Unit isVehicle:", unit.isVehicle);
+    console.log("Unit aboardVehicle:", unit.aboardVehicle);
+
+    // Find all vehicles
+    const allVehicles = gameState.units.filter((u) => u.isVehicle);
+    console.log(
+      "All vehicles:",
+      allVehicles.map((v) => ({ name: v.name, x: v.x, y: v.y, team: v.team }))
+    );
+
+    // Find allied vehicles
+    const alliedVehicles = allVehicles.filter((v) => v.team === unit.team);
+    console.log(
+      "Allied vehicles:",
+      alliedVehicles.map((v) => ({ name: v.name, x: v.x, y: v.y }))
+    );
+
+    // Check distances to each allied vehicle
+    alliedVehicles.forEach((vehicle) => {
+      const isOnVehicle = VehicleUtils.isPositionInVehicle(
+        vehicle,
+        unit.x,
+        unit.y,
+        unit.z
+      );
+      const distance = Math.max(
+        Math.abs(unit.x - vehicle.x),
+        Math.abs(unit.y - vehicle.y)
+      );
+      const maxDistance = Math.max(
+        vehicle.dimensions.width,
+        vehicle.dimensions.height
+      );
+
+      console.log(`Vehicle ${vehicle.name}:`);
+      console.log(`  - isOnVehicle: ${isOnVehicle}`);
+      console.log(`  - distance: ${distance}, maxDistance: ${maxDistance}`);
+      console.log(`  - isNearby: ${distance <= maxDistance}`);
+      console.log(
+        `  - capacity: ${vehicle.containedUnits?.length || 0}/${
+          vehicle.maxPassengers || 10
+        }`
+      );
+    });
+
+    console.log("=== END DEBUG ===");
+  };
+
   const ContextMenu = ({ position, unit }) => {
     const isPlayerTurn = gameState.turn === unit.team;
     const hasCounterPending = hasCounterPendingOnBoard(gameState);
     const counterUnit = hasCounterPending ? getCounterUnit(gameState) : null;
     const isBlockedByCounter = hasCounterPending && counterUnit?.id !== unit.id;
 
-    console.log("isPlayerTurn:", isPlayerTurn);
-    console.log("unit.hasAttacked:", unit.hasAttacked);
-    console.log("current gameState:", gameState);
-    console.log("hasCounterPending:", hasCounterPending);
-    console.log("isBlockedByCounter:", isBlockedByCounter);
+    console.log("ContextMenu for unit:", unit.name, "Position:", position);
+
     if (!position) return null;
+
+    // Find nearby vehicles for boarding
+    const nearbyVehicles = gameState.units.filter((vehicle) => {
+      if (!vehicle.isVehicle || vehicle.team !== unit.team) return false;
+      if (unit.isVehicle || unit.aboardVehicle) return false;
+
+      // Check if unit is adjacent to or on the vehicle
+      const isOnVehicle = VehicleUtils.isPositionInVehicle(
+        vehicle,
+        unit.x,
+        unit.y,
+        unit.z
+      );
+      if (isOnVehicle) return true;
+
+      // Check if unit is adjacent to vehicle
+      const distance = Math.max(
+        Math.abs(unit.x - vehicle.x),
+        Math.abs(unit.y - vehicle.y)
+      );
+
+      // Consider adjacent if within 1 cell of vehicle edge
+      const maxDistance = Math.max(
+        vehicle.dimensions.width,
+        vehicle.dimensions.height
+      );
+      return distance <= maxDistance;
+    });
+
+    console.log(
+      "Nearby vehicles for",
+      unit.name,
+      ":",
+      nearbyVehicles.map((v) => v.name)
+    );
+
+    debugVehicleBoarding(unit);
 
     return (
       <div
@@ -3174,13 +3260,11 @@ const TacticalGame = ({ username, roomId }) => {
       >
         <button
           className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
-                        ${
-                          unit.hasAttacked ||
-                          !isPlayerTurn ||
-                          isBlockedByCounter
-                            ? "opacity-50 cursor-not-allowed"
-                            : ""
-                        }`}
+                      ${
+                        unit.hasAttacked || !isPlayerTurn || isBlockedByCounter
+                          ? "opacity-50 cursor-not-allowed"
+                          : ""
+                      }`}
           onClick={() => handleAction("basic-attack", unit)}
           disabled={unit.hasAttacked || !isPlayerTurn || isBlockedByCounter}
           title={isBlockedByCounter ? "Another unit has counter pending" : ""}
@@ -3191,7 +3275,99 @@ const TacticalGame = ({ username, roomId }) => {
           )}
         </button>
 
-        {/* Add vehicle-specific options */}
+        <button
+          className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
+                      ${isBlockedByCounter ? "opacity-50" : ""}`}
+          onClick={() => {
+            setShowSkillsMenu(true);
+            setContextMenu(null);
+          }}
+          title={
+            isBlockedByCounter ? "Some skills may be blocked by counter" : ""
+          }
+        >
+          <ScrollText size={16} /> Skills
+          {isBlockedByCounter && (
+            <span className="text-xs text-orange-500 ml-auto">(Limited)</span>
+          )}
+        </button>
+
+        <button
+          className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
+                      ${isBlockedByCounter ? "opacity-50" : ""}`}
+          onClick={() => {
+            setShowNPMenu(true);
+            setContextMenu(null);
+          }}
+          title={
+            isBlockedByCounter
+              ? "Some Noble Phantasms may be blocked by counter"
+              : ""
+          }
+        >
+          <Star size={16} /> Noble Phantasms
+          {isBlockedByCounter && (
+            <span className="text-xs text-orange-500 ml-auto">(Limited)</span>
+          )}
+        </button>
+
+        <button
+          className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+          onClick={() => {
+            setShowProfile(true);
+            setContextMenu(null);
+          }}
+        >
+          <User size={16} /> Show Profile
+        </button>
+
+        <button
+          className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
+                      ${isBlockedByCounter ? "opacity-50" : ""}`}
+          onClick={() => {
+            setShowOtherActions(true);
+            setContextMenu(null);
+          }}
+          title={
+            isBlockedByCounter ? "Some actions may be blocked by counter" : ""
+          }
+        >
+          <MoreHorizontal size={16} /> Other Actions
+          {isBlockedByCounter && (
+            <span className="text-xs text-orange-500 ml-auto">(Limited)</span>
+          )}
+        </button>
+
+        <button
+          className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
+                    ${!isPlayerTurn ? "opacity-50 cursor-not-allowed" : ""}`}
+          onClick={() => handleAction("move", unit)}
+          disabled={!isPlayerTurn || hasCounterPending}
+          title={
+            hasCounterPending
+              ? "Movement blocked while counter is pending"
+              : !isPlayerTurn
+              ? "Not your turn"
+              : "Move unit"
+          }
+        >
+          <Move size={16} /> Move
+          {hasCounterPending && (
+            <span className="text-xs text-orange-500 ml-auto">(Blocked)</span>
+          )}
+        </button>
+
+        <button
+          className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+          onClick={() => {
+            setShowCombatSelection(true);
+            setContextMenu(null);
+          }}
+        >
+          <Swords size={16} /> Manage Combat
+        </button>
+
+        {/* Vehicle-specific options */}
         {unit.isVehicle && (
           <>
             <button
@@ -3216,53 +3392,60 @@ const TacticalGame = ({ username, roomId }) => {
           </>
         )}
 
-        {/* Add boarding option for units near vehicles */}
+        {/* Board nearby vehicles - FIXED */}
         {!unit.isVehicle &&
           !unit.aboardVehicle &&
-          (() => {
-            const nearbyVehicle = gameState.units.find((otherUnit) => {
-              if (!otherUnit.isVehicle || otherUnit.team !== unit.team)
-                return false;
-              const disembarkPositions = VehicleUtils.getDisembarkPositions(
-                otherUnit,
-                gameState
-              );
-              return disembarkPositions.some(
-                (pos) =>
-                  pos.x === unit.x && pos.y === unit.y && pos.z === unit.z
-              );
-            });
-
-            return nearbyVehicle ? (
-              <button
-                className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-                onClick={() => {
-                  // Auto-board to nearby vehicle
-                  const result = VehicleUtils.boardUnitAuto(
-                    nearbyVehicle,
-                    unit,
-                    gameState
-                  );
-                  if (result) {
-                    handleBoardUnit(
-                      nearbyVehicle.id,
-                      unit.id,
-                      result.updatedUnit.vehicleRelativePosition.x,
-                      result.updatedUnit.vehicleRelativePosition.y
+          nearbyVehicles.length > 0 && (
+            <>
+              {nearbyVehicles.map((vehicle) => (
+                <button
+                  key={vehicle.id}
+                  className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-green-600"
+                  onClick={() => {
+                    console.log(
+                      `Attempting to board ${unit.name} onto ${vehicle.name}`
                     );
+                    // Auto-board to first available position
+                    const result = VehicleUtils.boardUnitAuto(
+                      vehicle,
+                      unit,
+                      gameState
+                    );
+                    if (result) {
+                      handleBoardUnit(
+                        vehicle.id,
+                        unit.id,
+                        result.updatedUnit.vehicleRelativePosition.x,
+                        result.updatedUnit.vehicleRelativePosition.y
+                      );
+                    } else {
+                      console.error("Failed to auto-board unit");
+                    }
+                    setContextMenu(null);
+                  }}
+                  disabled={
+                    !vehicle.containedUnits ||
+                    vehicle.containedUnits.length >=
+                      (vehicle.maxPassengers || 10)
                   }
-                  setContextMenu(null);
-                }}
-              >
-                <ArrowRight size={16} /> Board {nearbyVehicle.name}
-              </button>
-            ) : null;
-          })()}
+                >
+                  <ArrowRight size={16} /> Board {vehicle.name}
+                  {vehicle.containedUnits &&
+                    vehicle.containedUnits.length >=
+                      (vehicle.maxPassengers || 10) && (
+                      <span className="text-xs text-red-500 ml-auto">
+                        (Full)
+                      </span>
+                    )}
+                </button>
+              ))}
+            </>
+          )}
 
-        {/* Add disembark option for units aboard vehicles */}
+        {/* Disembark option for units aboard vehicles */}
         {unit.aboardVehicle && (
           <button
-            className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+            className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-orange-600"
             onClick={() => {
               const vehicle = gameState.units.find(
                 (v) => v.id === unit.aboardVehicle
@@ -3284,92 +3467,6 @@ const TacticalGame = ({ username, roomId }) => {
           </button>
         )}
 
-        <button
-          className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
-                        ${isBlockedByCounter ? "opacity-50" : ""}`}
-          onClick={() => {
-            setShowSkillsMenu(true);
-            setContextMenu(null);
-          }}
-          title={
-            isBlockedByCounter ? "Some skills may be blocked by counter" : ""
-          }
-        >
-          <ScrollText size={16} /> Skills
-          {isBlockedByCounter && (
-            <span className="text-xs text-orange-500 ml-auto">(Limited)</span>
-          )}
-        </button>
-        <button
-          className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
-                        ${isBlockedByCounter ? "opacity-50" : ""}`}
-          onClick={() => {
-            setShowNPMenu(true);
-            setContextMenu(null);
-          }}
-          title={
-            isBlockedByCounter
-              ? "Some Noble Phantasms may be blocked by counter"
-              : ""
-          }
-        >
-          <Star size={16} /> Noble Phantasms
-          {isBlockedByCounter && (
-            <span className="text-xs text-orange-500 ml-auto">(Limited)</span>
-          )}
-        </button>
-        <button
-          className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-          onClick={() => {
-            setShowProfile(true);
-            setContextMenu(null);
-          }}
-        >
-          <User size={16} /> Show Profile
-        </button>
-        <button
-          className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
-                        ${isBlockedByCounter ? "opacity-50" : ""}`}
-          onClick={() => {
-            setShowOtherActions(true);
-            setContextMenu(null);
-          }}
-          title={
-            isBlockedByCounter ? "Some actions may be blocked by counter" : ""
-          }
-        >
-          <MoreHorizontal size={16} /> Other Actions
-          {isBlockedByCounter && (
-            <span className="text-xs text-orange-500 ml-auto">(Limited)</span>
-          )}
-        </button>
-        <button
-          className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
-                    ${!isPlayerTurn ? "opacity-50 cursor-not-allowed" : ""}`}
-          onClick={() => handleAction("move", unit)}
-          disabled={!isPlayerTurn || hasCounterPending}
-          title={
-            hasCounterPending
-              ? "Movement blocked while counter is pending"
-              : !isPlayerTurn
-              ? "Not your turn"
-              : "Move unit"
-          }
-        >
-          <Move size={16} /> Move
-          {hasCounterPending && (
-            <span className="text-xs text-orange-500 ml-auto">(Blocked)</span>
-          )}
-        </button>
-        <button
-          className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-          onClick={() => {
-            setShowCombatSelection(true);
-            setContextMenu(null);
-          }}
-        >
-          <Swords size={16} /> Manage Combat
-        </button>
         {unit.canCounter && (
           <button
             className="w-full px-4 py-2 text-left hover:bg-yellow-100 flex items-center gap-2 text-orange-600 font-semibold"
