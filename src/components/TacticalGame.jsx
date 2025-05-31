@@ -114,6 +114,7 @@ const TacticalGame = ({ username, roomId }) => {
     useState(false);
   const [showVehicleInspector, setShowVehicleInspector] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [movementPreviewMode, setMovementPreviewMode] = useState(false);
 
   const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
@@ -382,6 +383,33 @@ const TacticalGame = ({ username, roomId }) => {
     );
   }
 
+  // 2. Add helper function to calculate vehicle/big unit preview cells
+  const getMovementPreviewCells = (unit, targetX, targetY) => {
+    if (!unit.isBiggerThanOneCell && !unit.isVehicle) {
+      return new Set([`${targetX},${targetY}`]);
+    }
+
+    const cells = new Set();
+    const dimensions = unit.dimensions || { width: 1, height: 1 };
+
+    // For vehicles/big units, show all cells they would occupy
+    for (let dx = 0; dx < dimensions.width; dx++) {
+      for (let dy = 0; dy < dimensions.height; dy++) {
+        const cellX = targetX + dx;
+        const cellY = targetY + dy;
+        if (
+          cellX >= 0 &&
+          cellX < GRID_SIZE &&
+          cellY >= 0 &&
+          cellY < GRID_SIZE
+        ) {
+          cells.add(`${cellX},${cellY}`);
+        }
+      }
+    }
+
+    return cells;
+  };
   // NEW: Generate initial terrain data
   const generateInitialTerrain = () => {
     const terrain = {};
@@ -3825,6 +3853,11 @@ const TacticalGame = ({ username, roomId }) => {
     if (action === "move") {
       setHighlightedCells(getPossibleMoves(unit));
       setContextMenu(null);
+
+      // NEW: Enable movement preview mode for big units/vehicles
+      if (unit.isBiggerThanOneCell || unit.isVehicle) {
+        setMovementPreviewMode(true);
+      }
     } else if (action === "basic-attack") {
       // Handle attack action
       setContextMenu(null);
@@ -3845,6 +3878,11 @@ const TacticalGame = ({ username, roomId }) => {
   const handleCellClick = (x, y) => {
     setContextMenu(null);
     setActiveUnit(null);
+
+    if (movementPreviewMode) {
+      setMovementPreviewMode(false);
+      setPreviewCells(new Set());
+    }
 
     if (skillTargetingMode && activeSkill) {
       const caster = selectedUnit;
@@ -3917,6 +3955,7 @@ const TacticalGame = ({ username, roomId }) => {
       setActiveSkill(null);
       setPreviewCells(new Set());
       setSelectedUnit(null);
+      setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
       return;
     }
 
@@ -3972,6 +4011,7 @@ const TacticalGame = ({ username, roomId }) => {
       setActiveAction(null);
       setPreviewCells(new Set());
       setSelectedUnit(null);
+      setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
       return;
     }
 
@@ -4023,6 +4063,7 @@ const TacticalGame = ({ username, roomId }) => {
       setActiveNP(null);
       setPreviewCells(new Set());
       setSelectedUnit(null);
+      setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
       return;
     }
 
@@ -4037,8 +4078,8 @@ const TacticalGame = ({ username, roomId }) => {
       ].team;
 
     if (selectedUnit) {
-      if (selectedUnit.isVehicle || selectedUnit.isVehicle) {
-        // Handle vehicle movement
+      if (selectedUnit.isVehicle || selectedUnit.isBiggerThanOneCell) {
+        // Handle vehicle/big unit movement
         const validMove = highlightedCells.some(
           (move) => move.x === x && move.y === y
         );
@@ -4046,6 +4087,7 @@ const TacticalGame = ({ username, roomId }) => {
         if (validMove) {
           // Check if the move is actually valid (double-check)
           if (
+            selectedUnit.isVehicle &&
             VehicleUtils.canVehicleMoveTo(
               selectedUnit,
               x,
@@ -4056,10 +4098,19 @@ const TacticalGame = ({ username, roomId }) => {
             )
           ) {
             moveVehicle(selectedUnit, x, y, selectedUnit.z);
+          } else if (
+            selectedUnit.isBiggerThanOneCell &&
+            !selectedUnit.isVehicle
+          ) {
+            // Handle other big units (non-vehicles)
+            moveUnit(selectedUnit, x, y, selectedUnit.z);
           } else {
-            console.log("Vehicle move validation failed");
+            console.log("Vehicle/Big unit move validation failed");
+            // *** UNIT DESELECTION POINT 1 ***
             setSelectedUnit(null);
             setHighlightedCells([]);
+            setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
+            setPreviewCells(new Set()); // *** RESET PREVIEW CELLS ***
           }
         } else {
           // Check for elevator interaction or invalid move
@@ -4074,8 +4125,11 @@ const TacticalGame = ({ username, roomId }) => {
             console.log("Vehicle elevator interaction not implemented yet");
           }
 
+          // *** UNIT DESELECTION POINT 2 ***
           setSelectedUnit(null);
           setHighlightedCells([]);
+          setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
+          setPreviewCells(new Set()); // *** RESET PREVIEW CELLS ***
         }
       } else {
         // Handle regular unit movement
@@ -4112,11 +4166,15 @@ const TacticalGame = ({ username, roomId }) => {
             }
           }
 
+          // *** UNIT DESELECTION POINT 3 ***
           setSelectedUnit(null);
           setHighlightedCells([]);
+          setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
+          setPreviewCells(new Set()); // *** RESET PREVIEW CELLS ***
         }
       }
     } else {
+      // ===== SELECTION LOGIC =====
       // Selection logic - check for both units and vehicles
       const clickedUnit = getUnitAt(x, y, currentViewHeight);
 
@@ -4128,6 +4186,10 @@ const TacticalGame = ({ username, roomId }) => {
           setSelectedUnit(clickedUnit);
           // Switch to unit's height when selected
           setCurrentViewHeight(clickedUnit.z);
+
+          // *** CLEAR ANY EXISTING MOVEMENT PREVIEW WHEN SELECTING NEW UNIT ***
+          setMovementPreviewMode(false);
+          setPreviewCells(new Set());
 
           // If it's a vehicle, show different highlighting
           if (clickedUnit.isVehicle) {
@@ -4151,6 +4213,20 @@ const TacticalGame = ({ username, roomId }) => {
             setSelectedUnit(clickedVehicle);
             setCurrentViewHeight(clickedVehicle.z);
             console.log(`Selected vehicle: ${clickedVehicle.name}`);
+
+            // *** CLEAR ANY EXISTING MOVEMENT PREVIEW WHEN SELECTING NEW UNIT ***
+            setMovementPreviewMode(false);
+            setPreviewCells(new Set());
+          }
+        } else {
+          // *** UNIT DESELECTION POINT 4 - Clicking on empty space ***
+          // No unit or vehicle found, and no unit currently selected
+          // This handles clicking on empty space to deselect
+          if (selectedUnit) {
+            setSelectedUnit(null);
+            setHighlightedCells([]);
+            setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
+            setPreviewCells(new Set()); // *** RESET PREVIEW CELLS ***
           }
         }
       }
@@ -4195,6 +4271,34 @@ const TacticalGame = ({ username, roomId }) => {
         const affectedCells = getNPAffectedCells(impl, selectedUnit, x, y, 11);
         setPreviewCells(affectedCells);
       }
+    }
+
+    // NEW: For movement preview of big units/vehicles
+    else if (
+      movementPreviewMode &&
+      selectedUnit &&
+      (selectedUnit.isBiggerThanOneCell || selectedUnit.isVehicle)
+    ) {
+      // Check if this is a valid move position
+      const isValidMovePosition = highlightedCells.some(
+        (move) => move.x === x && move.y === y
+      );
+
+      if (isValidMovePosition) {
+        const previewCells = getMovementPreviewCells(selectedUnit, x, y);
+        setPreviewCells(previewCells);
+      } else {
+        setPreviewCells(new Set());
+      }
+    }
+    // For regular units, clear preview
+    else if (
+      movementPreviewMode &&
+      selectedUnit &&
+      !selectedUnit.isBiggerThanOneCell &&
+      !selectedUnit.isVehicle
+    ) {
+      setPreviewCells(new Set());
     }
   };
 
@@ -4383,12 +4487,24 @@ const TacticalGame = ({ username, roomId }) => {
                       animate-pulse`;
         }
       }
+
+      // NEW: Movement preview colors for big units/vehicles
+      else if (
+        movementPreviewMode &&
+        (selectedUnit?.isBiggerThanOneCell || selectedUnit?.isVehicle)
+      ) {
+        bgColor = "bg-cyan-300 bg-opacity-70"; // Cyan for movement preview
+      }
     } else if (isSelected) {
       bgColor = "bg-blue-300";
-    } else if (isValidMove) {
+    } else if (
+      isValidMove &&
+      !selectedUnit?.isBiggerThanOneCell &&
+      !selectedUnit?.isVehicle
+    ) {
+      // Only show individual move cells for regular units
       bgColor = "bg-blue-100";
     }
-
     const isHovered = hoveredCell?.x === x && hoveredCell?.y === y;
     if (isHovered && unit && unit.team === playerTeam) {
       bgColor = "bg-yellow-200";
