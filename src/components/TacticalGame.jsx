@@ -3772,10 +3772,51 @@ const TacticalGame = ({ username, roomId }) => {
   };
 
   const getPossibleMoves = (unit) => {
-    if (unit.isVehicle) {
-      return VehicleUtils.getPossibleVehicleMoves(unit, gameState, GRID_SIZE);
+    if (unit.isBiggerThanOneCell || unit.isVehicle) {
+      // For vehicles, get possible destinations and then expand to show all occupied cells
+      const vehicleMoves = VehicleUtils.getPossibleVehicleMoves(
+        unit,
+        gameState,
+        GRID_SIZE
+      );
+      const allMoveCells = [];
+
+      vehicleMoves.forEach((move) => {
+        // For each possible destination, calculate all cells the vehicle would occupy
+        for (let dx = 0; dx < unit.dimensions.width; dx++) {
+          for (let dy = 0; dy < unit.dimensions.height; dy++) {
+            const cellX = move.x + dx;
+            const cellY = move.y + dy;
+
+            // Ensure the cell is within grid bounds
+            if (
+              cellX >= 0 &&
+              cellX < GRID_SIZE &&
+              cellY >= 0 &&
+              cellY < GRID_SIZE
+            ) {
+              allMoveCells.push({
+                x: cellX,
+                y: cellY,
+                z: move.z,
+                distance: move.distance,
+                isVehicleOrigin: dx === 0 && dy === 0, // Mark the origin cell
+                vehicleDestination: { x: move.x, y: move.y, z: move.z }, // Store the destination info
+              });
+            }
+          }
+        }
+      });
+
+      console.log(`🚤 Vehicle ${unit.name} movement preview:`, {
+        possibleDestinations: vehicleMoves.length,
+        totalHighlightedCells: allMoveCells.length,
+        movementLeft: unit.movementLeft,
+      });
+
+      return allMoveCells;
     } else {
-      //  unit movement logic
+      // Regular unit movement logic (existing code)
       const moves = [];
       const range = unit.movementLeft;
 
@@ -3823,6 +3864,12 @@ const TacticalGame = ({ username, roomId }) => {
     }
 
     if (action === "move") {
+      const possibleMoves = getPossibleMoves(unit);
+      console.log(`🎯 Movement action for ${unit.name}:`, {
+        unitType: unit.isBiggerThanOneCell ? "Multi-cell" : "Single-cell",
+        possibleMovesCount: possibleMoves.length,
+        isVehicle: unit.isVehicle,
+      });
       setHighlightedCells(getPossibleMoves(unit));
       setContextMenu(null);
     } else if (action === "basic-attack") {
@@ -4037,29 +4084,79 @@ const TacticalGame = ({ username, roomId }) => {
       ].team;
 
     if (selectedUnit) {
-      if (selectedUnit.isVehicle || selectedUnit.isVehicle) {
+      if (selectedUnit.isBiggerThanOneCell || selectedUnit.isVehicle) {
         // Handle vehicle movement
         const validMove = highlightedCells.some(
           (move) => move.x === x && move.y === y
         );
 
         if (validMove) {
-          // Check if the move is actually valid (double-check)
-          if (
-            VehicleUtils.canVehicleMoveTo(
-              selectedUnit,
-              x,
-              y,
-              selectedUnit.z,
-              gameState,
-              GRID_SIZE
-            )
-          ) {
-            moveVehicle(selectedUnit, x, y, selectedUnit.z);
+          // Get the actual destination coordinates (origin of the vehicle)
+          const destination =
+            validMove.vehicleDestination ||
+            highlightedCells.find(
+              (cell) =>
+                cell.isVehicleOrigin &&
+                cell.vehicleDestination &&
+                VehicleUtils.canVehicleMoveTo(
+                  selectedUnit,
+                  cell.vehicleDestination.x,
+                  cell.vehicleDestination.y,
+                  selectedUnit.z,
+                  gameState,
+                  GRID_SIZE
+                )
+            )?.vehicleDestination;
+
+          if (destination) {
+            console.log(`🚤 Moving vehicle to destination:`, destination);
+
+            if (
+              VehicleUtils.canVehicleMoveTo(
+                selectedUnit,
+                destination.x,
+                destination.y,
+                selectedUnit.z,
+                gameState,
+                GRID_SIZE
+              )
+            ) {
+              moveVehicle(
+                selectedUnit,
+                destination.x,
+                destination.y,
+                selectedUnit.z
+              );
+            } else {
+              console.log("❌ Vehicle move validation failed");
+              setSelectedUnit(null);
+              setHighlightedCells([]);
+            }
           } else {
-            console.log("Vehicle move validation failed");
-            setSelectedUnit(null);
-            setHighlightedCells([]);
+            // Find the vehicle origin from the clicked cell
+            const originCell = highlightedCells.find(
+              (cell) =>
+                cell.isVehicleOrigin &&
+                Math.abs(cell.x - x) < selectedUnit.dimensions.width &&
+                Math.abs(cell.y - y) < selectedUnit.dimensions.height
+            );
+
+            if (originCell && originCell.vehicleDestination) {
+              console.log(
+                `🚤 Moving vehicle via origin cell:`,
+                originCell.vehicleDestination
+              );
+              moveVehicle(
+                selectedUnit,
+                originCell.vehicleDestination.x,
+                originCell.vehicleDestination.y,
+                selectedUnit.z
+              );
+            } else {
+              console.log("❌ Could not determine vehicle destination");
+              setSelectedUnit(null);
+              setHighlightedCells([]);
+            }
           }
         } else {
           // Check for elevator interaction or invalid move
@@ -4560,10 +4657,31 @@ const TacticalGame = ({ username, roomId }) => {
             {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
           </div>
         )}
+        {/* MOVEMENT PREVIEW OVERLAY - HIGHEST Z-INDEX (z-index: 20) */}
+        {isValidMove && (
+          <div className="absolute inset-0 z-20 pointer-events-none">
+            {/* Different styling for vehicle movement vs regular movement */}
+            {selectedUnit && selectedUnit.isBiggerThanOneCell ? (
+              // Vehicle movement preview
+              <div className="w-full h-full bg-blue-400 bg-opacity-40 border-2 border-blue-600 rounded flex items-center justify-center">
+                {highlightedCells.find((cell) => cell.x === x && cell.y === y)
+                  ?.isVehicleOrigin && (
+                  <div className="text-blue-800 text-xs font-bold">
+                    📍 {selectedUnit.dimensions.width}×
+                    {selectedUnit.dimensions.height}
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Regular unit movement preview
+              <div className="w-full h-full bg-blue-200 bg-opacity-60 border-2 border-blue-500 rounded"></div>
+            )}
+          </div>
+        )}
 
         {/* Multi-cell unit outline for non-origin cells */}
         {unit && unit.isBiggerThanOneCell && !isUnitOrigin && isVisible && (
-          <div className="absolute inset-0 border-2 border-blue-400 border-dashed bg-blue-100 bg-opacity-30 flex items-center justify-center">
+          <div className="absolute inset-0 border-2 border-blue-400 border-dashed bg-blue-100 bg-opacity-30 flex items-center justify-center z-10">
             <div className="text-blue-600 text-xs font-bold opacity-50">
               {unit.name}
             </div>
@@ -4573,7 +4691,7 @@ const TacticalGame = ({ username, roomId }) => {
         {/* Regular single-cell unit rendering */}
         {unit && !unit.isBiggerThanOneCell && isVisible && (
           <div
-            className={`absolute inset-0 flex items-center justify-center 
+            className={`absolute inset-0 flex items-center justify-center z-10
                         ${
                           unit.team === playerTeam
                             ? "text-blue-600"
