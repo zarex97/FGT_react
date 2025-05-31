@@ -207,7 +207,7 @@ export const waterBoatAttributes = {
   maxHp: 200,
   baseDef: 2,
   baseMovementRange: 3,
-  MovementRange: 3,
+  movementRange: 3,
   movementLeft: 3,
   rangeOfBasicAttack: 1,
 
