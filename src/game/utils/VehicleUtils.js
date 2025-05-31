@@ -21,12 +21,10 @@ export const VehicleUtils = {
 
   // Check if a position is within vehicle boundaries
   isPositionInVehicle: (vehicle, x, y, z) => {
-    // Add defensive check for vehicle and boardCells
     if (!vehicle || !vehicle.isVehicle) {
       return false;
     }
 
-    // If boardCells doesn't exist, generate it
     if (!vehicle.boardCells && vehicle.dimensions) {
       vehicle.boardCells = VehicleUtils.generateBoardCells(
         vehicle.dimensions,
@@ -36,7 +34,6 @@ export const VehicleUtils = {
       );
     }
 
-    // If still no boardCells, fall back to dimension-based check
     if (!vehicle.boardCells) {
       return (
         x >= vehicle.x &&
@@ -57,7 +54,6 @@ export const VehicleUtils = {
     const relativeX = worldX - vehicle.x;
     const relativeY = worldY - vehicle.y;
 
-    // Check if position is within vehicle bounds
     if (
       relativeX >= 0 &&
       relativeX < vehicle.dimensions.width &&
@@ -78,13 +74,17 @@ export const VehicleUtils = {
     };
   },
 
-  // Move vehicle and all contained units
+  // IMPROVED: Move vehicle and all contained units using relative positions
   moveVehicle: (vehicle, newX, newY, newZ, gameState) => {
     const deltaX = newX - vehicle.x;
     const deltaY = newY - vehicle.y;
     const deltaZ = newZ - vehicle.z;
 
-    // Update vehicle position
+    console.log(
+      `🚤 Moving vehicle ${vehicle.name} by delta (${deltaX}, ${deltaY}, ${deltaZ})`
+    );
+
+    // Update vehicle position and board cells
     const updatedVehicle = {
       ...vehicle,
       x: newX,
@@ -98,14 +98,53 @@ export const VehicleUtils = {
       ),
     };
 
-    // Update all contained units
+    // Update all contained units using their relative positions
     const updatedUnits = gameState.units.map((unit) => {
       if (vehicle.containedUnits.includes(unit.id)) {
+        // Use relative position if available, otherwise calculate from current position
+        let newUnitPos;
+        if (unit.vehicleRelativePosition) {
+          newUnitPos = VehicleUtils.relativeToWorld(
+            updatedVehicle,
+            unit.vehicleRelativePosition.x,
+            unit.vehicleRelativePosition.y
+          );
+        } else {
+          // Fallback: maintain current relative position
+          const currentRelative = VehicleUtils.worldToRelative(
+            vehicle,
+            unit.x,
+            unit.y
+          );
+          if (currentRelative) {
+            newUnitPos = VehicleUtils.relativeToWorld(
+              updatedVehicle,
+              currentRelative.x,
+              currentRelative.y
+            );
+            // Update the relative position for future moves
+            unit.vehicleRelativePosition = currentRelative;
+          } else {
+            // Emergency fallback: just move by delta
+            newUnitPos = {
+              x: unit.x + deltaX,
+              y: unit.y + deltaY,
+              z: unit.z + deltaZ,
+            };
+          }
+        }
+
+        console.log(
+          `🚶 Moving contained unit ${unit.name || unit.id} to (${
+            newUnitPos.x
+          }, ${newUnitPos.y}, ${newUnitPos.z})`
+        );
+
         return {
           ...unit,
-          x: unit.x + deltaX,
-          y: unit.y + deltaY,
-          z: unit.z + deltaZ,
+          x: newUnitPos.x,
+          y: newUnitPos.y,
+          z: newUnitPos.z,
         };
       }
       return unit;
@@ -122,8 +161,21 @@ export const VehicleUtils = {
     };
   },
 
-  // Board a unit onto a vehicle
+  // Board a unit onto a vehicle with proper validation
   boardUnit: (vehicle, unit, relativeX, relativeY) => {
+    // Validate relative position
+    if (
+      relativeX < 0 ||
+      relativeX >= vehicle.dimensions.width ||
+      relativeY < 0 ||
+      relativeY >= vehicle.dimensions.height
+    ) {
+      console.error(
+        `Invalid relative position (${relativeX}, ${relativeY}) for vehicle dimensions ${vehicle.dimensions.width}x${vehicle.dimensions.height}`
+      );
+      return null;
+    }
+
     const worldPos = VehicleUtils.relativeToWorld(
       vehicle,
       relativeX,
@@ -144,7 +196,41 @@ export const VehicleUtils = {
       vehicleRelativePosition: { x: relativeX, y: relativeY },
     };
 
+    console.log(
+      `🚌 Unit ${unit.name || unit.id} boarded vehicle ${
+        vehicle.name || vehicle.id
+      } at relative position (${relativeX}, ${relativeY})`
+    );
+
     return { updatedVehicle, updatedUnit };
+  },
+
+  // Board a unit automatically to the first available position
+  boardUnitAuto: (vehicle, unit, gameState) => {
+    // Find first available position
+    for (let y = 0; y < vehicle.dimensions.height; y++) {
+      for (let x = 0; x < vehicle.dimensions.width; x++) {
+        // Check if this position is free
+        const isOccupied = vehicle.containedUnits.some((containedUnitId) => {
+          const containedUnit = gameState.units.find(
+            (u) => u.id === containedUnitId
+          );
+          return (
+            containedUnit?.vehicleRelativePosition?.x === x &&
+            containedUnit?.vehicleRelativePosition?.y === y
+          );
+        });
+
+        if (!isOccupied) {
+          return VehicleUtils.boardUnit(vehicle, unit, x, y);
+        }
+      }
+    }
+
+    console.error(
+      `No available positions on vehicle ${vehicle.name || vehicle.id}`
+    );
+    return null;
   },
 
   // Disembark a unit from a vehicle
@@ -163,7 +249,31 @@ export const VehicleUtils = {
       vehicleRelativePosition: null,
     };
 
+    console.log(
+      `🚶 Unit ${unit.name || unit.id} disembarked from vehicle ${
+        vehicle.name || vehicle.id
+      }`
+    );
+
     return { updatedVehicle, updatedUnit };
+  },
+
+  // Check if a unit can board a vehicle (team logic)
+  canUnitBoardVehicle: (unit, vehicle, gameState) => {
+    // Basic checks
+    if (!vehicle.isVehicle) return false;
+    if (unit.aboardVehicle) return false; // Already aboard another vehicle
+    if (vehicle.containedUnits.length >= vehicle.maxPassengers) return false;
+
+    // Team-based logic
+    if (unit.team === vehicle.team) {
+      // Allies can always board (subject to capacity)
+      return true;
+    } else {
+      // Enemies might be able to board based on vehicle-specific logic
+      // This could be implemented with trigger effects later
+      return false;
+    }
   },
 
   // Find vehicle at a specific position
@@ -183,7 +293,14 @@ export const VehicleUtils = {
   // Get all valid positions around a vehicle for disembarking
   getDisembarkPositions: (vehicle, gameState, gridSize = 11) => {
     const positions = [];
-    const cells = vehicle.boardCells;
+    const cells =
+      vehicle.boardCells ||
+      VehicleUtils.generateBoardCells(
+        vehicle.dimensions,
+        vehicle.x,
+        vehicle.y,
+        vehicle.z
+      );
 
     // Check all cells around the vehicle perimeter
     cells.forEach((cell) => {
@@ -195,16 +312,15 @@ export const VehicleUtils = {
       ];
 
       adjacentPositions.forEach((pos) => {
-        // Check if position is valid and not occupied
         if (
           pos.x >= 0 &&
           pos.x < gridSize &&
           pos.y >= 0 &&
-          pos.y < gridSize &&
-          !VehicleUtils.isPositionInVehicle(vehicle, pos.x, pos.y, pos.z) &&
-          !VehicleUtils.isPositionOccupied(gameState, pos.x, pos.y, pos.z)
+          pos.y < gridSize
+          // &&
+          // !VehicleUtils.isPositionInVehicle(vehicle, pos.x, pos.y, pos.z) &&
+          // !VehicleUtils.isPositionOccupied(gameState, pos.x, pos.y, pos.z)
         ) {
-          // Avoid duplicates
           if (
             !positions.some(
               (p) => p.x === pos.x && p.y === pos.y && p.z === pos.z
@@ -227,11 +343,13 @@ export const VehicleUtils = {
 
     return gameState.units.some((unit) => {
       if (!unit) return false;
+      // Skip units that are aboard vehicles (they don't block ground positions)
+      if (unit.aboardVehicle) return false;
       return VehicleUtils.doesUnitOccupyPosition(unit, x, y, z);
     });
   },
 
-  // Get possible moves for a vehicle (similar to unit movement but considering vehicle size)
+  // Get possible moves for a vehicle
   getPossibleVehicleMoves: (vehicle, gameState, gridSize = 11) => {
     const moves = [];
     const range = vehicle.movementLeft;
@@ -240,16 +358,16 @@ export const VehicleUtils = {
       for (let y = 0; y < gridSize - vehicle.dimensions.height + 1; y++) {
         const distance = calculateDistance(vehicle.x, vehicle.y, x, y);
         if (distance <= range && distance > 0) {
-          // Check if all cells of the vehicle would be valid at new position
-          const wouldBeValid = VehicleUtils.canVehicleMoveTo(
-            vehicle,
-            x,
-            y,
-            vehicle.z,
-            gameState,
-            gridSize
-          );
-          if (wouldBeValid) {
+          if (
+            VehicleUtils.canVehicleMoveTo(
+              vehicle,
+              x,
+              y,
+              vehicle.z,
+              gameState,
+              gridSize
+            )
+          ) {
             moves.push({ x, y, z: vehicle.z, distance });
           }
         }
@@ -261,7 +379,6 @@ export const VehicleUtils = {
 
   // Check if vehicle can move to a position
   canVehicleMoveTo: (vehicle, newX, newY, newZ, gameState, gridSize = 11) => {
-    // Add defensive checks
     if (!vehicle || !vehicle.dimensions) {
       console.warn("Invalid vehicle object passed to canVehicleMoveTo");
       return false;
@@ -283,7 +400,7 @@ export const VehicleUtils = {
         const checkX = newX + dx;
         const checkY = newY + dy;
 
-        // Skip checking current vehicle position (only if vehicle has an ID)
+        // Skip checking current vehicle position
         if (
           vehicle.id &&
           VehicleUtils.isPositionInVehicle(vehicle, checkX, checkY, newZ)
@@ -296,7 +413,7 @@ export const VehicleUtils = {
           return false;
         }
 
-        // Check terrain validity (if terrain system exists)
+        // Check terrain validity
         const terrainCell = gameState.terrain?.[newZ]?.[checkX]?.[checkY];
         if (terrainCell && !terrainCell.isFloor) {
           return false;
@@ -317,7 +434,6 @@ export const VehicleUtils = {
         Object.keys(updatedTerrain[z][x]).forEach((y) => {
           const cell = updatedTerrain[z][x][y];
           if (cell.vehicleId) {
-            // Remove previous vehicle effects
             delete cell.vehicleId;
             delete cell.isVehicleFloor;
           }
@@ -329,13 +445,21 @@ export const VehicleUtils = {
     gameState.units
       .filter((unit) => unit.isVehicle)
       .forEach((vehicle) => {
-        vehicle.boardCells.forEach((boardCell) => {
+        const boardCells =
+          vehicle.boardCells ||
+          VehicleUtils.generateBoardCells(
+            vehicle.dimensions,
+            vehicle.x,
+            vehicle.y,
+            vehicle.z
+          );
+        boardCells.forEach((boardCell) => {
           const terrainCell =
             updatedTerrain?.[boardCell.z]?.[boardCell.x]?.[boardCell.y];
           if (terrainCell) {
             terrainCell.vehicleId = vehicle.id;
             terrainCell.isVehicleFloor = true;
-            terrainCell.isFloor = true; // Vehicle creates floor
+            terrainCell.isFloor = true;
           }
         });
       });
@@ -353,21 +477,18 @@ export const VehicleUtils = {
     );
   },
 
-  // NEW: Check if a unit occupies a specific position (works with any multi-cell unit)
+  // Check if a unit occupies a specific position
   doesUnitOccupyPosition: (unit, x, y, z) => {
     if (!unit) return false;
 
     if (!unit.isBiggerThanOneCell) {
-      // Single-cell unit
       return unit.x === x && unit.y === y && unit.z === z;
     } else {
-      // Multi-cell unit - check boardCells first
       if (unit.boardCells && Array.isArray(unit.boardCells)) {
         return unit.boardCells.some(
           (cell) => cell.x === x && cell.y === y && cell.z === z
         );
       } else if (unit.isVehicle) {
-        // Fallback for vehicles without boardCells
         return VehicleUtils.isPositionInVehicle(unit, x, y, z);
       }
     }
@@ -394,9 +515,7 @@ export const VehicleUtils = {
   },
 };
 
-// NEW: Check if a unit occupies a specific position (works with any multi-cell unit)
-
-// Helper function for distance calculation if not already available
+// Helper function for distance calculation
 const calculateDistance = (x1, y1, x2, y2) => {
   return Math.abs(x1 - x2) + Math.abs(y1 - y2);
 };
