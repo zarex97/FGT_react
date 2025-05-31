@@ -16,7 +16,7 @@ import { createWaterBoat } from "../materials/archer/ArcherMaterials.js";
 // ===== ANASTASIA'S SUMMONING SKILL =====
 
 const CreateWaterBoatMicroAction = new MicroAction({
-  targetingType: TargetingType.SINGLE_TARGET,
+  targetingType: TargetingType.AOE_FROM_POINT,
   range: 3,
   dimensions: { width: 3, height: 3 }, // ADD dimensions for the AOE
   effectLogic: (gameState, caster, affectedCells) => {
@@ -75,10 +75,15 @@ const CreateWaterBoatMicroAction = new MicroAction({
       return gameState;
     }
 
-    // Create the water boat (FIXED)
-    const waterBoat = createWaterBoat(caster, { x, y }, gameState);
-    console.log(`✅ ${waterBoat.name} summoned at (${x}, ${y})`);
-
+    // Create the water boat
+    const waterBoat = createWaterBoat(
+      caster,
+      { x: vehicleOriginX, y: vehicleOriginY },
+      gameState
+    );
+    console.log(
+      `✅ ${waterBoat.name} summoned at (${vehicleOriginX}, ${vehicleOriginY})`
+    );
     return {
       ...gameState,
       units: [...gameState.units, waterBoat],

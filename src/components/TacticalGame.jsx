@@ -4253,16 +4253,14 @@ const TacticalGame = ({ username, roomId }) => {
     const { cell: effectiveCell, actualHeight: effectiveHeight } =
       getEffectiveCell(x, y, currentZ);
 
-    // SIMPLIFIED: Just get the unit at current height, don't overcomplicate stacking
+    // Get unit at this position using the improved detection
     const unit = getUnitAt(x, y, currentZ);
+
+    // For multi-cell units, determine if this is the "origin" cell (for rendering)
     const isUnitOrigin =
       unit && unit.isBiggerThanOneCell
         ? unit.x === x && unit.y === y
         : unit && unit.x === x && unit.y === y;
-
-    const vehicle = !unit
-      ? VehicleUtils.findVehicleAtPosition(gameState, x, y, currentZ)
-      : null;
 
     const isSelected = selectedUnit && selectedUnit.id === unit?.id;
     const isValidMove = highlightedCells.some(
@@ -4387,6 +4385,7 @@ const TacticalGame = ({ username, roomId }) => {
       }
       return false;
     };
+
     let additionalClasses = "";
     // Add special effects for NP targeting
     if (npTargetingMode && isInPreview) {
@@ -4407,19 +4406,18 @@ const TacticalGame = ({ username, roomId }) => {
       <div
         key={`${x}-${y}`}
         className={`w-16 h-16 border border-gray-300 ${bgColor} ${additionalClasses} 
-                       flex items-center justify-center relative cursor-pointer 
-                       ${
-                         npTargetingMode && isInPreview
-                           ? "transform transition-transform hover:scale-105"
-                           : ""
-                       }`}
+                     flex items-center justify-center relative cursor-pointer 
+                     ${
+                       npTargetingMode && isInPreview
+                         ? "transform transition-transform hover:scale-105"
+                         : ""
+                     }`}
         onClick={() => {
           // Allow click if cell is visible OR if we're targeting with an AoE skill
           if (isVisible || canTargetNonVisibleCells()) {
             handleCellClick(x, y);
           }
         }}
-        //onMouseEnter is the addition for skill logic
         onMouseEnter={() => handleCellHover(x, y)}
         onMouseLeave={() => setHoveredCell(null)}
         onContextMenu={(e) => {
@@ -4468,32 +4466,30 @@ const TacticalGame = ({ username, roomId }) => {
           </div>
         )}
 
-        {unit && isVisible && (
+        {/* Multi-cell unit rendering (vehicles, large creatures, etc.) */}
+        {unit && unit.isBiggerThanOneCell && isUnitOrigin && isVisible && (
           <div
-            className={`absolute inset-0 flex items-center justify-center 
-                          ${
-                            unit.team === playerTeam
-                              ? "text-blue-600"
-                              : "text-red-600"
-                          }
-                          ${unit.movementLeft === 0 ? "opacity-50" : ""}`}
+            className="absolute inset-0 pointer-events-none z-10"
+            style={{
+              width: `${unit.dimensions.width * 64}px`,
+              height: `${unit.dimensions.height * 64}px`,
+            }}
             onMouseEnter={() => setHoveredUnit(unit)}
             onMouseLeave={() => setHoveredUnit(null)}
           >
             <img
               src={unit.sprite}
               alt={unit.name}
-              className={`w-16 h-16 object-contain ${
+              className={`w-full h-full object-contain ${
                 npTargetingMode && isInPreview ? "filter brightness-110" : ""
               } ${unit.canCounter ? "ring-2 ring-orange-400" : ""}`}
+              style={{ imageRendering: "pixelated" }}
             />
 
             {/* Vehicle size indicator */}
-            {unit.isVehicle && (
-              <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 rounded">
-                {unit.dimensions.width}×{unit.dimensions.height}
-              </div>
-            )}
+            <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 rounded">
+              {unit.dimensions.width}×{unit.dimensions.height}
+            </div>
 
             {/* Passenger count for vehicles */}
             {unit.isVehicle &&
@@ -4523,14 +4519,63 @@ const TacticalGame = ({ username, roomId }) => {
             >
               {unit.z}
             </div>
-            {/* Vehicle outline when no unit is on top */}
-            {!unit && vehicle && isVisible && (
-              <div className="absolute inset-0 border-2 border-blue-400 border-dashed bg-blue-100 bg-opacity-30 flex items-center justify-center">
-                <div className="text-blue-600 text-xs font-bold">
-                  {vehicle.name}
-                </div>
+
+            {/* Tooltip for multi-cell units */}
+            {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
+          </div>
+        )}
+
+        {/* Multi-cell unit outline for non-origin cells */}
+        {unit && unit.isBiggerThanOneCell && !isUnitOrigin && isVisible && (
+          <div className="absolute inset-0 border-2 border-blue-400 border-dashed bg-blue-100 bg-opacity-30 flex items-center justify-center">
+            <div className="text-blue-600 text-xs font-bold opacity-50">
+              {unit.name}
+            </div>
+          </div>
+        )}
+
+        {/* Regular single-cell unit rendering */}
+        {unit && !unit.isBiggerThanOneCell && isVisible && (
+          <div
+            className={`absolute inset-0 flex items-center justify-center 
+                        ${
+                          unit.team === playerTeam
+                            ? "text-blue-600"
+                            : "text-red-600"
+                        }
+                        ${unit.movementLeft === 0 ? "opacity-50" : ""}`}
+            onMouseEnter={() => setHoveredUnit(unit)}
+            onMouseLeave={() => setHoveredUnit(null)}
+          >
+            <img
+              src={unit.sprite}
+              alt={unit.name}
+              className={`w-16 h-16 object-contain ${
+                npTargetingMode && isInPreview ? "filter brightness-110" : ""
+              } ${unit.canCounter ? "ring-2 ring-orange-400" : ""}`}
+            />
+
+            {/* Counter indicator for single-cell units */}
+            {unit.canCounter && (
+              <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                <Target size={10} className="text-white" />
               </div>
             )}
+
+            {/* Height indicator for single-cell units */}
+            <div
+              className={`absolute -bottom-1 -left-1 w-4 h-4 text-white text-xs rounded-full flex items-center justify-center ${
+                getHeightBaseColor(unit.z) === "green"
+                  ? "bg-green-700"
+                  : getHeightBaseColor(unit.z) === "blue"
+                  ? "bg-blue-700"
+                  : "bg-purple-700"
+              }`}
+            >
+              {unit.z}
+            </div>
+
+            {/* Tooltip for single-cell units */}
             {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
           </div>
         )}
