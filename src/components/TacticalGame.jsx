@@ -2845,6 +2845,8 @@ const TacticalGame = ({ username, roomId }) => {
           roundUsed: gameState.currentRound,
         });
       }
+
+      console.log("newCooldown is now:", newCooldownUntil);
       setActiveNP(null);
       setNPTargetingMode(false);
       setShowNPMenu(false);
@@ -2882,7 +2884,35 @@ const TacticalGame = ({ username, roomId }) => {
       if (result.success) {
         const newCooldownUntil =
           gameState.currentTurn +
-          Math.floor(impl.cooldown * gameState.turnsPerRound);
+          Math.floor(skillImpl.cooldown * gameState.turnsPerRound);
+
+        // Create deep copy with preserved cooldowns
+        const updatedGameState = {
+          ...result.updatedGameState,
+          units: result.updatedGameState.units.map((updatedUnit) => {
+            if (updatedUnit.id === unit.id) {
+              return {
+                ...updatedUnit,
+                skills: updatedUnit.skills.map((skill) => {
+                  if (skill.id === skillRef.id) {
+                    return {
+                      ...skill,
+                      onCooldownUntil: newCooldownUntil,
+                    };
+                  }
+                  return skill;
+                }),
+              };
+            }
+            return updatedUnit;
+          }),
+        };
+
+        console.log("Skill execution (deep copy on Targeting Self):", {
+          success: result.success,
+          updatedState: result.updatedGameState,
+          onCooldownUntil: newCooldownUntil,
+        });
 
         sendJsonMessage({
           type: "GAME_ACTION",
@@ -2891,10 +2921,12 @@ const TacticalGame = ({ username, roomId }) => {
           casterId: unit.id,
           targetX: unit.x,
           targetY: unit.y,
-          updatedGameState: result.updatedGameState,
+          updatedGameState: updatedGameState,
           newCooldownUntil: newCooldownUntil,
         });
+        console.log("newCooldown is now:", newCooldownUntil);
       }
+
       setActiveSkill(null);
       setSkillTargetingMode(false);
 
@@ -3199,8 +3231,9 @@ const TacticalGame = ({ username, roomId }) => {
     });
   };
 
-  const SkillsMenu = ({ unit }) => {
+  const SkillsMenu = ({ unitId, gameState }) => {
     const isPlayerTurn = gameState.turn === playerTeam;
+    const unit = gameState.units.find((u) => u.id === unitId);
     if (!showSkillsMenu) return null;
     const hasCounterPending = hasCounterPendingOnBoard(gameState);
 
@@ -3421,8 +3454,9 @@ const TacticalGame = ({ username, roomId }) => {
     );
   };
 
-  const NoblePhantasmMenu = ({ unit }) => {
+  const NoblePhantasmMenu = ({ unitId, gameState }) => {
     const isPlayerTurn = gameState.turn === playerTeam;
+    const unit = gameState.units.find((u) => u.id === unitId);
     if (!showNPMenu) return null;
 
     // Helper function to check counter restrictions
@@ -3835,6 +3869,7 @@ const TacticalGame = ({ username, roomId }) => {
         console.log("Skill execution result on TacticalGame:", {
           success: result.success,
           updatedState: result.updatedGameState,
+          nowCooldownIs: newCooldownUntil,
         });
 
         // Create deep copy with preserved cooldowns
@@ -3862,6 +3897,7 @@ const TacticalGame = ({ username, roomId }) => {
         console.log("Skill execution (deep copy):", {
           success: result.success,
           updatedState: result.updatedGameState,
+          onCooldownUntil: newCooldownUntil,
         });
 
         sendJsonMessage({
@@ -4939,8 +4975,12 @@ const TacticalGame = ({ username, roomId }) => {
       {contextMenu && activeUnit && (
         <ContextMenu position={contextMenu} unit={activeUnit} />
       )}
-      {showSkillsMenu && activeUnit && <SkillsMenu unit={activeUnit} />}
-      {showNPMenu && activeUnit && <NoblePhantasmMenu unit={activeUnit} />}
+      {showSkillsMenu && activeUnit && (
+        <SkillsMenu unitId={activeUnit.id} gameState={gameState} />
+      )}
+      {showNPMenu && activeUnit && (
+        <NoblePhantasmMenu unitId={activeUnit.id} gameState={gameState} />
+      )}
       {showProfile && activeUnit && <ProfileSheet unit={activeUnit} />}
 
       {showCombatSelection && activeUnit && (
