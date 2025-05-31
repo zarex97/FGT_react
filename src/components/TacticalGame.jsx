@@ -18,6 +18,8 @@ import {
   ChevronDown,
   ArrowUp,
   ArrowDown,
+  ArrowLeft,
+  ArrowRight,
 } from "lucide-react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import { createMahalapraya } from "../game/skills/Mahalapraya";
@@ -895,6 +897,45 @@ const TacticalGame = ({ username, roomId }) => {
         {hasUsedDetection && <span className="ml-2 text-xs">(Used)</span>}
       </button>
     );
+  };
+
+  const handleBoardUnit = (vehicleId, unitId, relativeX, relativeY) => {
+    sendJsonMessage({
+      type: "GAME_ACTION",
+      action: "BOARD_VEHICLE",
+      vehicleId: vehicleId,
+      unitId: unitId,
+      relativeX: relativeX,
+      relativeY: relativeY,
+    });
+  };
+
+  const handleDisembarkUnit = (
+    vehicleId,
+    unitId,
+    targetX,
+    targetY,
+    targetZ
+  ) => {
+    sendJsonMessage({
+      type: "GAME_ACTION",
+      action: "DISEMBARK_VEHICLE",
+      vehicleId: vehicleId,
+      unitId: unitId,
+      targetX: targetX,
+      targetY: targetY,
+      targetZ: targetZ,
+    });
+  };
+
+  const handleVehicleInspect = (vehicle) => {
+    setSelectedVehicle(vehicle);
+    setShowVehicleInspector(true);
+  };
+
+  const handleVehicleManagePassengers = () => {
+    setShowVehicleInspector(false);
+    setShowVehiclePassengerManager(true);
   };
 
   // Checks that no unit is in the middle of countering
@@ -3149,6 +3190,100 @@ const TacticalGame = ({ username, roomId }) => {
             <span className="text-xs text-orange-500 ml-auto">(Blocked)</span>
           )}
         </button>
+
+        {/* Add vehicle-specific options */}
+        {unit.isVehicle && (
+          <>
+            <button
+              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+              onClick={() => {
+                handleVehicleInspect(unit);
+                setContextMenu(null);
+              }}
+            >
+              <User size={16} /> Inspect Vehicle
+            </button>
+            <button
+              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+              onClick={() => {
+                setSelectedVehicle(unit);
+                setShowVehiclePassengerManager(true);
+                setContextMenu(null);
+              }}
+            >
+              <Move size={16} /> Manage Passengers
+            </button>
+          </>
+        )}
+
+        {/* Add boarding option for units near vehicles */}
+        {!unit.isVehicle &&
+          !unit.aboardVehicle &&
+          (() => {
+            const nearbyVehicle = gameState.units.find((otherUnit) => {
+              if (!otherUnit.isVehicle || otherUnit.team !== unit.team)
+                return false;
+              const disembarkPositions = VehicleUtils.getDisembarkPositions(
+                otherUnit,
+                gameState
+              );
+              return disembarkPositions.some(
+                (pos) =>
+                  pos.x === unit.x && pos.y === unit.y && pos.z === unit.z
+              );
+            });
+
+            return nearbyVehicle ? (
+              <button
+                className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+                onClick={() => {
+                  // Auto-board to nearby vehicle
+                  const result = VehicleUtils.boardUnitAuto(
+                    nearbyVehicle,
+                    unit,
+                    gameState
+                  );
+                  if (result) {
+                    handleBoardUnit(
+                      nearbyVehicle.id,
+                      unit.id,
+                      result.updatedUnit.vehicleRelativePosition.x,
+                      result.updatedUnit.vehicleRelativePosition.y
+                    );
+                  }
+                  setContextMenu(null);
+                }}
+              >
+                <ArrowRight size={16} /> Board {nearbyVehicle.name}
+              </button>
+            ) : null;
+          })()}
+
+        {/* Add disembark option for units aboard vehicles */}
+        {unit.aboardVehicle && (
+          <button
+            className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+            onClick={() => {
+              const vehicle = gameState.units.find(
+                (v) => v.id === unit.aboardVehicle
+              );
+              if (vehicle) {
+                const disembarkPositions = VehicleUtils.getDisembarkPositions(
+                  vehicle,
+                  gameState
+                );
+                if (disembarkPositions.length > 0) {
+                  const pos = disembarkPositions[0];
+                  handleDisembarkUnit(vehicle.id, unit.id, pos.x, pos.y, pos.z);
+                }
+              }
+              setContextMenu(null);
+            }}
+          >
+            <ArrowLeft size={16} /> Disembark
+          </button>
+        )}
+
         <button
           className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2
                         ${isBlockedByCounter ? "opacity-50" : ""}`}
@@ -4643,14 +4778,48 @@ const TacticalGame = ({ username, roomId }) => {
               {unit.dimensions.width}×{unit.dimensions.height}
             </div>
 
-            {/* Passenger count for vehicles */}
+            {/* Passenger count for vehicles - UPDATED */}
             {unit.isVehicle &&
               unit.containedUnits &&
               unit.containedUnits.length > 0 && (
                 <div className="absolute bottom-0 left-0 bg-green-500 text-white text-xs px-1 rounded">
-                  👥{unit.containedUnits.length}
+                  👥{unit.containedUnits.length}/{unit.maxPassengers || 10}
                 </div>
               )}
+
+            {/* Show individual passengers on vehicle grid - NEW */}
+            {unit.isVehicle &&
+              unit.containedUnits &&
+              unit.containedUnits.map((passengerId) => {
+                const passenger = gameState.units.find(
+                  (u) => u.id === passengerId
+                );
+                if (!passenger || !passenger.vehicleRelativePosition)
+                  return null;
+
+                return (
+                  <div
+                    key={passengerId}
+                    className="absolute w-4 h-4 bg-yellow-400 border border-yellow-600 rounded-full flex items-center justify-center text-xs"
+                    style={{
+                      left: `${
+                        passenger.vehicleRelativePosition.x *
+                          (64 / unit.dimensions.width) +
+                        2
+                      }px`,
+                      top: `${
+                        passenger.vehicleRelativePosition.y *
+                          (64 / unit.dimensions.height) +
+                        2
+                      }px`,
+                      fontSize: "8px",
+                    }}
+                    title={`${passenger.name} at (${passenger.vehicleRelativePosition.x}, ${passenger.vehicleRelativePosition.y})`}
+                  >
+                    {passenger.name?.charAt(0) || "U"}
+                  </div>
+                );
+              })}
 
             {/* Counter indicator */}
             {unit.canCounter && (
@@ -4711,6 +4880,13 @@ const TacticalGame = ({ username, roomId }) => {
             {unit.canCounter && (
               <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
                 <Target size={10} className="text-white" />
+              </div>
+            )}
+
+            {/* Vehicle boarding indicator for units aboard vehicles */}
+            {unit.aboardVehicle && (
+              <div className="absolute -top-1 -left-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                <div className="text-white text-xs">🚢</div>
               </div>
             )}
 
@@ -5179,6 +5355,31 @@ const TacticalGame = ({ username, roomId }) => {
       <SaveLoadMenu />
       <AutosaveMenu />
       <SaveLoadNotification />
+      {showVehicleInspector && selectedVehicle && (
+        <VehicleInspector
+          vehicle={selectedVehicle}
+          gameState={gameState}
+          onClose={() => {
+            setShowVehicleInspector(false);
+            setSelectedVehicle(null);
+          }}
+          onManagePassengers={handleVehicleManagePassengers}
+        />
+      )}
+
+      {showVehiclePassengerManager && selectedVehicle && (
+        <VehiclePassengerManager
+          vehicle={selectedVehicle}
+          gameState={gameState}
+          playerTeam={playerTeam}
+          onClose={() => {
+            setShowVehiclePassengerManager(false);
+            setSelectedVehicle(null);
+          }}
+          onBoardUnit={handleBoardUnit}
+          onDisembarkUnit={handleDisembarkUnit}
+        />
+      )}
     </div>
   );
 };

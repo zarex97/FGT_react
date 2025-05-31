@@ -893,47 +893,103 @@ const handleMessage = (bytes, uuid) => {
             break;
           }
 
+          // Initialize containedUnits if it doesn't exist
+          if (!boardingVehicle.containedUnits) {
+            boardingVehicle.containedUnits = [];
+          }
+
           // Check if vehicle has space
-          if (
-            boardingVehicle.containedUnits.length >=
-            boardingVehicle.maxPassengers
-          ) {
+          const maxPassengers = boardingVehicle.maxPassengers || 10;
+          if (boardingVehicle.containedUnits.length >= maxPassengers) {
             console.log("❌ Vehicle is at maximum capacity");
             break;
           }
 
-          // Check if unit is adjacent to vehicle
-          const vehiclePositions = VehicleUtils.getDisembarkPositions(
-            boardingVehicle,
-            room.gameState
-          );
-          const isAdjacent = vehiclePositions.some(
-            (pos) =>
-              pos.x === boardingUnit.x &&
-              pos.y === boardingUnit.y &&
-              pos.z === boardingUnit.z
+          // Check if unit is already aboard a vehicle
+          if (boardingUnit.aboardVehicle) {
+            console.log("❌ Unit is already aboard a vehicle");
+            break;
+          }
+
+          // Validate relative position
+          const relativeX = message.relativeX;
+          const relativeY = message.relativeY;
+
+          if (
+            relativeX < 0 ||
+            relativeX >= boardingVehicle.dimensions.width ||
+            relativeY < 0 ||
+            relativeY >= boardingVehicle.dimensions.height
+          ) {
+            console.log(
+              `❌ Invalid relative position (${relativeX}, ${relativeY})`
+            );
+            break;
+          }
+
+          // Check if the relative position is already occupied
+          const isPositionOccupied = boardingVehicle.containedUnits.some(
+            (passengerId) => {
+              const passenger = room.gameState.units.find(
+                (u) => u.id === passengerId
+              );
+              return (
+                passenger?.vehicleRelativePosition?.x === relativeX &&
+                passenger?.vehicleRelativePosition?.y === relativeY
+              );
+            }
           );
 
-          if (!isAdjacent) {
-            console.log("❌ Unit is not adjacent to vehicle");
+          if (isPositionOccupied) {
+            console.log(
+              `❌ Relative position (${relativeX}, ${relativeY}) is already occupied`
+            );
+            break;
+          }
+
+          // Check if unit can board (team compatibility)
+          if (
+            !VehicleUtils.canUnitBoardVehicle(
+              boardingUnit,
+              boardingVehicle,
+              room.gameState
+            )
+          ) {
+            console.log(
+              "❌ Unit cannot board this vehicle (team restrictions)"
+            );
             break;
           }
 
           console.log(
-            `🚌 ${boardingUnit.name} boarding ${boardingVehicle.name}`
+            `🚌 ${boardingUnit.name} boarding ${boardingVehicle.name} at relative position (${relativeX}, ${relativeY})`
           );
 
-          const boardResult = VehicleUtils.boardUnit(
+          // Calculate world position for the passenger
+          const worldPos = VehicleUtils.relativeToWorld(
             boardingVehicle,
-            boardingUnit,
-            message.relativeX,
-            message.relativeY
+            relativeX,
+            relativeY
           );
 
+          // Update both units
           room.gameState.units = room.gameState.units.map((unit) => {
-            if (unit.id === boardingVehicle.id)
-              return boardResult.updatedVehicle;
-            if (unit.id === boardingUnit.id) return boardResult.updatedUnit;
+            if (unit.id === boardingVehicle.id) {
+              return {
+                ...unit,
+                containedUnits: [...unit.containedUnits, boardingUnit.id],
+              };
+            }
+            if (unit.id === boardingUnit.id) {
+              return {
+                ...unit,
+                x: worldPos.x,
+                y: worldPos.y,
+                z: worldPos.z,
+                aboardVehicle: boardingVehicle.id,
+                vehicleRelativePosition: { x: relativeX, y: relativeY },
+              };
+            }
             return unit;
           });
 
@@ -967,39 +1023,55 @@ const handleMessage = (bytes, uuid) => {
           }
 
           // Validate disembark position
-          const disembarkPositions = VehicleUtils.getDisembarkPositions(
-            disembarkVehicle,
-            room.gameState
-          );
-          const validPosition = disembarkPositions.some(
-            (pos) =>
-              pos.x === message.targetX &&
-              pos.y === message.targetY &&
-              pos.z === message.targetZ
-          );
+          const targetX = message.targetX;
+          const targetY = message.targetY;
+          const targetZ = message.targetZ;
 
-          if (!validPosition) {
-            console.log("❌ Invalid disembark position");
+          // Check if the target position is valid and not occupied
+          if (
+            VehicleUtils.isPositionOccupied(
+              room.gameState,
+              targetX,
+              targetY,
+              targetZ
+            )
+          ) {
+            console.log("❌ Target disembark position is occupied");
+            break;
+          }
+
+          // Check if target position has valid terrain
+          const targetedCell =
+            room.gameState.terrain?.[targetZ]?.[targetX]?.[targetY];
+          if (!targetedCell || !targetedCell.isFloor) {
+            console.log("❌ Target disembark position has no valid floor");
             break;
           }
 
           console.log(
-            `🚶 ${disembarkUnit.name} disembarking from ${disembarkVehicle.name}`
+            `🚶 ${disembarkUnit.name} disembarking from ${disembarkVehicle.name} to (${targetX}, ${targetY}, ${targetZ})`
           );
 
-          const disembarkResult = VehicleUtils.disembarkUnit(
-            disembarkVehicle,
-            disembarkUnit,
-            message.targetX,
-            message.targetY,
-            message.targetZ
-          );
-
+          // Update both units
           room.gameState.units = room.gameState.units.map((unit) => {
-            if (unit.id === disembarkVehicle.id)
-              return disembarkResult.updatedVehicle;
-            if (unit.id === disembarkUnit.id)
-              return disembarkResult.updatedUnit;
+            if (unit.id === disembarkVehicle.id) {
+              return {
+                ...unit,
+                containedUnits: unit.containedUnits.filter(
+                  (id) => id !== disembarkUnit.id
+                ),
+              };
+            }
+            if (unit.id === disembarkUnit.id) {
+              return {
+                ...unit,
+                x: targetX,
+                y: targetY,
+                z: targetZ,
+                aboardVehicle: null,
+                vehicleRelativePosition: null,
+              };
+            }
             return unit;
           });
 
