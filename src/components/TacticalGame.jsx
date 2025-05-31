@@ -3701,22 +3701,36 @@ const TacticalGame = ({ username, roomId }) => {
   const getUnitAt = (x, y, z = currentViewHeight) => {
     if (!gameState?.units) return null;
 
-    // First check for regular units at exact position
-    const regularUnit = gameState.units.find((unit) => {
-      return !unit.isVehicle && unit.x === x && unit.y === y && unit.z === z;
-    });
-
-    if (regularUnit) {
-      return regularUnit;
+    // Check all units for the position
+    for (const unit of gameState.units) {
+      // For regular units (single cell)
+      if (!unit.isBiggerThanOneCell) {
+        if (unit.x === x && unit.y === y && unit.z === z) {
+          return unit;
+        }
+      } else {
+        // For multi-cell units (vehicles, large creatures, etc.)
+        if (unit.boardCells && Array.isArray(unit.boardCells)) {
+          // Check if any of the unit's board cells match the target position
+          const occupiesPosition = unit.boardCells.some(
+            (cell) => cell.x === x && cell.y === y && cell.z === z
+          );
+          if (occupiesPosition) {
+            return unit;
+          }
+        } else {
+          // Fallback: use VehicleUtils for vehicles without boardCells
+          if (
+            unit.isVehicle &&
+            VehicleUtils.isPositionInVehicle(unit, x, y, z)
+          ) {
+            return unit;
+          }
+        }
+      }
     }
 
-    // Then check for vehicles that occupy this position
-    const vehicle = gameState.units.find((unit) => {
-      if (!unit.isVehicle) return false;
-      return VehicleUtils.isPositionInVehicle(unit, x, y, z);
-    });
-
-    return vehicle || null;
+    return null;
   };
 
   const calculateDistance = (x1, y1, x2, y2) => {
@@ -3987,7 +4001,7 @@ const TacticalGame = ({ username, roomId }) => {
       ].team;
 
     if (selectedUnit) {
-      if (selectedUnit.isVehicle) {
+      if (selectedUnit.isVehicle || selectedUnit.isVehicle) {
         // Handle vehicle movement
         const validMove = highlightedCells.some(
           (move) => move.x === x && move.y === y
@@ -4241,6 +4255,11 @@ const TacticalGame = ({ username, roomId }) => {
 
     // SIMPLIFIED: Just get the unit at current height, don't overcomplicate stacking
     const unit = getUnitAt(x, y, currentZ);
+    const isUnitOrigin =
+      unit && unit.isBiggerThanOneCell
+        ? unit.x === x && unit.y === y
+        : unit && unit.x === x && unit.y === y;
+
     const vehicle = !unit
       ? VehicleUtils.findVehicleAtPosition(gameState, x, y, currentZ)
       : null;

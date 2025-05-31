@@ -227,12 +227,7 @@ export const VehicleUtils = {
 
     return gameState.units.some((unit) => {
       if (!unit) return false;
-
-      if (unit.isVehicle) {
-        return VehicleUtils.isPositionInVehicle(unit, x, y, z);
-      } else {
-        return unit.x === x && unit.y === y && unit.z === z;
-      }
+      return VehicleUtils.doesUnitOccupyPosition(unit, x, y, z);
     });
   },
 
@@ -358,6 +353,28 @@ export const VehicleUtils = {
     );
   },
 
+  // NEW: Check if a unit occupies a specific position (works with any multi-cell unit)
+  doesUnitOccupyPosition: (unit, x, y, z) => {
+    if (!unit) return false;
+
+    if (!unit.isBiggerThanOneCell) {
+      // Single-cell unit
+      return unit.x === x && unit.y === y && unit.z === z;
+    } else {
+      // Multi-cell unit - check boardCells first
+      if (unit.boardCells && Array.isArray(unit.boardCells)) {
+        return unit.boardCells.some(
+          (cell) => cell.x === x && cell.y === y && cell.z === z
+        );
+      } else if (unit.isVehicle) {
+        // Fallback for vehicles without boardCells
+        return VehicleUtils.isPositionInVehicle(unit, x, y, z);
+      }
+    }
+
+    return false;
+  },
+
   // Validate vehicle template
   validateVehicleTemplate: (template) => {
     const required = ["name", "dimensions", "hp", "movementRange"];
@@ -376,6 +393,8 @@ export const VehicleUtils = {
     return true;
   },
 };
+
+// NEW: Check if a unit occupies a specific position (works with any multi-cell unit)
 
 // Helper function for distance calculation if not already available
 const calculateDistance = (x1, y1, x2, y2) => {

@@ -18,6 +18,7 @@ import { createWaterBoat } from "../materials/archer/ArcherMaterials.js";
 const CreateWaterBoatMicroAction = new MicroAction({
   targetingType: TargetingType.SINGLE_TARGET,
   range: 3,
+  dimensions: { width: 3, height: 3 }, // ADD dimensions for the AOE
   effectLogic: (gameState, caster, affectedCells) => {
     console.log("🚤❄️ Anastasia summoning Water Boat");
 
@@ -33,15 +34,37 @@ const CreateWaterBoatMicroAction = new MicroAction({
       return gameState;
     }
 
-    // Get target position from affectedCells
-    const targetCell = Array.from(affectedCells)[0];
-    const [x, y] = targetCell.split(",").map(Number);
+    // Get the center position from the affected cells
+    // For a 3x3 AOE, we want to place the vehicle's origin (top-left) appropriately
+    const cellsArray = Array.from(affectedCells);
 
-    // Check if area is clear for 3x3 vehicle (FIXED)
+    if (cellsArray.length === 0) {
+      console.log("❌ No affected cells for water boat summoning");
+      return gameState;
+    }
+
+    // Parse all affected cell coordinates
+    const cellCoords = cellsArray.map((cell) => {
+      const [x, y] = cell.split(",").map(Number);
+      return { x, y };
+    });
+
+    // Find the top-left corner of the affected area to use as vehicle origin
+    const minX = Math.min(...cellCoords.map((coord) => coord.x));
+    const minY = Math.min(...cellCoords.map((coord) => coord.y));
+
+    const vehicleOriginX = minX;
+    const vehicleOriginY = minY;
+
+    console.log(
+      `🚤 Placing water boat origin at (${vehicleOriginX}, ${vehicleOriginY})`
+    );
+
+    // Check if the entire 3x3 area is clear for the vehicle
     const canPlace = VehicleUtils.canVehicleMoveTo(
-      { dimensions: { width: 3, height: 3 } }, // temporary object for checking
-      x,
-      y,
+      { dimensions: { width: 3, height: 3 } },
+      vehicleOriginX,
+      vehicleOriginY,
       1, // z level
       gameState,
       11 // grid size

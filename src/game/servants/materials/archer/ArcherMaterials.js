@@ -255,6 +255,7 @@ export const waterBoatAttributes = {
   movementLeft: 0,
   hasAttacked: false,
   isVehicle: true,
+  isBiggerThanOneCell: false,
 };
 
 // Ice Golem Template

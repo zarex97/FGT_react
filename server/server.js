@@ -688,9 +688,9 @@ const handleMessage = (bytes, uuid) => {
             ...message.unit,
             z: message.unit.z || 1, // Default to height 1 if not specified
           };
-          // If this is a vehicle, set up vehicle-specific properties
-          if (newUnit.isVehicle) {
-            console.log(`🚤 Adding vehicle: ${newUnit.name}`);
+          // If this is a multi-cell unit, ensure boardCells are generated
+          if (newUnit.isBiggerThanOneCell) {
+            console.log(`🚤 Adding multi-cell vehicle: ${newUnit.name}`);
 
             // Ensure vehicle has all required properties
             if (!newUnit.containedUnits) newUnit.containedUnits = [];
@@ -705,11 +705,13 @@ const handleMessage = (bytes, uuid) => {
 
             // Apply vehicle terrain effects after adding
             room.gameState.units.push(newUnit);
-            room.gameState = VehicleUtils.applyVehicleTerrainEffects(
-              room.gameState
-            );
+            if (newUnit.isVehicle) {
+              room.gameState = VehicleUtils.applyVehicleTerrainEffects(
+                room.gameState
+              );
+            }
           } else {
-            // Regular unit
+            // Regular unit or single-cell unit
             room.gameState.units.push(newUnit);
           }
           broadcastToRoom(player.currentRoom);
