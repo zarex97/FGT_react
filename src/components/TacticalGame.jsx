@@ -4084,7 +4084,7 @@ const TacticalGame = ({ username, roomId }) => {
     if (unit.isVehicle) {
       return VehicleUtils.getPossibleVehicleMoves(unit, gameState, GRID_SIZE);
     } else {
-      //  unit movement logic
+      // Enhanced movement logic for units that may be aboard vehicles
       const moves = [];
       const range = unit.movementLeft;
 
@@ -4093,7 +4093,16 @@ const TacticalGame = ({ username, roomId }) => {
           const distance = calculateDistance(unit.x, unit.y, x, y);
           if (distance <= range && distance > 0) {
             const targetCell = getCellAt(x, y, unit.z);
-            if (targetCell && targetCell.isFloor && !getUnitAt(x, y, unit.z)) {
+
+            // Check if the target cell has valid terrain (floor)
+            if (!targetCell || !targetCell.isFloor) {
+              continue; // Skip cells without valid floor
+            }
+
+            // Enhanced occupancy check that considers vehicle boarding context
+            const canMoveToPosition = canUnitMoveToPosition(unit, x, y, unit.z);
+
+            if (canMoveToPosition) {
               moves.push({ x, y, z: unit.z, distance });
             }
           }
@@ -4101,6 +4110,66 @@ const TacticalGame = ({ username, roomId }) => {
       }
       return moves;
     }
+  };
+
+  const canUnitMoveToPosition = (unit, targetX, targetY, targetZ) => {
+    // First, check if there's a regular unit blocking this position
+    // This handles the standard case of units blocking each other
+    const blockingUnit = getUnitAt(targetX, targetY, targetZ);
+
+    if (
+      blockingUnit &&
+      !blockingUnit.isVehicle &&
+      !blockingUnit.isBiggerThanOneCell
+    ) {
+      // There's a regular unit at this position, so it's blocked
+      return false;
+    }
+
+    // Now we need to handle the vehicle context
+    const vehicleAtPosition = gameState.units.find(
+      (vehicle) =>
+        vehicle.isVehicle &&
+        VehicleUtils.isPositionInVehicle(vehicle, targetX, targetY, targetZ)
+    );
+
+    if (vehicleAtPosition) {
+      // There's a vehicle at this position
+      if (unit.aboardVehicle === vehicleAtPosition.id) {
+        // The unit is trying to move within their own vehicle - this should always be allowed
+        // This is like walking from one room to another on the same ship
+        return true;
+      } else if (
+        unit.aboardVehicle &&
+        unit.aboardVehicle !== vehicleAtPosition.id
+      ) {
+        // The unit is aboard a different vehicle trying to move to another vehicle
+        // This would require disembarking first, which we don't allow in a single move
+        return false;
+      } else if (!unit.aboardVehicle && vehicleAtPosition.team === unit.team) {
+        // The unit is not aboard any vehicle but trying to move to an allied vehicle
+        // This represents boarding the vehicle, which should be allowed
+        return true;
+      } else if (!unit.aboardVehicle && vehicleAtPosition.team !== unit.team) {
+        // The unit is trying to move to an enemy vehicle - this should be blocked
+        return false;
+      }
+    }
+
+    // If we get here, there's no vehicle at the position, so we just need to check
+    // if there are any other blocking units (like multi-cell non-vehicle units)
+    const otherBlockingUnit = gameState.units.find(
+      (otherUnit) =>
+        otherUnit.id !== unit.id &&
+        VehicleUtils.doesUnitOccupyPosition(
+          otherUnit,
+          targetX,
+          targetY,
+          targetZ
+        )
+    );
+
+    return !otherBlockingUnit;
   };
 
   const handleAction = (action, unit) => {
@@ -4157,14 +4226,19 @@ const TacticalGame = ({ username, roomId }) => {
   };
 
   const handleCellClick = (x, y) => {
+    // First, clean up any existing context menus and active units
+    // This ensures we start each click interaction with a clean slate
     setContextMenu(null);
     setActiveUnit(null);
 
+    // Reset movement preview mode if we're clicking while in that state
+    // This prevents visual artifacts when switching between different interaction types
     if (movementPreviewMode) {
       setMovementPreviewMode(false);
       setPreviewCells(new Set());
     }
 
+    // SKILL TARGETING MODE: Handle skill execution when player is targeting with a skill
     if (skillTargetingMode && activeSkill) {
       const caster = selectedUnit;
       if (!caster) return;
@@ -4191,7 +4265,7 @@ const TacticalGame = ({ username, roomId }) => {
           nowCooldownIs: newCooldownUntil,
         });
 
-        // Create deep copy with preserved cooldowns
+        // Create deep copy with preserved cooldowns to maintain game state integrity
         const updatedGameState = {
           ...result.updatedGameState,
           units: result.updatedGameState.units.map((updatedUnit) => {
@@ -4213,12 +4287,7 @@ const TacticalGame = ({ username, roomId }) => {
           }),
         };
 
-        console.log("Skill execution (deep copy):", {
-          success: result.success,
-          updatedState: result.updatedGameState,
-          onCooldownUntil: newCooldownUntil,
-        });
-
+        // Send the skill execution to the server
         sendJsonMessage({
           type: "GAME_ACTION",
           action: "USE_SKILL",
@@ -4231,16 +4300,16 @@ const TacticalGame = ({ username, roomId }) => {
         });
       }
 
-      // Reset targeting mode
+      // Reset all targeting-related states after skill execution
       setSkillTargetingMode(false);
       setActiveSkill(null);
       setPreviewCells(new Set());
       setSelectedUnit(null);
-      setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
+      setMovementPreviewMode(false);
       return;
     }
 
-    // Handle action targeting
+    // ACTION TARGETING MODE: Handle action execution when player is targeting with an action
     if (actionTargetingMode && activeAction) {
       const caster = selectedUnit;
       if (!caster) return;
@@ -4251,6 +4320,8 @@ const TacticalGame = ({ username, roomId }) => {
         const newCooldownUntil =
           gameState.currentTurn +
           Math.floor(impl.cooldown * gameState.turnsPerRound);
+
+        // Maintain action cooldown state consistency
         const updatedGameState = {
           ...result.updatedGameState,
           units: result.updatedGameState.units.map((updatedUnit) => {
@@ -4288,14 +4359,16 @@ const TacticalGame = ({ username, roomId }) => {
         });
       }
 
+      // Clean up action targeting states
       setActionTargetingMode(false);
       setActiveAction(null);
       setPreviewCells(new Set());
       setSelectedUnit(null);
-      setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
+      setMovementPreviewMode(false);
       return;
     }
 
+    // NOBLE PHANTASM TARGETING MODE: Handle NP execution when player is targeting with a Noble Phantasm
     if (npTargetingMode && activeNP) {
       const caster = selectedUnit;
       if (!caster) return;
@@ -4306,6 +4379,8 @@ const TacticalGame = ({ username, roomId }) => {
         const newCooldownUntil =
           gameState.currentTurn +
           Math.floor(impl.cooldown * gameState.turnsPerRound);
+
+        // Preserve Noble Phantasm state integrity
         const updatedGameState = {
           ...result.updatedGameState,
           units: result.updatedGameState.units.map((updatedUnit) => {
@@ -4340,33 +4415,36 @@ const TacticalGame = ({ username, roomId }) => {
         });
       }
 
+      // Reset Noble Phantasm targeting states
       setNPTargetingMode(false);
       setActiveNP(null);
       setPreviewCells(new Set());
       setSelectedUnit(null);
-      setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
+      setMovementPreviewMode(false);
       return;
     }
 
-    //logic for clicking when trying to move
+    // MOVEMENT AND SELECTION LOGIC: This is where the enhanced movement system comes into play
 
-    const clickedUnit = getUnitAt(x, y, currentViewHeight);
+    // Get the player's team information for ownership validation
     const playerTeam =
       gameState.players[
         Object.keys(gameState.players).find(
           (id) => gameState.players[id].username === username
         )
-      ].team;
+      ]?.team;
 
+    // MOVEMENT PROCESSING: Handle movement when a unit is already selected
     if (selectedUnit) {
+      // VEHICLE AND MULTI-CELL UNIT MOVEMENT
       if (selectedUnit.isVehicle || selectedUnit.isBiggerThanOneCell) {
-        // Handle vehicle/big unit movement
+        // Handle vehicle/big unit movement using existing specialized logic
         const validMove = highlightedCells.some(
           (move) => move.x === x && move.y === y
         );
 
         if (validMove) {
-          // Check if the move is actually valid (double-check)
+          // Double-check move validation for vehicles
           if (
             selectedUnit.isVehicle &&
             VehicleUtils.canVehicleMoveTo(
@@ -4387,14 +4465,14 @@ const TacticalGame = ({ username, roomId }) => {
             moveUnit(selectedUnit, x, y, selectedUnit.z);
           } else {
             console.log("Vehicle/Big unit move validation failed");
-            // *** UNIT DESELECTION POINT 1 ***
+            // Reset selection states on failed validation
             setSelectedUnit(null);
             setHighlightedCells([]);
-            setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
-            setPreviewCells(new Set()); // *** RESET PREVIEW CELLS ***
+            setMovementPreviewMode(false);
+            setPreviewCells(new Set());
           }
         } else {
-          // Check for elevator interaction or invalid move
+          // Handle elevator interaction for multi-cell units if needed
           const targetCell = getCellAt(x, y, selectedUnit.z);
           if (
             targetCell &&
@@ -4402,28 +4480,36 @@ const TacticalGame = ({ username, roomId }) => {
             selectedUnit.x === x &&
             selectedUnit.y === y
           ) {
-            // Handle elevator for vehicles (if desired)
-            console.log("Vehicle elevator interaction not implemented yet");
+            console.log(
+              "Multi-cell unit elevator interaction not implemented yet"
+            );
           }
 
-          // *** UNIT DESELECTION POINT 2 ***
+          // Deselect unit for invalid moves
           setSelectedUnit(null);
           setHighlightedCells([]);
-          setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
-          setPreviewCells(new Set()); // *** RESET PREVIEW CELLS ***
+          setMovementPreviewMode(false);
+          setPreviewCells(new Set());
         }
       } else {
-        // Handle regular unit movement
-        const clickedUnit = getUnitAt(x, y, currentViewHeight);
+        // ENHANCED REGULAR UNIT MOVEMENT with vehicle boarding context awareness
+        // This is where our new contextual movement system really shines
+
+        // Use priority-based detection to get the most relevant unit for interaction
+        const clickedUnit = getUnitAt(x, y, currentViewHeight, true);
         const validMove = highlightedCells.some(
           (move) => move.x === x && move.y === y
         );
 
-        if (!clickedUnit && validMove) {
-          // Regular movement
-          moveUnit(selectedUnit, x, y, selectedUnit.z);
+        if (validMove) {
+          // The move is valid according to our enhanced movement calculation
+          // This could be movement to empty space, within a vehicle, or to/from vehicles
+          console.log(
+            `${selectedUnit.name} attempting enhanced movement to (${x}, ${y})`
+          );
+          moveUnitWithBoardingLogic(selectedUnit, x, y, selectedUnit.z);
         } else {
-          // Check for elevator interaction
+          // Handle special cases like elevator interactions
           const targetCell = getCellAt(x, y, selectedUnit.z);
           if (
             targetCell &&
@@ -4431,7 +4517,7 @@ const TacticalGame = ({ username, roomId }) => {
             selectedUnit.x === x &&
             selectedUnit.y === y
           ) {
-            // Show height selection for elevator
+            // Elevator interaction logic for regular units
             const availableHeights = [];
             for (let z = 1; z <= maxHeight; z++) {
               if (z !== selectedUnit.z && canMoveToHeight(selectedUnit, z)) {
@@ -4447,38 +4533,47 @@ const TacticalGame = ({ username, roomId }) => {
             }
           }
 
-          // *** UNIT DESELECTION POINT 3 ***
+          // Deselect unit for any invalid or special-case moves
           setSelectedUnit(null);
           setHighlightedCells([]);
-          setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
-          setPreviewCells(new Set()); // *** RESET PREVIEW CELLS ***
+          setMovementPreviewMode(false);
+          setPreviewCells(new Set());
         }
       }
     } else {
-      // ===== SELECTION LOGIC =====
-      // Selection logic - check for both units and vehicles
-      const clickedUnit = getUnitAt(x, y, currentViewHeight);
+      // UNIT SELECTION LOGIC: Handle selecting units when none are currently selected
+
+      // Try to find a unit at the clicked position, prioritizing regular units for interaction
+      const clickedUnit = getUnitAt(x, y, currentViewHeight, true);
 
       if (clickedUnit && clickedUnit.team === playerTeam) {
+        // Player clicked on one of their own units
         const isPlayerTurn = clickedUnit.team === gameState.turn;
         const canCounter = clickedUnit.canCounter === true;
 
+        // Allow selection if it's the player's turn OR the unit can counter
         if (isPlayerTurn || canCounter) {
           setSelectedUnit(clickedUnit);
-          // Switch to unit's height when selected
+          // Switch to unit's height when selected for better visibility
           setCurrentViewHeight(clickedUnit.z);
 
-          // *** CLEAR ANY EXISTING MOVEMENT PREVIEW WHEN SELECTING NEW UNIT ***
+          // Clear any existing movement preview when selecting a new unit
           setMovementPreviewMode(false);
           setPreviewCells(new Set());
 
-          // If it's a vehicle, show different highlighting
+          // Provide visual feedback for different unit types
           if (clickedUnit.isVehicle) {
             console.log(`Selected vehicle: ${clickedUnit.name}`);
+          } else if (clickedUnit.isBiggerThanOneCell) {
+            console.log(`Selected large unit: ${clickedUnit.name}`);
+          } else {
+            console.log(`Selected regular unit: ${clickedUnit.name}`);
           }
         }
       } else {
-        // No unit clicked, check if there's a vehicle at this position
+        // No valid unit found at click position, or unit doesn't belong to player
+
+        // Try to find a vehicle at this position using specialized vehicle detection
         const clickedVehicle = VehicleUtils.findVehicleAtPosition(
           gameState,
           x,
@@ -4487,6 +4582,7 @@ const TacticalGame = ({ username, roomId }) => {
         );
 
         if (clickedVehicle && clickedVehicle.team === playerTeam) {
+          // Player clicked on one of their vehicles
           const isPlayerTurn = clickedVehicle.team === gameState.turn;
           const canCounter = clickedVehicle.canCounter === true;
 
@@ -4495,23 +4591,125 @@ const TacticalGame = ({ username, roomId }) => {
             setCurrentViewHeight(clickedVehicle.z);
             console.log(`Selected vehicle: ${clickedVehicle.name}`);
 
-            // *** CLEAR ANY EXISTING MOVEMENT PREVIEW WHEN SELECTING NEW UNIT ***
+            // Clear movement preview states when selecting new vehicle
             setMovementPreviewMode(false);
             setPreviewCells(new Set());
           }
         } else {
-          // *** UNIT DESELECTION POINT 4 - Clicking on empty space ***
-          // No unit or vehicle found, and no unit currently selected
-          // This handles clicking on empty space to deselect
+          // No valid unit or vehicle found - handle deselection
+          // This occurs when clicking on empty space or enemy units
           if (selectedUnit) {
+            console.log(
+              "Deselecting unit - clicked on empty space or invalid target"
+            );
             setSelectedUnit(null);
             setHighlightedCells([]);
-            setMovementPreviewMode(false); // *** RESET MOVEMENT PREVIEW ***
-            setPreviewCells(new Set()); // *** RESET PREVIEW CELLS ***
+            setMovementPreviewMode(false);
+            setPreviewCells(new Set());
           }
         }
       }
     }
+  };
+
+  const moveUnitWithBoardingLogic = (unit, newX, newY, newZ) => {
+    if (!unit || unit.movementLeft <= 0) return;
+
+    const distance = calculateDistance(unit.x, unit.y, newX, newY);
+    if (distance > unit.movementLeft) return;
+
+    // Check if there's a vehicle at the target position
+    const vehicleAtTarget = gameState.units.find(
+      (vehicle) =>
+        vehicle.isVehicle &&
+        VehicleUtils.isPositionInVehicle(vehicle, newX, newY, newZ)
+    );
+
+    if (unit.aboardVehicle && !vehicleAtTarget) {
+      // Unit is moving from vehicle to ground - this requires disembarking
+      console.log(`${unit.name} disembarking from vehicle to move to ground`);
+
+      // First disembark the unit
+      const currentVehicle = gameState.units.find(
+        (v) => v.id === unit.aboardVehicle
+      );
+      if (currentVehicle) {
+        // Send disembark message first
+        sendJsonMessage({
+          type: "GAME_ACTION",
+          action: "DISEMBARK_VEHICLE",
+          vehicleId: currentVehicle.id,
+          unitId: unit.id,
+          targetX: newX,
+          targetY: newY,
+          targetZ: newZ,
+        });
+
+        // Then send movement message with updated movement cost
+        setTimeout(() => {
+          sendJsonMessage({
+            type: "GAME_ACTION",
+            action: "MOVE_UNIT",
+            unitId: unit.id,
+            newX: newX,
+            newY: newY,
+            newZ: newZ,
+            newMovementLeft: unit.movementLeft - distance,
+          });
+        }, 100); // Small delay to ensure disembark processes first
+      }
+    } else if (
+      !unit.aboardVehicle &&
+      vehicleAtTarget &&
+      vehicleAtTarget.team === unit.team
+    ) {
+      // Unit is moving from ground to allied vehicle - this requires boarding
+      console.log(`${unit.name} boarding vehicle while moving`);
+
+      // Move to the position first
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "MOVE_UNIT",
+        unitId: unit.id,
+        newX: newX,
+        newY: newY,
+        newZ: newZ,
+        newMovementLeft: unit.movementLeft - distance,
+      });
+
+      // Then board the vehicle
+      setTimeout(() => {
+        const result = VehicleUtils.boardUnitAuto(
+          vehicleAtTarget,
+          unit,
+          gameState
+        );
+        if (result) {
+          sendJsonMessage({
+            type: "GAME_ACTION",
+            action: "BOARD_VEHICLE",
+            vehicleId: vehicleAtTarget.id,
+            unitId: unit.id,
+            relativeX: result.updatedUnit.vehicleRelativePosition.x,
+            relativeY: result.updatedUnit.vehicleRelativePosition.y,
+          });
+        }
+      }, 100);
+    } else {
+      // Standard movement (including within the same vehicle)
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "MOVE_UNIT",
+        unitId: unit.id,
+        newX: newX,
+        newY: newY,
+        newZ: newZ,
+        newMovementLeft: unit.movementLeft - distance,
+      });
+    }
+
+    setSelectedUnit(null);
+    setHighlightedCells([]);
   };
 
   // Add this function to handle mouse movement during targeting of Skills and Actions
