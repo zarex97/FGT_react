@@ -3992,25 +3992,31 @@ const TacticalGame = ({ username, roomId }) => {
 
   const GRID_SIZE = 11;
 
-  const getUnitAt = (x, y, z = currentViewHeight) => {
+  const getUnitAt = (
+    x,
+    y,
+    z = currentViewHeight,
+    prioritizeRegularUnits = false
+  ) => {
     if (!gameState?.units) return null;
 
-    // Check all units for the position
+    const unitsAtPosition = [];
+
+    // Collect all units at this position
     for (const unit of gameState.units) {
       // For regular units (single cell)
       if (!unit.isBiggerThanOneCell) {
         if (unit.x === x && unit.y === y && unit.z === z) {
-          return unit;
+          unitsAtPosition.push(unit);
         }
       } else {
         // For multi-cell units (vehicles, large creatures, etc.)
         if (unit.boardCells && Array.isArray(unit.boardCells)) {
-          // Check if any of the unit's board cells match the target position
           const occupiesPosition = unit.boardCells.some(
             (cell) => cell.x === x && cell.y === y && cell.z === z
           );
           if (occupiesPosition) {
-            return unit;
+            unitsAtPosition.push(unit);
           }
         } else {
           // Fallback: use VehicleUtils for vehicles without boardCells
@@ -4018,15 +4024,58 @@ const TacticalGame = ({ username, roomId }) => {
             unit.isVehicle &&
             VehicleUtils.isPositionInVehicle(unit, x, y, z)
           ) {
-            return unit;
+            unitsAtPosition.push(unit);
           }
         }
       }
     }
 
-    return null;
+    if (unitsAtPosition.length === 0) return null;
+    if (unitsAtPosition.length === 1) return unitsAtPosition[0];
+
+    // Multiple units at position - apply priority logic
+    if (prioritizeRegularUnits) {
+      // For interactions: prioritize regular units over vehicles
+      const regularUnits = unitsAtPosition.filter((unit) => !unit.isVehicle);
+      if (regularUnits.length > 0) {
+        return regularUnits[0]; // Return first regular unit
+      }
+      return unitsAtPosition[0]; // Fall back to first unit if no regular units
+    } else {
+      // For rendering: return first unit found
+      return unitsAtPosition[0];
+    }
   };
 
+  const getAllUnitsAt = (x, y, z = currentViewHeight) => {
+    if (!gameState?.units) return [];
+
+    const unitsAtPosition = [];
+
+    for (const unit of gameState.units) {
+      if (!unit.isBiggerThanOneCell) {
+        if (unit.x === x && unit.y === y && unit.z === z) {
+          unitsAtPosition.push(unit);
+        }
+      } else {
+        if (unit.boardCells && Array.isArray(unit.boardCells)) {
+          const occupiesPosition = unit.boardCells.some(
+            (cell) => cell.x === x && cell.y === y && cell.z === z
+          );
+          if (occupiesPosition) {
+            unitsAtPosition.push(unit);
+          }
+        } else if (
+          unit.isVehicle &&
+          VehicleUtils.isPositionInVehicle(unit, x, y, z)
+        ) {
+          unitsAtPosition.push(unit);
+        }
+      }
+    }
+
+    return unitsAtPosition;
+  };
   const calculateDistance = (x1, y1, x2, y2) => {
     return Math.abs(x1 - x2) + Math.abs(y1 - y2);
   };
@@ -4625,16 +4674,25 @@ const TacticalGame = ({ username, roomId }) => {
     const { cell: effectiveCell, actualHeight: effectiveHeight } =
       getEffectiveCell(x, y, currentZ);
 
-    // Get unit at this position using the improved detection
-    const unit = getUnitAt(x, y, currentZ);
+    // Get all units at this position for proper layered rendering
+    const allUnitsAtPosition = getAllUnitsAt(x, y, currentZ);
+    const hasMultipleUnits = allUnitsAtPosition.length > 1;
 
-    // For multi-cell units, determine if this is the "origin" cell (for rendering)
-    const isUnitOrigin =
-      unit && unit.isBiggerThanOneCell
-        ? unit.x === x && unit.y === y
-        : unit && unit.x === x && unit.y === y;
+    // Separate different types of units for layered rendering
+    const vehiclesAtPosition = allUnitsAtPosition.filter((u) => u.isVehicle);
+    const multiCellNonVehiclesAtPosition = allUnitsAtPosition.filter(
+      (u) => u.isBiggerThanOneCell && !u.isVehicle
+    );
+    const regularUnitsAtPosition = allUnitsAtPosition.filter(
+      (u) => !u.isBiggerThanOneCell && !u.isVehicle
+    );
 
-    const isSelected = selectedUnit && selectedUnit.id === unit?.id;
+    // For interaction purposes, prioritize regular units over multi-cell units
+    const primaryUnit = getUnitAt(x, y, currentZ, true);
+
+    // Check if any unit at this position is selected
+    const isSelected =
+      selectedUnit && allUnitsAtPosition.some((u) => u.id === selectedUnit.id);
     const isValidMove = highlightedCells.some(
       (move) => move.x === x && move.y === y
     );
@@ -4644,9 +4702,11 @@ const TacticalGame = ({ username, roomId }) => {
     const checkHeight = effectiveHeight || currentZ;
     const isVisible = isCellVisible(x, y, checkHeight);
 
+    // Initialize background color based on terrain and visibility
     let bgColor = "bg-gray-800"; // Default for no floor anywhere
     let floorIndicator = null;
 
+    // Determine base terrain colors and floor indicators
     if (isVisible && effectiveCell) {
       // Use the terrain color for the effective height
       bgColor = getTerrainColorForHeight(
@@ -4663,6 +4723,8 @@ const TacticalGame = ({ username, roomId }) => {
       bgColor = "bg-gray-900";
     }
 
+    // Apply overlay colors for various game states
+    // IMPORTANT: These background colors will be on the base layer (z-index 0)
     if (!isVisible) {
       if (isInPreview) {
         bgColor =
@@ -4672,8 +4734,8 @@ const TacticalGame = ({ username, roomId }) => {
       }
     }
     if (isVisible && isInPreview) {
+      // Different preview colors based on targeting mode
       if (skillTargetingMode) {
-        // Different colors for different targeting types
         if (
           activeSkill?.impl.microActions[0]?.targetingType ===
           TargetingType.SELF
@@ -4688,7 +4750,6 @@ const TacticalGame = ({ username, roomId }) => {
           bgColor = "bg-blue-300"; // Standard AOE preview
         }
       } else if (actionTargetingMode) {
-        // Action targeting colors (you can customize these)
         if (
           activeAction?.impl.microActions[0]?.targetingType ===
           TargetingType.SELF
@@ -4703,7 +4764,7 @@ const TacticalGame = ({ username, roomId }) => {
           bgColor = "bg-green-300";
         }
       } else if (npTargetingMode) {
-        // Noble Phantasm targeting colors (golds/reds)
+        // Noble Phantasm targeting colors with special effects
         if (
           activeNP?.impl.microActions[0]?.targetingType === TargetingType.SELF
         ) {
@@ -4719,8 +4780,7 @@ const TacticalGame = ({ username, roomId }) => {
                       animate-pulse`;
         }
       }
-
-      // NEW: Movement preview colors for big units/vehicles
+      // Movement preview colors for big units/vehicles
       else if (
         movementPreviewMode &&
         (selectedUnit?.isBiggerThanOneCell || selectedUnit?.isVehicle)
@@ -4737,11 +4797,14 @@ const TacticalGame = ({ username, roomId }) => {
       // Only show individual move cells for regular units
       bgColor = "bg-blue-100";
     }
+
+    // Handle hover effects
     const isHovered = hoveredCell?.x === x && hoveredCell?.y === y;
-    if (isHovered && unit && unit.team === playerTeam) {
+    if (isHovered && primaryUnit && primaryUnit.team === playerTeam) {
       bgColor = "bg-yellow-200";
     }
 
+    // Function to determine if non-visible cells can be targeted
     const canTargetNonVisibleCells = () => {
       if (skillTargetingMode && activeSkill) {
         const targetingType = activeSkill.impl.microActions[0]?.targetingType;
@@ -4770,6 +4833,7 @@ const TacticalGame = ({ username, roomId }) => {
       return false;
     };
 
+    // Additional styling classes for special effects
     let additionalClasses = "";
     // Add special effects for NP targeting
     if (npTargetingMode && isInPreview) {
@@ -4806,8 +4870,8 @@ const TacticalGame = ({ username, roomId }) => {
         onMouseLeave={() => setHoveredCell(null)}
         onContextMenu={(e) => {
           e.preventDefault();
-          if (unit && isVisible) {
-            handleContextMenu(e, unit);
+          if (primaryUnit && isVisible) {
+            handleContextMenu(e, primaryUnit);
           } else {
             // Close menu when right-clicking empty cell
             setContextMenu(null);
@@ -4815,16 +4879,19 @@ const TacticalGame = ({ username, roomId }) => {
           }
         }}
       >
-        {/* Floor height indicator (show in corner if displaying lower floor) */}
+        {/* BACKGROUND LAYER: Floor indicators and terrain effects (z-index 1-2) */}
+        {/* These elements appear above the base background but below all units */}
+
+        {/* Floor height indicator - shows in corner if displaying lower floor */}
         {floorIndicator && floorIndicator !== currentZ && (
-          <div className="absolute top-0 left-0 w-3 h-3 bg-gray-600 text-white text-xs rounded-br flex items-center justify-center">
+          <div className="absolute top-0 left-0 w-3 h-3 bg-gray-600 text-white text-xs rounded-br flex items-center justify-center z-[1]">
             {floorIndicator}
           </div>
         )}
 
         {/* Terrain effect indicators - show from effective cell */}
         {isVisible && effectiveCell?.terrainType === "elevator" && (
-          <div className="absolute top-0 right-0 w-3 h-3">
+          <div className="absolute top-0 right-0 w-3 h-3 z-[1]">
             <div className="flex flex-col">
               <ArrowUp size={8} className="text-yellow-600" />
               <ArrowDown size={8} className="text-yellow-600" />
@@ -4833,190 +4900,296 @@ const TacticalGame = ({ username, roomId }) => {
         )}
 
         {isVisible && effectiveCell?.terrainType === "fire" && (
-          <div className="absolute top-0 left-0 text-red-600 text-xs ml-3">
+          <div className="absolute top-0 left-0 text-red-600 text-xs ml-3 z-[1]">
             🔥
           </div>
         )}
 
         {isVisible && effectiveCell?.terrainType === "ice" && (
-          <div className="absolute top-0 left-0 text-blue-600 text-xs ml-3">
+          <div className="absolute top-0 left-0 text-blue-600 text-xs ml-3 z-[1]">
             ❄️
           </div>
         )}
 
         {isVisible && effectiveCell?.terrainType === "healing" && (
-          <div className="absolute top-0 left-0 text-green-600 text-xs ml-3">
+          <div className="absolute top-0 left-0 text-green-600 text-xs ml-3 z-[1]">
             💚
           </div>
         )}
 
-        {/* Multi-cell unit rendering (vehicles, large creatures, etc.) */}
-        {unit && unit.isBiggerThanOneCell && isUnitOrigin && isVisible && (
-          <div
-            className="absolute inset-0 pointer-events-none z-10"
-            style={{
-              width: `${unit.dimensions.width * 64}px`,
-              height: `${unit.dimensions.height * 64}px`,
-            }}
-            onMouseEnter={() => setHoveredUnit(unit)}
-            onMouseLeave={() => setHoveredUnit(null)}
-          >
-            <img
-              src={unit.sprite}
-              alt={unit.name}
-              className={`w-full h-full object-contain ${
-                npTargetingMode && isInPreview ? "filter brightness-110" : ""
-              } ${unit.canCounter ? "ring-2 ring-orange-400" : ""}`}
-              style={{ imageRendering: "pixelated" }}
-            />
+        {/* UNIT STRUCTURE LAYER: Vehicle and multi-cell unit outlines (z-index 10-15) */}
+        {/* This layer sits ABOVE the background colors but below the main sprites */}
 
-            {/* Vehicle size indicator */}
-            <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 rounded">
-              {unit.dimensions.width}×{unit.dimensions.height}
-            </div>
+        {/* Vehicle outline cells - these now render ABOVE the blue movement squares */}
+        {vehiclesAtPosition.length > 0 &&
+          isVisible &&
+          vehiclesAtPosition.map((vehicle, index) => {
+            const isVehicleOrigin = vehicle.x === x && vehicle.y === y;
 
-            {/* Passenger count for vehicles - UPDATED */}
-            {unit.isVehicle &&
-              unit.containedUnits &&
-              unit.containedUnits.length > 0 && (
-                <div className="absolute bottom-0 left-0 bg-green-500 text-white text-xs px-1 rounded">
-                  👥{unit.containedUnits.length}/{unit.maxPassengers || 10}
+            if (!isVehicleOrigin) {
+              // CRITICAL FIX: Non-origin vehicle cells now use z-[10] to appear above background
+              return (
+                <div
+                  key={`vehicle-outline-${vehicle.id}`}
+                  className="absolute inset-0 border-2 border-blue-400 border-dashed bg-blue-100 bg-opacity-20 flex items-center justify-center z-[10]"
+                >
+                  <div className="text-blue-600 text-xs font-bold opacity-60">
+                    {vehicle.name}
+                  </div>
+                </div>
+              );
+            }
+
+            // Origin vehicle cells render their main sprite at a higher z-index
+            return (
+              <div
+                key={`vehicle-${vehicle.id}`}
+                className="absolute inset-0 pointer-events-none z-[15]"
+                style={{
+                  // The sprite spans across multiple cells by setting appropriate dimensions
+                  width: `${vehicle.dimensions.width * 64}px`,
+                  height: `${vehicle.dimensions.height * 64}px`,
+                }}
+              >
+                {/* Main vehicle sprite - this single image spans multiple grid cells */}
+                <img
+                  src={vehicle.sprite}
+                  alt={vehicle.name}
+                  className={`w-full h-full object-contain ${
+                    npTargetingMode && isInPreview
+                      ? "filter brightness-110"
+                      : ""
+                  } ${vehicle.canCounter ? "ring-2 ring-orange-400" : ""}`}
+                  style={{ imageRendering: "pixelated" }}
+                />
+
+                {/* Vehicle UI elements positioned on the spanning sprite */}
+                <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 rounded">
+                  {vehicle.dimensions.width}×{vehicle.dimensions.height}
+                </div>
+
+                {vehicle.isVehicle &&
+                  vehicle.containedUnits &&
+                  vehicle.containedUnits.length > 0 && (
+                    <div className="absolute bottom-0 left-0 bg-green-500 text-white text-xs px-1 rounded">
+                      👥{vehicle.containedUnits.length}/
+                      {vehicle.maxPassengers || 10}
+                    </div>
+                  )}
+
+                {/* Passenger position indicators within the vehicle */}
+                {vehicle.isVehicle &&
+                  vehicle.containedUnits &&
+                  vehicle.containedUnits.map((passengerId) => {
+                    const passenger = gameState.units.find(
+                      (u) => u.id === passengerId
+                    );
+                    if (!passenger || !passenger.vehicleRelativePosition)
+                      return null;
+
+                    return (
+                      <div
+                        key={`passenger-indicator-${passengerId}`}
+                        className="absolute w-4 h-4 bg-yellow-400 border border-yellow-600 rounded-full flex items-center justify-center text-xs"
+                        style={{
+                          left: `${
+                            passenger.vehicleRelativePosition.x *
+                              (64 / vehicle.dimensions.width) +
+                            2
+                          }px`,
+                          top: `${
+                            passenger.vehicleRelativePosition.y *
+                              (64 / vehicle.dimensions.height) +
+                            2
+                          }px`,
+                          fontSize: "8px",
+                        }}
+                        title={`${passenger.name} at (${passenger.vehicleRelativePosition.x}, ${passenger.vehicleRelativePosition.y})`}
+                      >
+                        {passenger.name?.charAt(0) || "U"}
+                      </div>
+                    );
+                  })}
+
+                {vehicle.canCounter && (
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                    <Target size={10} className="text-white" />
+                  </div>
+                )}
+
+                <div
+                  className={`absolute -bottom-1 -left-1 w-4 h-4 text-white text-xs rounded-full flex items-center justify-center ${
+                    getHeightBaseColor(vehicle.z) === "green"
+                      ? "bg-green-700"
+                      : getHeightBaseColor(vehicle.z) === "blue"
+                      ? "bg-blue-700"
+                      : "bg-purple-700"
+                  }`}
+                >
+                  {vehicle.z}
+                </div>
+
+                {hoveredUnit?.id === vehicle.id && (
+                  <UnitStatsTooltip unit={vehicle} />
+                )}
+              </div>
+            );
+          })}
+
+        {/* Multi-cell non-vehicle unit outlines - also elevated above background */}
+        {multiCellNonVehiclesAtPosition.length > 0 &&
+          isVisible &&
+          multiCellNonVehiclesAtPosition.map((unit, index) => {
+            const isUnitOrigin = unit.x === x && unit.y === y;
+
+            if (!isUnitOrigin) {
+              // CRITICAL FIX: Non-origin multi-cell unit cells use z-[12] to appear above background
+              return (
+                <div
+                  key={`multicell-outline-${unit.id}`}
+                  className="absolute inset-0 border-2 border-green-400 border-dashed bg-green-100 bg-opacity-20 flex items-center justify-center z-[12]"
+                >
+                  <div className="text-green-600 text-xs font-bold opacity-60">
+                    {unit.name}
+                  </div>
+                </div>
+              );
+            }
+
+            // Origin cell renders the full multi-cell unit sprite
+            return (
+              <div
+                key={`multicell-${unit.id}`}
+                className="absolute inset-0 pointer-events-none z-[17]"
+                style={{
+                  // Multi-cell units also span across their dimensions
+                  width: `${unit.dimensions.width * 64}px`,
+                  height: `${unit.dimensions.height * 64}px`,
+                }}
+                onMouseEnter={() => setHoveredUnit(unit)}
+                onMouseLeave={() => setHoveredUnit(null)}
+              >
+                <img
+                  src={unit.sprite}
+                  alt={unit.name}
+                  className={`w-full h-full object-contain ${
+                    npTargetingMode && isInPreview
+                      ? "filter brightness-110"
+                      : ""
+                  } ${unit.canCounter ? "ring-2 ring-orange-400" : ""} ${
+                    hasMultipleUnits ? "drop-shadow-lg" : ""
+                  }`}
+                  style={{ imageRendering: "pixelated" }}
+                />
+
+                {/* Multi-cell unit size indicator */}
+                <div className="absolute top-0 right-0 bg-green-500 text-white text-xs px-1 rounded">
+                  {unit.dimensions.width}×{unit.dimensions.height}
+                </div>
+
+                {unit.canCounter && (
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                    <Target size={10} className="text-white" />
+                  </div>
+                )}
+
+                <div
+                  className={`absolute -bottom-1 -left-1 w-4 h-4 text-white text-xs rounded-full flex items-center justify-center ${
+                    getHeightBaseColor(unit.z) === "green"
+                      ? "bg-green-700"
+                      : getHeightBaseColor(unit.z) === "blue"
+                      ? "bg-blue-700"
+                      : "bg-purple-700"
+                  }`}
+                >
+                  {unit.z}
+                </div>
+
+                {/* Stacking indicator for multi-cell units */}
+                {hasMultipleUnits && (
+                  <div className="absolute top-0 left-0 w-3 h-3 bg-purple-500 text-white text-xs rounded-full flex items-center justify-center">
+                    {allUnitsAtPosition.length}
+                  </div>
+                )}
+
+                {hoveredUnit?.id === unit.id && (
+                  <UnitStatsTooltip unit={unit} />
+                )}
+              </div>
+            );
+          })}
+
+        {/* REGULAR UNITS LAYER: Single-cell units (z-index 20) */}
+        {/* These render on top of everything else except special effects */}
+        {regularUnitsAtPosition.length > 0 &&
+          isVisible &&
+          regularUnitsAtPosition.map((unit, index) => (
+            <div
+              key={`regular-${unit.id}`}
+              className={`absolute inset-0 flex items-center justify-center z-[20] ${
+                hasMultipleUnits ? "transform scale-90" : "" // Scale down when stacked
+              } ${
+                unit.team === playerTeam ? "text-blue-600" : "text-red-600"
+              } ${unit.movementLeft === 0 ? "opacity-50" : ""}`}
+              onMouseEnter={() => setHoveredUnit(unit)}
+              onMouseLeave={() => setHoveredUnit(null)}
+            >
+              <img
+                src={unit.sprite}
+                alt={unit.name}
+                className={`w-16 h-16 object-contain ${
+                  npTargetingMode && isInPreview ? "filter brightness-110" : ""
+                } ${unit.canCounter ? "ring-2 ring-orange-400" : ""} ${
+                  hasMultipleUnits ? "drop-shadow-lg" : ""
+                }`}
+              />
+
+              {unit.canCounter && (
+                <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                  <Target size={10} className="text-white" />
                 </div>
               )}
 
-            {/* Show individual passengers on vehicle grid - NEW */}
-            {unit.isVehicle &&
-              unit.containedUnits &&
-              unit.containedUnits.map((passengerId) => {
-                const passenger = gameState.units.find(
-                  (u) => u.id === passengerId
-                );
-                if (!passenger || !passenger.vehicleRelativePosition)
-                  return null;
+              {unit.aboardVehicle && (
+                <div className="absolute -top-1 -left-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                  <div className="text-white text-xs">🚢</div>
+                </div>
+              )}
 
-                return (
-                  <div
-                    key={passengerId}
-                    className="absolute w-4 h-4 bg-yellow-400 border border-yellow-600 rounded-full flex items-center justify-center text-xs"
-                    style={{
-                      left: `${
-                        passenger.vehicleRelativePosition.x *
-                          (64 / unit.dimensions.width) +
-                        2
-                      }px`,
-                      top: `${
-                        passenger.vehicleRelativePosition.y *
-                          (64 / unit.dimensions.height) +
-                        2
-                      }px`,
-                      fontSize: "8px",
-                    }}
-                    title={`${passenger.name} at (${passenger.vehicleRelativePosition.x}, ${passenger.vehicleRelativePosition.y})`}
-                  >
-                    {passenger.name?.charAt(0) || "U"}
-                  </div>
-                );
-              })}
-
-            {/* Counter indicator */}
-            {unit.canCounter && (
-              <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
-                <Target size={10} className="text-white" />
+              <div
+                className={`absolute -bottom-1 -left-1 w-4 h-4 text-white text-xs rounded-full flex items-center justify-center ${
+                  getHeightBaseColor(unit.z) === "green"
+                    ? "bg-green-700"
+                    : getHeightBaseColor(unit.z) === "blue"
+                    ? "bg-blue-700"
+                    : "bg-purple-700"
+                }`}
+              >
+                {unit.z}
               </div>
-            )}
 
-            {/* Height indicator */}
-            <div
-              className={`absolute -bottom-1 -left-1 w-4 h-4 text-white text-xs rounded-full flex items-center justify-center ${
-                getHeightBaseColor(unit.z) === "green"
-                  ? "bg-green-700"
-                  : getHeightBaseColor(unit.z) === "blue"
-                  ? "bg-blue-700"
-                  : "bg-purple-700"
-              }`}
-            >
-              {unit.z}
+              {hasMultipleUnits && (
+                <div className="absolute top-0 right-0 w-3 h-3 bg-purple-500 text-white text-xs rounded-full flex items-center justify-center">
+                  {allUnitsAtPosition.length}
+                </div>
+              )}
+
+              {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
             </div>
+          ))}
 
-            {/* Tooltip for multi-cell units */}
-            {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
-          </div>
-        )}
-
-        {/* Multi-cell unit outline for non-origin cells */}
-        {unit && unit.isBiggerThanOneCell && !isUnitOrigin && isVisible && (
-          <div className="absolute inset-0 border-2 border-blue-400 border-dashed bg-blue-100 bg-opacity-30 flex items-center justify-center">
-            <div className="text-blue-600 text-xs font-bold opacity-50">
-              {unit.name}
-            </div>
-          </div>
-        )}
-
-        {/* Regular single-cell unit rendering */}
-        {unit && !unit.isBiggerThanOneCell && isVisible && (
-          <div
-            className={`absolute inset-0 flex items-center justify-center 
-                        ${
-                          unit.team === playerTeam
-                            ? "text-blue-600"
-                            : "text-red-600"
-                        }
-                        ${unit.movementLeft === 0 ? "opacity-50" : ""}`}
-            onMouseEnter={() => setHoveredUnit(unit)}
-            onMouseLeave={() => setHoveredUnit(null)}
-          >
-            <img
-              src={unit.sprite}
-              alt={unit.name}
-              className={`w-16 h-16 object-contain ${
-                npTargetingMode && isInPreview ? "filter brightness-110" : ""
-              } ${unit.canCounter ? "ring-2 ring-orange-400" : ""}`}
-            />
-
-            {/* Counter indicator for single-cell units */}
-            {unit.canCounter && (
-              <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
-                <Target size={10} className="text-white" />
-              </div>
-            )}
-
-            {/* Vehicle boarding indicator for units aboard vehicles */}
-            {unit.aboardVehicle && (
-              <div className="absolute -top-1 -left-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                <div className="text-white text-xs">🚢</div>
-              </div>
-            )}
-
-            {/* Height indicator for single-cell units */}
-            <div
-              className={`absolute -bottom-1 -left-1 w-4 h-4 text-white text-xs rounded-full flex items-center justify-center ${
-                getHeightBaseColor(unit.z) === "green"
-                  ? "bg-green-700"
-                  : getHeightBaseColor(unit.z) === "blue"
-                  ? "bg-blue-700"
-                  : "bg-purple-700"
-              }`}
-            >
-              {unit.z}
-            </div>
-
-            {/* Tooltip for single-cell units */}
-            {hoveredUnit?.id === unit.id && <UnitStatsTooltip unit={unit} />}
-          </div>
-        )}
-
-        {/* OPTIONAL: Show units from lower heights with reduced opacity (only if no unit at current height) */}
-        {!unit &&
+        {/* LOWER HEIGHT UNITS LAYER: Units from lower heights (z-index 5) */}
+        {/* These appear below everything but above terrain */}
+        {allUnitsAtPosition.length === 0 &&
           isVisible &&
           (() => {
-            // Only show lower units if there's no unit at current height
             for (let checkZ = currentZ - 1; checkZ >= 1; checkZ--) {
               const lowerUnit = getUnitAt(x, y, checkZ);
               if (lowerUnit && isCellVisible(x, y, checkZ)) {
                 return (
                   <div
                     key={`lower-${lowerUnit.id}`}
-                    className="absolute inset-0 flex items-center justify-center opacity-40"
+                    className="absolute inset-0 flex items-center justify-center opacity-40 z-[5]"
                     onMouseEnter={() => setHoveredUnit(lowerUnit)}
                     onMouseLeave={() => setHoveredUnit(null)}
                   >
@@ -5035,9 +5208,10 @@ const TacticalGame = ({ username, roomId }) => {
             return null;
           })()}
 
-        {/* NP targeting effects */}
+        {/* TOP EFFECTS LAYER: Special effects layer (z-index 30) */}
+        {/* Noble Phantasm targeting effects that appear above everything else */}
         {npTargetingMode && isInPreview && (
-          <div className="absolute inset-0 bg-amber-500 opacity-20 animate-pulse" />
+          <div className="absolute inset-0 bg-amber-500 opacity-20 animate-pulse z-[30]" />
         )}
       </div>
     );
