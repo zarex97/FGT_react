@@ -13,8 +13,60 @@ import { VehicleUtils } from "../../utils/VehicleUtils.js";
 import { createIceGolem } from "../materials/archer/ArcherMaterials.js";
 import { createWaterBoat } from "../materials/archer/ArcherMaterials.js";
 
-// ===== ANASTASIA'S SUMMONING SKILL =====
+const iceSpikeGolemMicroAction = new MicroAction({
+  targetingType: TargetingType.SINGLE_TARGET,
+  range: 5,
+  effectLogic: (gameState, caster, affectedCells) => {
+    console.log("🧊⚡ Ice Golem executing Ice Spike");
 
+    const updatedUnits = gameState.units.map((unit) => {
+      if (
+        unit.team !== caster.team &&
+        affectedCells.has(`${unit.x},${unit.y}`)
+      ) {
+        console.log(`🧊 Ice Golem targeting ${unit.name} with Ice Spike`);
+
+        const modifiedUnit = JSON.parse(JSON.stringify(unit));
+        const backUpUnit = modifiedUnit;
+
+        const combat = new Combat({
+          typeOfAttackCausingIt: "Skill",
+          proportionOfMagicUsed: 0.7,
+          proportionOfStrengthUsed: 0.3,
+          attacker: caster,
+          defender: modifiedUnit,
+          gameState: gameState,
+          integratedAttackMultiplier: 1.5,
+          integratedAttackFlatBonus: 0,
+        });
+        const initiationResults = combat.initiateCombat();
+        caster.combatSent.push(
+          JSON.parse(JSON.stringify(combat.combatResults))
+        );
+        console.log("Sent combat:", caster.combatSent);
+
+        unit.combatReceived = JSON.parse(JSON.stringify(combat.combatResults));
+        console.log("received combat:", unit.combatReceived);
+        modifiedUnit.combatReceived = JSON.parse(
+          JSON.stringify(combat.combatResults)
+        );
+
+        return {
+          ...unit,
+          statusIfHit: modifiedUnit,
+          backUpStatus: backUpUnit,
+        };
+      }
+      return unit;
+    });
+
+    return {
+      ...gameState,
+      units: updatedUnits,
+    };
+  },
+});
+// ===== ANASTASIA'S SUMMONING SKILL =====
 const CreateWaterBoatMicroAction = new MicroAction({
   targetingType: TargetingType.AOE_FROM_POINT,
   range: 3,
@@ -806,6 +858,16 @@ export const AnastasiaSkills = {
     false, // doesn't count towards attack limit
     false // not reactionary
   ),
+  IceSpike: new Skill(
+    "Ice Spike",
+    "Golem attacks with a sharp ice projectile",
+    2, // cooldown
+    5, // range
+    [iceSpikeGolemMicroAction],
+    true, // isAttack
+    true, // counts towards attack limit
+    false // not reactionary
+  ),
 };
 
 // Define Anastasia's base stats and attributes
@@ -901,6 +963,12 @@ export const AnastasiaTemplate = {
       onCooldownUntil: 0,
       isAttack: false,
       affectsAttackCount: false,
+    },
+    {
+      id: "IceSpike",
+      onCooldownUntil: 0,
+      isAttack: true,
+      affectsAttackCount: true,
     },
   ],
   noblePhantasms: [
