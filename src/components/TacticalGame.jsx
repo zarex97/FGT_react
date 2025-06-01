@@ -4626,15 +4626,16 @@ const TacticalGame = ({ username, roomId }) => {
     );
 
     if (unit.aboardVehicle && !vehicleAtTarget) {
-      // Unit is moving from vehicle to ground - this requires disembarking
-      console.log(`${unit.name} disembarking from vehicle to move to ground`);
+      // CASE 1: Unit is moving from vehicle to ground - requires disembarking
+      console.log(
+        `${unit.name} disembarking from vehicle to move to ground at (${newX}, ${newY})`
+      );
 
-      // First disembark the unit
       const currentVehicle = gameState.units.find(
         (v) => v.id === unit.aboardVehicle
       );
       if (currentVehicle) {
-        // Send disembark message first
+        // Send disembark message first, then move
         sendJsonMessage({
           type: "GAME_ACTION",
           action: "DISEMBARK_VEHICLE",
@@ -4645,28 +4646,156 @@ const TacticalGame = ({ username, roomId }) => {
           targetZ: newZ,
         });
 
-        // Then send movement message with updated movement cost
-        setTimeout(() => {
-          sendJsonMessage({
-            type: "GAME_ACTION",
-            action: "MOVE_UNIT",
-            unitId: unit.id,
-            newX: newX,
-            newY: newY,
-            newZ: newZ,
-            newMovementLeft: unit.movementLeft - distance,
-          });
-        }, 100); // Small delay to ensure disembark processes first
+        // Movement will be handled by the disembark action
       }
     } else if (
       !unit.aboardVehicle &&
       vehicleAtTarget &&
       vehicleAtTarget.team === unit.team
     ) {
-      // Unit is moving from ground to allied vehicle - this requires boarding
-      console.log(`${unit.name} boarding vehicle while moving`);
+      // CASE 2: Unit is moving from ground to allied vehicle - requires boarding with precise positioning
+      console.log(
+        `${unit.name} boarding vehicle while moving to specific position (${newX}, ${newY})`
+      );
 
-      // Move to the position first
+      // Calculate the EXACT relative position based on where the user clicked
+      const intendedRelativePosition = VehicleUtils.worldToRelative(
+        vehicleAtTarget,
+        newX,
+        newY
+      );
+
+      if (!intendedRelativePosition) {
+        console.error(
+          `Cannot calculate relative position for (${newX}, ${newY}) in vehicle at (${vehicleAtTarget.x}, ${vehicleAtTarget.y})`
+        );
+        return;
+      }
+
+      // Check if the intended position is already occupied by another passenger
+      const isPositionOccupied = vehicleAtTarget.containedUnits?.some(
+        (passengerId) => {
+          const passenger = gameState.units.find((u) => u.id === passengerId);
+          return (
+            passenger?.vehicleRelativePosition?.x ===
+              intendedRelativePosition.x &&
+            passenger?.vehicleRelativePosition?.y === intendedRelativePosition.y
+          );
+        }
+      );
+
+      if (isPositionOccupied) {
+        console.log(
+          `Intended boarding position (${intendedRelativePosition.x}, ${intendedRelativePosition.y}) is occupied, trying auto-placement`
+        );
+        // Fall back to automatic placement if the desired spot is taken
+        const result = VehicleUtils.boardUnitAuto(
+          vehicleAtTarget,
+          unit,
+          gameState
+        );
+        if (result) {
+          // Move to the world position corresponding to the auto-assigned relative position
+          const autoWorldPos = VehicleUtils.relativeToWorld(
+            vehicleAtTarget,
+            result.updatedUnit.vehicleRelativePosition.x,
+            result.updatedUnit.vehicleRelativePosition.y
+          );
+
+          sendJsonMessage({
+            type: "GAME_ACTION",
+            action: "MOVE_UNIT",
+            unitId: unit.id,
+            newX: autoWorldPos.x,
+            newY: autoWorldPos.y,
+            newZ: autoWorldPos.z,
+            newMovementLeft: unit.movementLeft - distance,
+          });
+
+          setTimeout(() => {
+            sendJsonMessage({
+              type: "GAME_ACTION",
+              action: "BOARD_VEHICLE",
+              vehicleId: vehicleAtTarget.id,
+              unitId: unit.id,
+              relativeX: result.updatedUnit.vehicleRelativePosition.x,
+              relativeY: result.updatedUnit.vehicleRelativePosition.y,
+            });
+          }, 100);
+        }
+      } else {
+        // The intended position is free, so we can board there exactly
+        console.log(
+          `Boarding at intended position: relative (${intendedRelativePosition.x}, ${intendedRelativePosition.y}), world (${newX}, ${newY})`
+        );
+
+        // Move to the exact clicked position first
+        sendJsonMessage({
+          type: "GAME_ACTION",
+          action: "MOVE_UNIT",
+          unitId: unit.id,
+          newX: newX,
+          newY: newY,
+          newZ: newZ,
+          newMovementLeft: unit.movementLeft - distance,
+        });
+
+        // Then board at the specific relative position
+        setTimeout(() => {
+          sendJsonMessage({
+            type: "GAME_ACTION",
+            action: "BOARD_VEHICLE",
+            vehicleId: vehicleAtTarget.id,
+            unitId: unit.id,
+            relativeX: intendedRelativePosition.x,
+            relativeY: intendedRelativePosition.y,
+          });
+        }, 100);
+      }
+    } else if (
+      unit.aboardVehicle &&
+      vehicleAtTarget &&
+      vehicleAtTarget.id === unit.aboardVehicle
+    ) {
+      // CASE 3: Unit is moving within the same vehicle - update relative position
+      console.log(
+        `${unit.name} moving within vehicle from relative position to new position (${newX}, ${newY})`
+      );
+
+      // Calculate the new relative position within the vehicle
+      const newRelativePosition = VehicleUtils.worldToRelative(
+        vehicleAtTarget,
+        newX,
+        newY
+      );
+
+      if (!newRelativePosition) {
+        console.error(
+          `Cannot calculate new relative position for intra-vehicle movement`
+        );
+        return;
+      }
+
+      // Check if the new position within the vehicle is occupied
+      const isNewPositionOccupied = vehicleAtTarget.containedUnits?.some(
+        (passengerId) => {
+          const passenger = gameState.units.find((u) => u.id === passengerId);
+          return (
+            passenger?.id !== unit.id && // Don't count the moving unit itself
+            passenger?.vehicleRelativePosition?.x === newRelativePosition.x &&
+            passenger?.vehicleRelativePosition?.y === newRelativePosition.y
+          );
+        }
+      );
+
+      if (isNewPositionOccupied) {
+        console.log(
+          `Cannot move within vehicle: position (${newRelativePosition.x}, ${newRelativePosition.y}) is occupied`
+        );
+        return;
+      }
+
+      // Perform the intra-vehicle movement by updating both world and relative positions
       sendJsonMessage({
         type: "GAME_ACTION",
         action: "MOVE_UNIT",
@@ -4677,26 +4806,23 @@ const TacticalGame = ({ username, roomId }) => {
         newMovementLeft: unit.movementLeft - distance,
       });
 
-      // Then board the vehicle
+      // Also send a specific message to update the relative position within the vehicle
+      // This ensures the server updates the passenger's relative position data
       setTimeout(() => {
-        const result = VehicleUtils.boardUnitAuto(
-          vehicleAtTarget,
-          unit,
-          gameState
-        );
-        if (result) {
-          sendJsonMessage({
-            type: "GAME_ACTION",
-            action: "BOARD_VEHICLE",
-            vehicleId: vehicleAtTarget.id,
-            unitId: unit.id,
-            relativeX: result.updatedUnit.vehicleRelativePosition.x,
-            relativeY: result.updatedUnit.vehicleRelativePosition.y,
-          });
-        }
+        sendJsonMessage({
+          type: "GAME_ACTION",
+          action: "UPDATE_VEHICLE_PASSENGER_POSITION",
+          vehicleId: vehicleAtTarget.id,
+          unitId: unit.id,
+          newRelativeX: newRelativePosition.x,
+          newRelativeY: newRelativePosition.y,
+        });
       }, 100);
     } else {
-      // Standard movement (including within the same vehicle)
+      // CASE 4: Standard movement (not involving vehicles)
+      console.log(
+        `${unit.name} performing standard movement to (${newX}, ${newY})`
+      );
       sendJsonMessage({
         type: "GAME_ACTION",
         action: "MOVE_UNIT",
@@ -4708,6 +4834,7 @@ const TacticalGame = ({ username, roomId }) => {
       });
     }
 
+    // Clean up selection states after any movement
     setSelectedUnit(null);
     setHighlightedCells([]);
   };

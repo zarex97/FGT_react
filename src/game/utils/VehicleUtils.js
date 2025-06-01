@@ -165,20 +165,35 @@ export const VehicleUtils = {
       ],
     };
 
-    // Update all contained units using their relative positions
+    // Update all contained units using their PRESERVED relative positions
     const updatedUnits = gameState.units.map((unit) => {
-      // Handle existing passengers
+      // Handle existing passengers - the critical fix is here
       if (vehicle.containedUnits.includes(unit.id)) {
-        // Use relative position if available, otherwise calculate from current position
         let newUnitPos;
+
+        // CRITICAL: Always use the existing relative position if it exists
         if (unit.vehicleRelativePosition) {
+          // This passenger has an established position within the vehicle - preserve it exactly
           newUnitPos = VehicleUtils.relativeToWorld(
             updatedVehicle,
             unit.vehicleRelativePosition.x,
             unit.vehicleRelativePosition.y
           );
+
+          console.log(
+            `🚶 Preserving passenger ${
+              unit.name || unit.id
+            } at relative position (${unit.vehicleRelativePosition.x}, ${
+              unit.vehicleRelativePosition.y
+            }) -> world (${newUnitPos.x}, ${newUnitPos.y}, ${newUnitPos.z})`
+          );
         } else {
-          // Fallback: maintain current relative position
+          // Fallback: passenger somehow lacks relative position data, calculate from current position
+          console.warn(
+            `Passenger ${
+              unit.name || unit.id
+            } missing relative position, calculating from current world position`
+          );
           const currentRelative = VehicleUtils.worldToRelative(
             vehicle,
             unit.x,
@@ -193,7 +208,12 @@ export const VehicleUtils = {
             // Update the relative position for future moves
             unit.vehicleRelativePosition = currentRelative;
           } else {
-            // Emergency fallback: just move by delta
+            // Emergency fallback: just move by delta (this should rarely happen)
+            console.error(
+              `Cannot calculate relative position for passenger ${
+                unit.name || unit.id
+              }, using delta movement`
+            );
             newUnitPos = {
               x: unit.x + deltaX,
               y: unit.y + deltaY,
@@ -202,17 +222,13 @@ export const VehicleUtils = {
           }
         }
 
-        console.log(
-          `🚶 Moving contained unit ${unit.name || unit.id} to (${
-            newUnitPos.x
-          }, ${newUnitPos.y}, ${newUnitPos.z})`
-        );
-
         return {
           ...unit,
           x: newUnitPos.x,
           y: newUnitPos.y,
           z: newUnitPos.z,
+          // IMPORTANT: Preserve the relative position exactly as it was
+          vehicleRelativePosition: unit.vehicleRelativePosition,
         };
       }
 
