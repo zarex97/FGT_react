@@ -13,8 +13,60 @@ import { VehicleUtils } from "../../utils/VehicleUtils.js";
 import { createIceGolem } from "../materials/archer/ArcherMaterials.js";
 import { createWaterBoat } from "../materials/archer/ArcherMaterials.js";
 
-// ===== ANASTASIA'S SUMMONING SKILL =====
+const iceSpikeGolemMicroAction = new MicroAction({
+  targetingType: TargetingType.SINGLE_TARGET,
+  range: 5,
+  effectLogic: (gameState, caster, affectedCells) => {
+    console.log("🧊⚡ Ice Golem executing Ice Spike");
 
+    const updatedUnits = gameState.units.map((unit) => {
+      if (
+        unit.team !== caster.team &&
+        affectedCells.has(`${unit.x},${unit.y}`)
+      ) {
+        console.log(`🧊 Ice Golem targeting ${unit.name} with Ice Spike`);
+
+        const modifiedUnit = JSON.parse(JSON.stringify(unit));
+        const backUpUnit = modifiedUnit;
+
+        const combat = new Combat({
+          typeOfAttackCausingIt: "Skill",
+          proportionOfMagicUsed: 0.7,
+          proportionOfStrengthUsed: 0.3,
+          attacker: caster,
+          defender: modifiedUnit,
+          gameState: gameState,
+          integratedAttackMultiplier: 1.5,
+          integratedAttackFlatBonus: 0,
+        });
+        const initiationResults = combat.initiateCombat();
+        caster.combatSent.push(
+          JSON.parse(JSON.stringify(combat.combatResults))
+        );
+        console.log("Sent combat:", caster.combatSent);
+
+        unit.combatReceived = JSON.parse(JSON.stringify(combat.combatResults));
+        console.log("received combat:", unit.combatReceived);
+        modifiedUnit.combatReceived = JSON.parse(
+          JSON.stringify(combat.combatResults)
+        );
+
+        return {
+          ...unit,
+          statusIfHit: modifiedUnit,
+          backUpStatus: backUpUnit,
+        };
+      }
+      return unit;
+    });
+
+    return {
+      ...gameState,
+      units: updatedUnits,
+    };
+  },
+});
+// ===== ANASTASIA'S SUMMONING SKILL =====
 const CreateWaterBoatMicroAction = new MicroAction({
   targetingType: TargetingType.AOE_FROM_POINT,
   range: 3,
@@ -139,38 +191,45 @@ const bindingChainsMicroAction = new MicroAction({
   range: 4,
   dimensions: { width: 3, height: 3 },
   effectLogic: (gameState, caster, affectedCells) => {
-    console.log("⛓️ Executing Binding Chains:");
+    console.log("⛓️ Executing Binding Chains with Individual Effect Chances:");
 
-    // Define immobility debuffs that will benefit from specific caster bonuses
-    const immobilityEffects = [
-      {
-        name: "Root",
-        type: "Immobilize",
-        value: 0, // Immobilization doesn't need a value
-        duration: 2,
-        description: "Magical roots prevent movement",
-        category: "Immobility Debuffs",
-        archetype: "debuff",
-      },
-      {
-        name: "Slow",
-        type: "SpeedDown",
-        value: 50,
-        duration: 3,
-        description: "Movement speed drastically reduced",
-        category: "Immobility Debuffs",
-        archetype: "debuff",
-      },
-      {
-        name: "Paralyze",
-        type: "Stun",
-        value: 0, // Stun doesn't need a value
-        duration: 1,
-        description: "Completely unable to act",
-        category: "Immobility Debuffs",
-        archetype: "debuff",
-      },
-    ];
+    // Define each effect as a separate constant with its own base chance
+    const ROOT_EFFECT = {
+      name: "Root",
+      type: "Immobilize",
+      value: 0, // Immobilization doesn't need a value
+      duration: 2,
+      description: "Magical roots prevent movement",
+      category: "Immobility Debuffs",
+      archetype: "debuff",
+      baseChance: 70, // Relatively easy to apply - just prevents movement
+    };
+
+    const SLOW_EFFECT = {
+      name: "Slow",
+      type: "SpeedDown",
+      value: 50,
+      duration: 3,
+      description: "Movement speed drastically reduced",
+      category: "Immobility Debuffs",
+      archetype: "debuff",
+      flatOrMultiplier: "multiplier",
+      baseChance: 85, // Easier than root because it's partial effect
+    };
+
+    const PARALYZE_EFFECT = {
+      name: "Paralyze",
+      type: "Stun",
+      value: 0, // Stun doesn't need a value
+      duration: 1,
+      description: "Completely unable to act",
+      category: "Immobility Debuffs", // Note: This is debatable - could be "Mental Debuffs"
+      archetype: "debuff",
+      baseChance: 50, // Hardest to apply - complete incapacitation
+    };
+
+    // Array of effects with their individual base chances
+    const immobilityEffects = [ROOT_EFFECT, SLOW_EFFECT, PARALYZE_EFFECT];
 
     const applicationResults = [];
 
@@ -185,27 +244,31 @@ const bindingChainsMicroAction = new MicroAction({
         let currentCaster = { ...caster };
         const unitResults = [];
 
-        // Apply each immobility effect
+        // Apply each immobility effect with its individual base chance
         immobilityEffects.forEach((effect, index) => {
           console.log(
-            `⛓️ Effect ${index + 1}/3: Applying ${effect.name} to ${unit.name}`
+            `⛓️ Effect ${index + 1}/3: Applying ${effect.name} to ${
+              unit.name
+            } (Base: ${effect.baseChance}%)`
           );
 
+          // Use the effect's individual base chance instead of a fixed 100%
           const application = applyEffect(
             currentCaster,
             currentUnit,
-            effect,
+            effect, // The effect object (without baseChance, as it's not part of the final effect)
             gameState,
             "Skill",
-            100
+            effect.baseChance // Pass the individual base chance here
           );
 
           const result = {
             target: unit.name,
             effect: effect.name,
+            baseChance: effect.baseChance, // Track the base chance for logging
             success: application.wasSuccessful,
             roll: application.applicationResults.rollResult,
-            chance: application.applicationResults.finalSuccessChance,
+            finalChance: application.applicationResults.finalSuccessChance,
             consumedCasterEffects:
               application.applicationResults.consumedCasterEffects?.length || 0,
             consumedTargetDefenses:
@@ -225,10 +288,22 @@ const bindingChainsMicroAction = new MicroAction({
             console.log(`❌ ${effect.name} resisted by ${unit.name}`);
           }
 
+          // Log effect-specific details
+          console.log(
+            `   📊 ${effect.name}: Base ${effect.baseChance}% → Final ${result.finalChance}% (Rolled: ${result.roll})`
+          );
+
           // Log caster effect consumption
           if (result.consumedCasterEffects > 0) {
             console.log(
-              `🔮 ${result.consumedCasterEffects} caster enhancement(s) consumed for ${effect.name}`
+              `   🔮 ${result.consumedCasterEffects} caster enhancement(s) consumed for ${effect.name}`
+            );
+          }
+
+          // Log target defense consumption
+          if (result.consumedTargetDefenses > 0) {
+            console.log(
+              `   🛡️ ${result.consumedTargetDefenses} target defense(s) consumed against ${effect.name}`
             );
           }
         });
@@ -248,7 +323,6 @@ const bindingChainsMicroAction = new MicroAction({
         });
 
         // Update the caster in gameState with the final state
-        // (In a real implementation, you'd want to handle this at the gameState level)
         caster = currentCaster;
 
         return currentUnit;
@@ -256,31 +330,36 @@ const bindingChainsMicroAction = new MicroAction({
       return unit;
     });
 
-    // Log comprehensive results
-    console.log("⛓️ Binding Chains Results:");
+    // Log comprehensive results with base chance information
+    console.log("⛓️ Binding Chains Results (Individual Base Chances):");
     applicationResults.forEach((result) => {
       console.log(
         `⛓️ ${result.target}: ${result.successCount}/3 effects applied`
       );
       console.log(
-        `   🔮 Caster effects consumed: ${result.totalCasterEffectsConsumed}`
+        `   🔮 Total caster effects consumed: ${result.totalCasterEffectsConsumed}`
       );
       console.log(
-        `   🛡️ Target defenses consumed: ${result.totalTargetDefensesConsumed}`
+        `   🛡️ Total target defenses consumed: ${result.totalTargetDefensesConsumed}`
       );
 
-      result.effects.forEach((effect) => {
-        const status = effect.success ? "✅" : "❌";
-        const casterText =
-          effect.consumedCasterEffects > 0
-            ? ` (${effect.consumedCasterEffects} caster)`
-            : "";
-        const targetText =
-          effect.consumedTargetDefenses > 0
-            ? ` (${effect.consumedTargetDefenses} target)`
-            : "";
+      result.effects.forEach((effectResult) => {
+        const status = effectResult.success ? "✅" : "❌";
+        const chanceInfo = `${effectResult.baseChance}% → ${effectResult.finalChance}%`;
+        const consumptionInfo = [];
+
+        if (effectResult.consumedCasterEffects > 0) {
+          consumptionInfo.push(`${effectResult.consumedCasterEffects} caster`);
+        }
+        if (effectResult.consumedTargetDefenses > 0) {
+          consumptionInfo.push(`${effectResult.consumedTargetDefenses} target`);
+        }
+
+        const consumptionText =
+          consumptionInfo.length > 0 ? ` (${consumptionInfo.join(", ")})` : "";
+
         console.log(
-          `      ${status} ${effect.effect}: ${effect.roll}/${effect.chance}%${casterText}${targetText}`
+          `      ${status} ${effectResult.effect}: ${chanceInfo} - Roll ${effectResult.roll}${consumptionText}`
         );
       });
     });
@@ -806,6 +885,16 @@ export const AnastasiaSkills = {
     false, // doesn't count towards attack limit
     false // not reactionary
   ),
+  IceSpike: new Skill(
+    "Ice Spike",
+    "Golem attacks with a sharp ice projectile",
+    2, // cooldown
+    5, // range
+    [iceSpikeGolemMicroAction],
+    true, // isAttack
+    true, // counts towards attack limit
+    false // not reactionary
+  ),
 };
 
 // Define Anastasia's base stats and attributes
@@ -901,6 +990,12 @@ export const AnastasiaTemplate = {
       onCooldownUntil: 0,
       isAttack: false,
       affectsAttackCount: false,
+    },
+    {
+      id: "IceSpike",
+      onCooldownUntil: 0,
+      isAttack: true,
+      affectsAttackCount: true,
     },
   ],
   noblePhantasms: [

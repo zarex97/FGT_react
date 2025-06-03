@@ -155,11 +155,14 @@ export class EffectApplication {
     // General effect resistance
     successChance -= target.effectResistance;
 
-    // Ensure bounds (0-100%)
-    this.applicationResults.finalSuccessChance = Math.max(
-      0,
-      Math.min(100, successChance)
-    );
+    // // Ensure bounds (0-100%)
+    // this.applicationResults.finalSuccessChance = Math.max(
+    //   0,
+    //   Math.min(100, successChance)
+    // );
+
+    // removed bounds as they can go beyond 100%, specially taking into account that enemy resistances can lower the chances
+    this.applicationResults.finalSuccessChance = successChance;
 
     console.log(
       `🎯 Final success chance: ${this.applicationResults.finalSuccessChance}%`
@@ -482,18 +485,18 @@ export class EffectApplication {
 
     // Create the final effect with all properties
     const finalEffect = {
+      ...this.effect, // Copy ALL properties from original effect
+      // Override with calculated/processed values
       name: this.effect.name,
       type: this.effect.type,
       value: this.calculateFinalEffectValue(),
       duration: this.effect.duration || null,
       uses: this.effect.uses || null,
       appliedAt: this.gameState.currentTurn,
+      flatOrMultiplier: this.effect.flatOrMultiplier || null,
       description: this.effect.description || `Applied ${this.effect.name}`,
       source: this.effect.source || this.applicationSource,
-      npValue:
-        this.applicationSource === "NP"
-          ? this.effect.npValue || this.effect.value
-          : null,
+      npValue: this.effect.npValue || this.effect.value,
       archetype: this.effect.archetype || this.determineArchetype(this.effect),
       removable: this.effect.removable !== false, // Default true unless explicitly false
       category: this.effect.category || this.determineCategory(this.effect),

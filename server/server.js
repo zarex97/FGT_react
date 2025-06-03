@@ -793,6 +793,51 @@ const handleMessage = (bytes, uuid) => {
 
           break;
 
+        case "UPDATE_VEHICLE_PASSENGER_POSITION":
+          const vehicleId = message.vehicleId;
+          const unit_Id = message.unitId;
+          const newRelativeX = message.newRelativeX;
+          const newRelativeY = message.newRelativeY;
+
+          // Find the vehicle and passenger
+          const targetVehicle = room.gameState.units.find(
+            (u) => u.id === vehicleId
+          );
+          const passenger = room.gameState.units.find((u) => u.id === unit_Id);
+
+          if (!targetVehicle || !passenger) {
+            console.error(`Vehicle or passenger not found for position update`);
+            break;
+          }
+
+          // Validate that the passenger is actually aboard this vehicle
+          if (passenger.aboardVehicle !== vehicleId) {
+            console.error(
+              `Passenger ${unit_Id} is not aboard vehicle ${vehicleId}`
+            );
+            break;
+          }
+
+          // Update the passenger's relative position
+          room.gameState.units = room.gameState.units.map((unit) => {
+            if (unit.id === unit_Id) {
+              console.log(
+                `Updating passenger ${unit.name} relative position to (${newRelativeX}, ${newRelativeY})`
+              );
+              return {
+                ...unit,
+                vehicleRelativePosition: {
+                  x: newRelativeX,
+                  y: newRelativeY,
+                },
+              };
+            }
+            return unit;
+          });
+
+          console.log(`Successfully updated passenger position within vehicle`);
+          break;
+
         case "CHANGE_HEIGHT":
           const changingUnit = room.gameState.units.find(
             (u) => u.id === message.unitId

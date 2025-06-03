@@ -89,7 +89,7 @@ export const IceGolemSkills = {
 export const IceGolemAttributes = {
   name: "Ice Golem",
   class: "ArcherMaterial",
-  type: "Golem",
+  type: "Summon",
 
   // Base Stats (weaker than servants but still combat capable)
   baseHp: 200,
@@ -134,6 +134,10 @@ export const IceGolemAttributes = {
   // Summon-specific properties
   summonDuration: 10, // Lasts 10 turns
   maxSummons: 2, // Anastasia can have max 2 ice golems at once
+  isVehicle: false,
+  isBiggerThanOneCell: null,
+  aboardVehicle: null,
+  vehicleRelativePosition: null,
 };
 
 // Ice Golem Template
@@ -168,6 +172,7 @@ export const createIceGolem = (summoner, position, gameState) => {
     // Position and team
     x: position.x,
     y: position.y,
+    z: summoner.z,
     team: summoner.team,
     hp: IceGolemAttributes.baseHp,
 

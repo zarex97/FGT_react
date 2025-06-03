@@ -44,6 +44,14 @@ export class TargetingLogic {
             targetX,
             targetY
           );
+          console.log(
+            "Distance to the target",
+            distance,
+            "and the target coordinates are x:",
+            targetX,
+            " y:",
+            targetY
+          );
           if (distance <= range) {
             affectedCells.add(`${targetX},${targetY}`);
           }
