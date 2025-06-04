@@ -489,12 +489,12 @@ const mahalaprayaMicroAction = new MicroAction({
   range: 6,
   dimensions: { width: 7, height: 7 },
   applyCornerRule: false,
-  effectLogic: (gameState, caster, affectedCells, skill) => {
+  effectLogic: (gameState, caster, affectedCells, skill_np_action) => {
     console.log("Executing Mahalapraya MicroAction:", {
       caster,
       affectedCellsCount: affectedCells.size,
       currentGameState: gameState,
-      skillRankLetter: skill?.rankLetter,
+      skillRankLetter: skill_np_action?.rankLetter,
     });
 
     // Initialize combatSent as an array if it doesn't exist
@@ -693,8 +693,13 @@ const cursedIceMicroAction = new MicroAction({
           ? unit.triggerEffects
           : [];
 
+        // Check if unit already has CurseTriggerEffect reference
+        const hasCurseTrigger = currentTriggerEffects.some(
+          (triggerRef) => triggerRef.id === "CurseTriggerEffect"
+        );
+
         // Create multiple curse effects (stages)
-        const curseEffect1 = {
+        let curseEffect1 = {
           name: "Curse",
           type: "Curse",
           duration: 5,
@@ -794,7 +799,8 @@ export const AnastasiaNPs = {
     true, // isAttack
     true, // affectsAttackCount
     false, // isReactionary
-    6 // usableFromRound
+    6, // usableFromRound
+    "C++"
   ),
 };
 
@@ -927,6 +933,7 @@ export const AnastasiaAttributes = {
   // Visual
   sprite: "dist/sprites/(Archer) Anastasia (Summer)_portrait.webp",
   combatSent: [],
+  effects: [],
   combatReceived: {},
   processedCombatSent: [],
   processedCombatReceived: [],

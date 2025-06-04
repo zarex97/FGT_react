@@ -67,7 +67,8 @@ export class Action {
       updatedGameState = microAction.execute(
         updatedGameState,
         caster,
-        affectedCells
+        affectedCells,
+        this
       );
     }
 

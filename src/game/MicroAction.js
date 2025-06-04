@@ -30,7 +30,7 @@ export class MicroAction {
     });
   }
 
-  execute(gameState, caster, affectedCells, skill = null) {
-    return this.effectLogic(gameState, caster, affectedCells, skill);
+  execute(gameState, caster, affectedCells, skill_np_action = null) {
+    return this.effectLogic(gameState, caster, affectedCells, skill_np_action);
   }
 }
