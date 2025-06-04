@@ -489,11 +489,12 @@ const mahalaprayaMicroAction = new MicroAction({
   range: 6,
   dimensions: { width: 7, height: 7 },
   applyCornerRule: false,
-  effectLogic: (gameState, caster, affectedCells) => {
+  effectLogic: (gameState, caster, affectedCells, skill) => {
     console.log("Executing Mahalapraya MicroAction:", {
       caster,
       affectedCellsCount: affectedCells.size,
       currentGameState: gameState,
+      skillRankLetter: skill?.rankLetter,
     });
 
     // Initialize combatSent as an array if it doesn't exist
@@ -824,7 +825,8 @@ export const AnastasiaSkills = {
     [mahalaprayaMicroAction],
     true, // isAttack
     true, //counts towards limit of attacks
-    true
+    true,
+    "A"
   ),
   selfBuff: new Skill(
     "Self Buff",
@@ -950,49 +952,49 @@ export const AnastasiaTemplate = {
   ],
   skills: [
     {
-      id: "Mahalapraya",
+      id: "Anastasia_Mahalapraya",
       onCooldownUntil: 0,
       isAttack: true, // New property
       affectsAttackCount: true, // New property
     },
     {
-      id: "selfBuff",
+      id: "Anastasia_selfBuff",
       onCooldownUntil: 0,
       isAttack: false,
       affectsAttackCount: false,
     },
     {
-      id: "constrainedExplosion",
+      id: "Anastasia_constrainedExplosion",
       onCooldownUntil: 0,
       isAttack: true,
       affectsAttackCount: true,
     },
     {
-      id: "IceCurse",
+      id: "Anastasia_IceCurse",
       onCooldownUntil: 0,
       isAttack: false,
       affectsAttackCount: false,
     },
     {
-      id: "BindingChains",
+      id: "Anastasia_BindingChains",
       onCooldownUntil: 0,
       isAttack: false,
       affectsAttackCount: false,
     },
     {
-      id: "SummonIceGolem",
+      id: "Anastasia_SummonIceGolem",
       onCooldownUntil: 0,
       isAttack: false,
       affectsAttackCount: false,
     },
     {
-      id: "CreateWaterBoat",
+      id: "Anastasia_CreateWaterBoat",
       onCooldownUntil: 0,
       isAttack: false,
       affectsAttackCount: false,
     },
     {
-      id: "IceSpike",
+      id: "Anastasia_IceSpike",
       onCooldownUntil: 0,
       isAttack: true,
       affectsAttackCount: true,
@@ -1000,7 +1002,7 @@ export const AnastasiaTemplate = {
   ],
   noblePhantasms: [
     {
-      id: "SnegletaSnegurochka",
+      id: "Anastasia_SnegletaSnegurochka",
       name: "Snegleta・Snegurochka: Summer Snow, Beautiful Drops of Hoarfrost",
       description:
         "Weakens enemy defenses and seals their skills while dealing massive magical damage",
@@ -1013,20 +1015,20 @@ export const AnastasiaTemplate = {
   reactions: [
     {
       id: 1,
-      name: "Instinct",
+      name: "Anastasia_Instinct",
       description: "May evade incoming attacks",
     },
   ],
   actions: {
     common: [
       {
-        id: "dodge",
+        id: "Anastasia_dodge",
         onCooldownUntil: 0,
       },
     ],
     unique: [
       {
-        id: "winterEscape",
+        id: "Anastasia_winterEscape",
         onCooldownUntil: 0,
       },
     ],

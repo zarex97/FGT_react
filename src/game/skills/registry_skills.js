@@ -8,8 +8,10 @@ import { ServantRegistry } from "../servants/registry_character";
 export const SkillImplementations = Object.values(ServantRegistry).reduce(
   (acc, servantClass) => {
     Object.values(servantClass).forEach((servant) => {
+      const characterName = servant.template.name; // Get character name from template
       Object.entries(servant.skills).forEach(([skillName, skillImpl]) => {
-        acc[skillName] = skillImpl;
+        const uniqueKey = `${characterName}_${skillName}`; // Create unique key
+        acc[uniqueKey] = skillImpl;
       });
     });
     return acc;
@@ -56,14 +58,7 @@ export const executeSkill = (skillRef, gameState, caster, targetX, targetY) => {
 
   console.log("Skill execution result (Skills registry):", {
     success: result.success,
-    updatedState: result.updatedGameState
-      ? {
-          unitCount: result.updatedGameState.units.length,
-          affectedUnits: result.updatedGameState.units.filter((u) =>
-            u.effects?.some((e) => e.name === "uwu")
-          ),
-        }
-      : null,
+    updatedState: result.updatedGameState,
   });
 
   // Update cooldown in the reference if execution was successful

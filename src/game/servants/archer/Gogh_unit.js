@@ -649,13 +649,13 @@ export const GoghTemplate = {
   ],
   skills: [
     {
-      id: "ChannelMarkerSoul",
+      id: "Gogh_ChannelMarkerSoul",
       onCooldownUntil: 0,
       isAttack: false, // New property
       affectsAttackCount: false, // New property
     },
     {
-      id: "Mahalapraya",
+      id: "Gogh_Mahalapraya",
       onCooldownUntil: 0,
       isAttack: true, // New property
       affectsAttackCount: true, // New property
@@ -663,7 +663,7 @@ export const GoghTemplate = {
   ],
   noblePhantasms: [
     {
-      id: "SnegletaSnegurochka",
+      id: "Gogh_SnegletaSnegurochka",
       name: "Snegleta・Snegurochka: Summer Snow, Beautiful Drops of Hoarfrost",
       description:
         "Weakens enemy defenses and seals their skills while dealing massive magical damage",
@@ -676,20 +676,20 @@ export const GoghTemplate = {
   reactions: [
     {
       id: 1,
-      name: "Instinct",
+      name: "Gogh_Instinct",
       description: "May evade incoming attacks",
     },
   ],
   actions: {
     common: [
       {
-        id: "dodge",
+        id: "Gogh_dodge",
         onCooldownUntil: 0,
       },
     ],
     unique: [
       {
-        id: "winterEscape",
+        id: "Gogh_winterEscape",
         onCooldownUntil: 0,
       },
     ],
