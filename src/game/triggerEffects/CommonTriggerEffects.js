@@ -53,9 +53,10 @@ export const CurseTriggerEffect = new TriggerEffect({
         let updatedUnit = { ...gameUnit };
 
         // Calculate total curse stages
-        const curseEffects =
-          updatedUnit.effects?.filter((e) => e.name === "Curse") || [];
-        const totalCurseStages = curseEffects.stage;
+        const curseEffect = updatedUnit.effects?.find(
+          (e) => e.name === "Curse"
+        );
+        const totalCurseStages = curseEffect?.stage || 0;
         const curseDamage = totalCurseStages * 25; // 25 damage per stage
 
         console.log(

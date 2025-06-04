@@ -10,7 +10,9 @@ export class Skill {
     microActions,
     isAttack = false,
     affectsAttackCount = false,
-    isReactionary = false
+    isReactionary = false,
+    rankLetter = null,
+    rankScale = null
   ) {
     this.name = name;
     this.description = description;
@@ -21,6 +23,8 @@ export class Skill {
     this.isAttack = isAttack;
     this.affectsAttackCount = affectsAttackCount;
     this.isReactionary = false;
+    this.rankLetter = rankLetter;
+    this.rankScale = rankScale;
 
     this.isOnCooldown = this.isOnCooldown.bind(this);
     this.startCooldown = this.startCooldown.bind(this);
@@ -64,7 +68,8 @@ export class Skill {
       updatedGameState = microAction.execute(
         updatedGameState,
         caster,
-        affectedCells
+        affectedCells,
+        this
       );
     }
 

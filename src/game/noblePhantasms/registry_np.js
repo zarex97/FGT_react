@@ -5,17 +5,26 @@ import { TargetingType } from "../targeting/TargetingTypes";
 import { NoblePhantasm } from "../NoblePhantasm";
 import { ServantRegistry } from "../servants/registry_character";
 
+// Updated NPImplementations with namespacing
 export const NPImplementations = Object.values(ServantRegistry).reduce(
   (acc, servantClass) => {
     Object.values(servantClass).forEach((servant) => {
-      console.log("Processing servant:", servant);
-      console.log("NPs:", servant.noblePhantasms);
-      Object.entries(servant.noblePhantasms || {}).forEach(
-        ([npName, npImpl]) => {
-          console.log("Adding NP:", npName, npImpl);
-          acc[npName] = npImpl;
-        }
-      );
+      // Get character name from template for unique keys
+      const characterName = servant.template?.name;
+
+      console.log("Processing servant for NPs:", {
+        name: characterName,
+        hasNPs: !!servant.noblePhantasms,
+      });
+
+      if (characterName && servant.noblePhantasms) {
+        Object.entries(servant.noblePhantasms).forEach(([npName, npImpl]) => {
+          // Create namespaced key to prevent collisions
+          const uniqueKey = `${characterName}_${npName}`;
+          console.log("Adding NP with unique key:", uniqueKey, npImpl);
+          acc[uniqueKey] = npImpl;
+        });
+      }
     });
     return acc;
   },

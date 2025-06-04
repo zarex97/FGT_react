@@ -12,7 +12,9 @@ export class NoblePhantasm {
     isAttack = false,
     affectsAttackCount = false,
     isReactionary = false,
-    usableFromRound = 6 // Default to round 6
+    usableFromRound = 6, // Default to round 6
+    rankLetter = null,
+    rankScale = null
   ) {
     this.name = name;
     this.description = description;
@@ -24,6 +26,8 @@ export class NoblePhantasm {
     this.affectsAttackCount = affectsAttackCount;
     this.isReactionary = isReactionary;
     this.usableFromRound = usableFromRound;
+    this.rankLetter = null;
+    this.rankScale = null;
 
     this.isOnCooldown = this.isOnCooldown.bind(this);
     this.startCooldown = this.startCooldown.bind(this);
@@ -80,7 +84,8 @@ export class NoblePhantasm {
       updatedGameState = microAction.execute(
         updatedGameState,
         caster,
-        affectedCells
+        affectedCells,
+        this
       );
     }
 

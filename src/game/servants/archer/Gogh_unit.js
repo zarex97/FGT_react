@@ -65,7 +65,7 @@ const GoghSuccessfulAttackTrigger = new TriggerEffect({
   eventType: EventTypes.SUCCESSFUL_ATTACK,
   name: "Gogh Buff Trigger",
   description:
-    "Removes curse and applies attack buff when Gogh successfully attacks",
+    "Reduces curse stage and applies attack buff when Gogh successfully attacks",
   source: "Channel Marker Soul",
   priority: 5,
 
@@ -82,19 +82,54 @@ const GoghSuccessfulAttackTrigger = new TriggerEffect({
       if (gameUnit.id === unit.id) {
         let updatedUnit = { ...gameUnit };
         let curseRemoved = false;
+        let stagesRemoved = 0;
 
-        // Remove one stage of Curse from Gogh
+        // Find the curse effect
         const curseIndex = updatedUnit.effects?.findIndex(
           (e) => e.name === "Curse"
         );
+
         if (curseIndex !== -1) {
           updatedUnit.effects = [...updatedUnit.effects];
-          updatedUnit.effects.splice(curseIndex, 1);
-          curseRemoved = true;
+          const curseEffect = updatedUnit.effects[curseIndex];
+          const currentStage = curseEffect.stage || 1;
+
+          // Determine how many stages to remove (1 for normal hit, 2 for critical)
+          const stagesToRemove = eventData.wasCritical ? 2 : 1;
+          stagesRemoved = Math.min(stagesToRemove, currentStage);
+
+          if (currentStage <= stagesToRemove) {
+            // Remove the curse entirely if stage would be 0 or less
+            updatedUnit.effects.splice(curseIndex, 1);
+            curseRemoved = true;
+          } else {
+            // Reduce the curse stage
+            const newStage = currentStage - stagesToRemove;
+            const newValue = 25 * newStage;
+
+            updatedUnit.effects[curseIndex] = {
+              ...curseEffect,
+              stage: newStage,
+              value: newValue,
+              description: `Cursed by frozen despair - Stage ${newStage}`,
+            };
+            curseRemoved = true;
+          }
         }
 
-        // If curse was removed, apply Attack Up buff
-        if (curseRemoved) {
+        // If curse was completely removed, also remove the CurseTriggerEffect reference
+        if (curseRemoved && currentStage <= stagesToRemove) {
+          // Remove CurseTriggerEffect reference from triggerEffects
+          updatedUnit.triggerEffects = (
+            updatedUnit.triggerEffects || []
+          ).filter((triggerRef) => triggerRef.id !== "CurseTriggerEffect");
+          console.log(
+            `🎨 GOGH TRIGGER: Removed CurseTriggerEffect reference from ${unit.name}`
+          );
+        }
+
+        // If curse was affected, apply Attack Up buff(s)
+        if (curseRemoved && stagesRemoved > 0) {
           const attackUpEffect = {
             name: "AttackUp",
             type: "AttackUp",
@@ -106,23 +141,10 @@ const GoghSuccessfulAttackTrigger = new TriggerEffect({
             npModifier: 0.5,
           };
 
-          updatedUnit.effects = [
-            ...(updatedUnit.effects || []),
-            attackUpEffect,
-          ];
-
-          // If it was a critical, remove second curse and apply buff twice
-          if (eventData.wasCritical) {
-            const secondCurseIndex = updatedUnit.effects?.findIndex(
-              (e) => e.name === "Curse"
-            );
-            if (secondCurseIndex !== -1) {
-              updatedUnit.effects.splice(secondCurseIndex, 1);
-            }
-
-            // Apply the attack up buff a second time
+          // Apply one AttackUp buff per stage removed
+          for (let i = 0; i < stagesRemoved; i++) {
             updatedUnit.effects = [
-              ...updatedUnit.effects,
+              ...(updatedUnit.effects || []),
               { ...attackUpEffect },
             ];
           }
@@ -231,40 +253,137 @@ const channelMarkerGoghBuffMicroAction = new MicroAction({
 });
 
 // MicroAction 3: Curse redistribution
+
 const channelMarkerCurseRedistributionMicroAction = new MicroAction({
   targetingType: TargetingType.AOE_AROUND_SELF,
   range: 3,
-  dimensions: { width: 7, height: 7 },
   applyCornerRule: false,
   effectLogic: (gameState, caster, affectedCells) => {
-    let collectedCurses = [];
+    console.log("🔄💀 Executing Curse Redistribution:", {
+      caster: caster.name,
+      affectedCellsCount: affectedCells.size,
+    });
 
-    // First pass: collect all curse effects from units in range
+    let totalCurseStages = 0;
+
+    // First pass: collect all curse stages from units in range and remove their curses
     const updatedUnits = gameState.units.map((unit) => {
       if (unit.id !== caster.id && affectedCells.has(`${unit.x},${unit.y}`)) {
         const curseEffects =
           unit.effects?.filter((e) => e.name === "Curse") || [];
-        collectedCurses = [...collectedCurses, ...curseEffects];
 
-        // Remove curses from this unit
+        // Sum up all curse stages from this unit
+        curseEffects.forEach((curse) => {
+          const stage = curse.stage || 1;
+          totalCurseStages += stage;
+          console.log(`🔄💀 COLLECTING: ${unit.name} had curse stage ${stage}`);
+        });
+
+        // Remove all curses from this unit and also remove CurseTriggerEffect reference
         return {
           ...unit,
           effects: unit.effects?.filter((e) => e.name !== "Curse") || [],
+          triggerEffects: (unit.triggerEffects || []).filter(
+            (triggerRef) => triggerRef.id !== "CurseTriggerEffect"
+          ),
         };
       }
       return unit;
     });
 
-    // Second pass: apply all collected curses to Gogh
+    console.log(`🔄💀 TOTAL COLLECTED STAGES: ${totalCurseStages}`);
+
+    // Second pass: apply all collected curse stages to Gogh
     const finalUnits = updatedUnits.map((unit) => {
-      if (unit.id === caster.id) {
+      if (unit.id === caster.id && totalCurseStages > 0) {
         const currentEffects = Array.isArray(unit.effects) ? unit.effects : [];
+        const currentTriggerEffects = Array.isArray(unit.triggerEffects)
+          ? unit.triggerEffects
+          : [];
+
+        // Check if Gogh already has a curse
+        const existingCurseIndex = currentEffects.findIndex(
+          (e) => e.name === "Curse"
+        );
+
+        // Check if Gogh already has CurseTriggerEffect reference
+        const hasCurseTrigger = currentTriggerEffects.some(
+          (triggerRef) => triggerRef.id === "CurseTriggerEffect"
+        );
+
+        let updatedEffects = currentEffects;
+        let updatedTriggerEffects = currentTriggerEffects;
+
+        if (existingCurseIndex !== -1) {
+          // Gogh already has a curse - upgrade it
+          const existingCurse = currentEffects[existingCurseIndex];
+          const currentStage = existingCurse.stage || 1;
+          const newStage = currentStage + totalCurseStages;
+          const newValue = 25 * newStage;
+
+          console.log(
+            `🔄💀 UPGRADING GOGH'S CURSE: Stage ${currentStage} + ${totalCurseStages} = ${newStage}`
+          );
+
+          updatedEffects = [...currentEffects];
+          updatedEffects[existingCurseIndex] = {
+            ...existingCurse,
+            stage: newStage,
+            value: newValue,
+            description: `Cursed by frozen despair - Stage ${newStage}`,
+          };
+        } else {
+          // Gogh doesn't have a curse - create a new one
+          const newCurseEffect = {
+            name: "Curse",
+            type: "Curse",
+            duration: 5,
+            appliedAt: gameState.currentTurn,
+            value: 25 * totalCurseStages,
+            description: `Cursed - Stage ${totalCurseStages}`,
+            source: "Channel Marker Curse Redistribution",
+            stage: totalCurseStages,
+          };
+
+          console.log(
+            `🔄💀 CREATING NEW CURSE ON GOGH: Stage ${totalCurseStages}, Value ${newCurseEffect.value}`
+          );
+
+          updatedEffects = [...currentEffects, newCurseEffect];
+        }
+
+        // Add CurseTriggerEffect reference if Gogh doesn't have it
+        if (!hasCurseTrigger) {
+          const curseTriggerReference = {
+            id: "CurseTriggerEffect",
+            appliedAt: gameState.currentTurn,
+            source: "Channel Marker Curse Redistribution",
+          };
+
+          updatedTriggerEffects = [
+            ...currentTriggerEffects,
+            curseTriggerReference,
+          ];
+          console.log(
+            `🔄💀 ADDING CURSE TRIGGER: ${unit.name} will now take curse damage over time`
+          );
+        }
+
         return {
           ...unit,
-          effects: [...currentEffects, ...collectedCurses],
+          effects: updatedEffects,
+          triggerEffects: updatedTriggerEffects,
         };
       }
       return unit;
+    });
+
+    console.log("🔄💀 Curse Redistribution complete:", {
+      totalStagesCollected: totalCurseStages,
+      goghNewCurseStage:
+        finalUnits
+          .find((u) => u.id === caster.id)
+          ?.effects?.find((e) => e.name === "Curse")?.stage || 0,
     });
 
     return {
@@ -649,13 +768,13 @@ export const GoghTemplate = {
   ],
   skills: [
     {
-      id: "ChannelMarkerSoul",
+      id: "Gogh_ChannelMarkerSoul",
       onCooldownUntil: 0,
       isAttack: false, // New property
       affectsAttackCount: false, // New property
     },
     {
-      id: "Mahalapraya",
+      id: "Gogh_Mahalapraya",
       onCooldownUntil: 0,
       isAttack: true, // New property
       affectsAttackCount: true, // New property
@@ -663,7 +782,7 @@ export const GoghTemplate = {
   ],
   noblePhantasms: [
     {
-      id: "SnegletaSnegurochka",
+      id: "Gogh_SnegletaSnegurochka",
       name: "Snegleta・Snegurochka: Summer Snow, Beautiful Drops of Hoarfrost",
       description:
         "Weakens enemy defenses and seals their skills while dealing massive magical damage",
@@ -676,20 +795,20 @@ export const GoghTemplate = {
   reactions: [
     {
       id: 1,
-      name: "Instinct",
+      name: "Gogh_Instinct",
       description: "May evade incoming attacks",
     },
   ],
   actions: {
     common: [
       {
-        id: "dodge",
+        id: "Gogh_dodge",
         onCooldownUntil: 0,
       },
     ],
     unique: [
       {
-        id: "winterEscape",
+        id: "Gogh_winterEscape",
         onCooldownUntil: 0,
       },
     ],
