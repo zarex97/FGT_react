@@ -12,6 +12,34 @@ import { applyEffect } from "../../EffectApplication.js";
 import { VehicleUtils } from "../../utils/VehicleUtils.js";
 import { createIceGolem } from "../materials/archer/ArcherMaterials.js";
 import { createWaterBoat } from "../materials/archer/ArcherMaterials.js";
+// IMPORT PASSIVE CREATORS
+import {
+  createMagicResistance,
+  createDivinity,
+  combinePassives,
+} from "../../passives/PassiveCreators.js";
+
+// CREATE ANASTASIA'S PASSIVES
+// Anastasia has A-rank Magic Resistance and C-rank Divinity
+const anastasiaPassives = combinePassives(
+  createMagicResistance("A+"), // High-rank magical resistance
+  createDivinity("C-") // Minor divine nature
+);
+
+// Extract the created effects and trigger effects for easy use
+const createdEffectsFromPassives = anastasiaPassives.effects;
+const createdTriggerEffectsFromPassives = anastasiaPassives.triggerEffects;
+
+console.log("Anastasia's Passives Created:", {
+  passives: anastasiaPassives.passiveInfo,
+  effectsCount: createdEffectsFromPassives.length,
+  triggerEffectsCount: createdTriggerEffectsFromPassives.length,
+});
+
+// Log individual passive effects for debugging
+createdEffectsFromPassives.forEach((effect) => {
+  console.log(`Passive Effect: ${effect.name} - ${effect.description}`);
+});
 
 const iceSpikeGolemMicroAction = new MicroAction({
   targetingType: TargetingType.SINGLE_TARGET,
@@ -951,6 +979,16 @@ export const AnastasiaTriggerEffects = {};
 // Export complete Anastasia unit template
 export const AnastasiaTemplate = {
   ...AnastasiaAttributes,
+  // INTEGRATE PASSIVE-CREATED EFFECTS AND TRIGGER EFFECTS
+  effects: [
+    // Any manually defined effects can go here
+    ...createdEffectsFromPassives, // A-rank Magic Resistance + C-rank Divinity effects
+  ],
+  triggerEffects: [
+    // Any manually defined trigger effects can go here
+    ...createdTriggerEffectsFromPassives, // Currently empty, but ready for future passive triggers
+  ],
+
   // These will be populated by UnitUtils methods when needed
   statusIfHit: null,
   backUpStatus: null,
