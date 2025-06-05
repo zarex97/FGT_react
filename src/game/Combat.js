@@ -1,5 +1,5 @@
 // Enhanced Combat.js with sophisticated rank-based resistance system
-
+import { RankUtils } from "../game/utils/RankUtils.js";
 export class Combat {
   constructor({
     typeOfAttackCausingIt,
