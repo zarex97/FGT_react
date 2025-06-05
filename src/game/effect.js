@@ -6,7 +6,7 @@
  * @param {number} value - The magnitude of the effect, it could be 10% or a flat number like 3
  * @param {number} duration - how much will it last on game rounds
  * @param {number} appliedAt - the turn when it was applied
- * @param {string} source - Which Attack/Skill/NP applied it
+ * @param {string} source - Which Attack/Skill/NP applied it (name of the Skill/NP/Action that is the parent of the microAction that is giving this effect)
  * @param {number} npValue - The magnitude if np
  * @param {string} archetype - "buff", "debuff" or "neutral"
  * @param {boolean} removable - If the effect is removable or not
@@ -15,8 +15,10 @@
  * @param {Array}  resistsAgainst - Array of specific resistances for defender by category/type/name
  * @param {Array}  immuneTo - Array of immunities for defender by category/type/name (e.g:  immuneTo: ["Poison", "Mental Debuffs"])
  * @param {string} flatOrMultiplier - if the value is to be taken flatly (+10) or exponentially (10%), mostly for damage related
+ * @param {string} sourceLetterRank - The Letter Rank (A+, B, C---, etc...) of the Attack/Skill/NP applied it
+ * @param {number} uses - if it has limited uses, if null it should be taken as it duration limited
  */
-resistsAgainst;
+
 export class Effect {
   constructor(
     name,
@@ -33,7 +35,9 @@ export class Effect {
     appliesToEffects = null,
     immuneTo = null,
     resistsAgainst = null,
-    flatOrMultiplier = null
+    flatOrMultiplier = null,
+    sourceLetterRank = null,
+    uses = null
   ) {
     this.name = name;
     this.type = type;
@@ -50,6 +54,8 @@ export class Effect {
     this.immuneTo = immuneTo;
     this.resistsAgainst = resistsAgainst;
     this.flatOrMultiplier = flatOrMultiplier;
+    this.sourceLetterRank = sourceLetterRank;
+    this.uses = uses;
   }
 }
 const finalEffect = {
