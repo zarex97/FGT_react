@@ -673,29 +673,29 @@ const TacticalGame = ({ username, roomId }) => {
     const baseColor = getHeightBaseColor(height);
 
     switch (terrainType) {
-      case "fire":
-        if (baseColor === "green") return "bg-red-200"; // Light red with green tint
-        if (baseColor === "blue") return "bg-red-300"; // Medium red with blue tint
-        if (baseColor === "purple") return "bg-red-400"; // Darker red with purple tint
-        return "bg-red-200";
+      // case "fire":
+      //   if (baseColor === "green") return "bg-red-200"; // Light red with green tint
+      //   if (baseColor === "blue") return "bg-red-300"; // Medium red with blue tint
+      //   if (baseColor === "purple") return "bg-red-400"; // Darker red with purple tint
+      //   return "bg-red-200";
 
-      case "ice":
-        if (baseColor === "green") return "bg-cyan-200"; // Light cyan with green tint
-        if (baseColor === "blue") return "bg-blue-200"; // Pure blue
-        if (baseColor === "purple") return "bg-indigo-300"; // Blue-purple
-        return "bg-blue-200";
+      // case "ice":
+      //   if (baseColor === "green") return "bg-cyan-200"; // Light cyan with green tint
+      //   if (baseColor === "blue") return "bg-blue-200"; // Pure blue
+      //   if (baseColor === "purple") return "bg-indigo-300"; // Blue-purple
+      //   return "bg-blue-200";
 
-      case "healing":
-        if (baseColor === "green") return "bg-green-200"; // Pure green
-        if (baseColor === "blue") return "bg-teal-200"; // Green-blue
-        if (baseColor === "purple") return "bg-emerald-300"; // Green with purple tint
-        return "bg-green-200";
+      // case "healing":
+      //   if (baseColor === "green") return "bg-green-200"; // Pure green
+      //   if (baseColor === "blue") return "bg-teal-200"; // Green-blue
+      //   if (baseColor === "purple") return "bg-emerald-300"; // Green with purple tint
+      //   return "bg-green-200";
 
-      case "elevator":
-        if (baseColor === "green") return "bg-yellow-200"; // Light yellow
-        if (baseColor === "blue") return "bg-amber-200"; // Amber
-        if (baseColor === "purple") return "bg-orange-200"; // Orange
-        return "bg-yellow-200";
+      // case "elevator":
+      //   if (baseColor === "green") return "bg-yellow-200"; // Light yellow
+      //   if (baseColor === "blue") return "bg-amber-200"; // Amber
+      //   if (baseColor === "purple") return "bg-orange-200"; // Orange
+      //   return "bg-yellow-200";
 
       default: // normal terrain
         if (baseColor === "green") return "bg-green-100"; // Light green
