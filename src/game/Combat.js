@@ -1,5 +1,4 @@
 // Enhanced Combat.js with sophisticated rank-based resistance system
-import { RankUtils } from "../game/utils/RankUtils";
 
 export class Combat {
   constructor({
@@ -210,9 +209,45 @@ export class Combat {
       multiplierAttack: 0,
       critChance: 0,
       critDamage: 0,
+      // NEW: Magic Resistance Nullification tracking
+      magicResistanceNullification: {
+        flatReduction: 0,
+        multiplierReduction: 0,
+        appliedEffects: [],
+      },
     };
 
-    this.attacker.effects?.forEach((effect) => {
+    // Track effects to remove (those that reach 0 uses)
+    const effectsToRemove = [];
+
+    this.attacker.effects?.forEach((effect, index) => {
+      // Check if effect has limited uses and process accordingly
+      let shouldApplyEffect = true;
+      if (effect.uses !== undefined && effect.uses !== null) {
+        if (effect.uses <= 0) {
+          // Effect is already expired, mark for removal
+          effectsToRemove.push(index);
+          shouldApplyEffect = false;
+        } else {
+          // Effect has uses remaining, consume one use
+          effect.uses -= 1;
+          console.log(`${effect.name} used: ${effect.uses} uses remaining`);
+
+          // If this was the last use, mark for removal
+          if (effect.uses === 0) {
+            effectsToRemove.push(index);
+            console.log(
+              `${effect.name} has been exhausted and will be removed`
+            );
+          }
+        }
+      }
+
+      if (!shouldApplyEffect) {
+        return; // Skip processing this effect
+      }
+
+      // Get the appropriate value (npValue for Noble Phantasms, value otherwise)
       const effectValue = this.getEffectValue(effect);
 
       switch (effect.type) {
@@ -252,7 +287,35 @@ export class Combat {
         case "CritDmgDown":
           modifiers.critDamage -= effectValue;
           break;
+        case "MagicResistanceNullification":
+          // NEW: Handle Magic Resistance Nullification effects
+          if (effect.flatOrMultiplier === "flat") {
+            modifiers.magicResistanceNullification.flatReduction += effectValue;
+          } else {
+            modifiers.magicResistanceNullification.multiplierReduction +=
+              effectValue;
+          }
+
+          modifiers.magicResistanceNullification.appliedEffects.push({
+            name: effect.name,
+            value: effectValue,
+            flatOrMultiplier: effect.flatOrMultiplier,
+            source: effect.source || "Unknown",
+          });
+
+          console.log(
+            `Applied Magic Resistance Nullification: ${effectValue} (${effect.flatOrMultiplier})`
+          );
+          break;
       }
+    });
+
+    // Remove exhausted effects (in reverse order to maintain indices)
+    effectsToRemove.reverse().forEach((index) => {
+      const removedEffect = this.attacker.effects.splice(index, 1)[0];
+      console.log(
+        `Removed exhausted effect: ${removedEffect.name} from ${this.attacker.name}`
+      );
     });
 
     this.combatResults.modifiers.attacker = modifiers;
@@ -290,7 +353,37 @@ export class Combat {
       },
     };
 
-    this.defender.effects?.forEach((effect) => {
+    // Track effects to remove (those that reach 0 uses)
+    const effectsToRemove = [];
+
+    this.defender.effects?.forEach((effect, index) => {
+      // Check if effect has limited uses and process accordingly
+      let shouldApplyEffect = true;
+      if (effect.uses !== undefined && effect.uses !== null) {
+        if (effect.uses <= 0) {
+          // Effect is already expired, mark for removal
+          effectsToRemove.push(index);
+          shouldApplyEffect = false;
+        } else {
+          // Effect has uses remaining, consume one use
+          effect.uses -= 1;
+          console.log(`${effect.name} used: ${effect.uses} uses remaining`);
+
+          // If this was the last use, mark for removal
+          if (effect.uses === 0) {
+            effectsToRemove.push(index);
+            console.log(
+              `${effect.name} has been exhausted and will be removed`
+            );
+          }
+        }
+      }
+
+      if (!shouldApplyEffect) {
+        return; // Skip processing this effect
+      }
+
+      // Get the appropriate value (npValue for Noble Phantasms, value otherwise)
       const effectValue = this.getEffectValue(effect);
 
       switch (effect.type) {
@@ -337,6 +430,14 @@ export class Combat {
           );
           break;
       }
+    });
+
+    // Remove exhausted effects (in reverse order to maintain indices)
+    effectsToRemove.reverse().forEach((index) => {
+      const removedEffect = this.defender.effects.splice(index, 1)[0];
+      console.log(
+        `Removed exhausted effect: ${removedEffect.name} from ${this.defender.name}`
+      );
     });
 
     this.combatResults.modifiers.defender = modifiers;
@@ -512,29 +613,126 @@ export class Combat {
       criticals.damageModifierPhysical
     );
 
-    // Apply magical resistance
+    // Store original damage values for nullification calculations
+    const originalMagicalDamage = magicalDamage;
+
+    // Apply magical resistance with nullification support
     const magicRes = defender.magicResistance;
-    if (magicRes.isCompletelyNegated) {
-      console.log(
-        `Magic damage completely negated by resistance effects:`,
-        magicRes.appliedEffects
-      );
-      magicalDamage = 0;
-    } else if (magicRes.reductionFlat > 0 || magicRes.reductionMultiplier > 0) {
-      const afterMultiplierReduction =
-        magicalDamage * (1 - magicRes.reductionMultiplier * 0.01);
-      const finalMagicalDamage = Math.max(
-        0,
-        afterMultiplierReduction - magicRes.reductionFlat
-      );
-      console.log(
-        `Magic damage reduced from ${magicalDamage} to ${finalMagicalDamage}:`,
-        magicRes.appliedEffects
-      );
-      magicalDamage = finalMagicalDamage;
+    const magicResNullification = attacker.magicResistanceNullification;
+
+    if (magicRes.isCompletelyNegated && this.proportionOfMagicUsed > 0) {
+      // Even complete negation can be affected by nullification
+      if (
+        magicResNullification &&
+        (magicResNullification.flatReduction > 0 ||
+          magicResNullification.multiplierReduction > 0)
+      ) {
+        // Calculate what the damage reduction would have been
+        const wouldBeReductionFlat = magicRes.reductionFlat;
+        const wouldBeReductionMultiplier = magicRes.reductionMultiplier;
+
+        // Apply nullification to the "would be" reduction to see if we can partially bypass complete negation
+        const effectiveReductionMultiplier = Math.max(
+          0,
+          wouldBeReductionMultiplier - magicResNullification.multiplierReduction
+        );
+        const effectiveReductionFlat = Math.max(
+          0,
+          wouldBeReductionFlat - magicResNullification.flatReduction
+        );
+
+        // If nullification is strong enough to overcome complete negation, apply partial damage
+        if (
+          effectiveReductionMultiplier < 100 ||
+          effectiveReductionFlat < originalMagicalDamage
+        ) {
+          const afterMultiplierReduction =
+            originalMagicalDamage * (1 - effectiveReductionMultiplier * 0.01);
+          magicalDamage = Math.max(
+            0,
+            afterMultiplierReduction - effectiveReductionFlat
+          );
+
+          console.log(
+            `Magic Resistance Nullification partially overcame complete negation:`,
+            {
+              originalDamage: originalMagicalDamage,
+              finalDamage: magicalDamage,
+              nullificationEffects: magicResNullification.appliedEffects,
+            }
+          );
+        } else {
+          console.log(
+            `Magic damage completely negated despite nullification attempts:`,
+            magicRes.appliedEffects
+          );
+          magicalDamage = 0;
+        }
+      } else {
+        console.log(
+          `Magic damage completely negated by resistance effects:`,
+          magicRes.appliedEffects
+        );
+        magicalDamage = 0;
+      }
+    } else if (
+      (magicRes.reductionFlat > 0 || magicRes.reductionMultiplier > 0) &&
+      this.proportionOfMagicUsed > 0
+    ) {
+      // Standard magic resistance application with nullification
+      let finalReductionMultiplier = magicRes.reductionMultiplier;
+      let finalReductionFlat = magicRes.reductionFlat;
+
+      // Apply Magic Resistance Nullification
+      if (
+        magicResNullification &&
+        (magicResNullification.flatReduction > 0 ||
+          magicResNullification.multiplierReduction > 0)
+      ) {
+        // Calculate the original damage that would be reduced
+        const originalDamageReduction =
+          originalMagicalDamage * magicRes.reductionMultiplier * 0.01 +
+          magicRes.reductionFlat;
+
+        // Apply nullification to the damage reduction amount
+        let nullificationMultiplierEffect =
+          1 - magicResNullification.multiplierReduction * 0.01;
+        let nullifiedReduction =
+          originalDamageReduction * nullificationMultiplierEffect -
+          magicResNullification.flatReduction;
+        nullifiedReduction = Math.max(0, nullifiedReduction); // Can't have negative reduction
+
+        // Calculate final damage using the nullified reduction amount
+        magicalDamage = originalMagicalDamage - nullifiedReduction;
+
+        console.log(`Magic Resistance Nullification applied:`, {
+          originalDamage: originalMagicalDamage,
+          originalReduction: originalDamageReduction,
+          nullifiedReduction: nullifiedReduction,
+          finalDamage: magicalDamage,
+          nullificationDetails: {
+            multiplierReduction: magicResNullification.multiplierReduction,
+            flatReduction: magicResNullification.flatReduction,
+            appliedEffects: magicResNullification.appliedEffects,
+          },
+        });
+      } else {
+        // Standard resistance application without nullification
+        const afterMultiplierReduction =
+          originalMagicalDamage * (1 - finalReductionMultiplier * 0.01);
+        magicalDamage = Math.max(
+          0,
+          afterMultiplierReduction - finalReductionFlat
+        );
+
+        console.log(
+          `Magic damage reduced from ${originalMagicalDamage} to ${magicalDamage}:`,
+          magicRes.appliedEffects
+        );
+      }
     }
 
-    // Apply physical resistance
+    // Apply physical resistance (no nullification system for physical resistance yet)
     const strRes = defender.strengthResistance;
     if (strRes.isCompletelyNegated) {
       console.log(
