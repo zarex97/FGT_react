@@ -409,6 +409,334 @@ const canMoveToHeight = (unit, targetZ, terrain) => {
   }
 };
 
+/**
+ * Generates a random team color from the available palette
+ * This ensures each player gets a unique visual identity
+ */
+const generateRandomTeamColor = (excludeColors = []) => {
+  const availableColors = [
+    "white",
+    "black",
+    "red",
+    "blue",
+    "green",
+    "yellow",
+    "purple",
+    "orange",
+  ];
+  const usableColors = availableColors.filter(
+    (color) => !excludeColors.includes(color)
+  );
+
+  if (usableColors.length === 0) {
+    // Fallback to any color if all are taken (shouldn't happen with 8 colors and typical player counts)
+    return availableColors[Math.floor(Math.random() * availableColors.length)];
+  }
+
+  return usableColors[Math.floor(Math.random() * usableColors.length)];
+};
+
+/**
+ * Generates base coordinates for Apocrypha mode
+ * The base system creates territorial control areas that give strategic advantage
+ *
+ * @param {string} baseType - Either "north" or "south"
+ * @param {number} gridSize - The width/height of the game grid (typically 11)
+ * @returns {Array} Array of coordinate objects {x, y, z} representing the base area
+ */
+const generateBaseCoordinates = (baseType, gridSize = 11) => {
+  const coordinates = [];
+  const baseHeight = 3; // Bases always span 3 rows vertically
+
+  // Calculate which rows belong to this base
+  let startY, endY;
+  if (baseType === "north") {
+    // North base gets the top 3 rows: y = 0, 1, 2
+    startY = 0;
+    endY = 2;
+  } else if (baseType === "south") {
+    // South base gets the bottom 3 rows: y = gridSize-3, gridSize-2, gridSize-1
+    startY = gridSize - 3;
+    endY = gridSize - 1;
+  } else {
+    throw new Error(
+      `Invalid base type: ${baseType}. Must be "north" or "south"`
+    );
+  }
+
+  // Generate all coordinates within the base area
+  // Bases span the full width of the map and exist on ground level (z=1)
+  for (let x = 0; x < gridSize; x++) {
+    for (let y = startY; y <= endY; y++) {
+      coordinates.push({ x, y, z: 1 }); // All bases are on ground level
+    }
+  }
+
+  console.log(
+    `Generated ${baseType} base with ${coordinates.length} cells from rows ${startY}-${endY}`
+  );
+  return coordinates;
+};
+
+/**
+ * Validates and processes a player's request to change their team color.
+ *
+ * This function embodies the "server-authoritative" approach to multiplayer games.
+ * Rather than trusting the client's color selection immediately, we validate it
+ * server-side to prevent conflicts and ensure game state consistency.
+ *
+ * The validation process mirrors the client-side checks but is more thorough
+ * because the server is the "source of truth" for game state.
+ *
+ * @param {string} playerId - ID of the player requesting the color change
+ * @param {string} requestedColor - The color the player wants to change to
+ * @param {Object} gameState - Current game state
+ * @returns {Object} Result object with success status and updated game state
+ */
+const changePlayerColor = (playerId, requestedColor, gameState) => {
+  // Validate that the requesting player exists in the game
+  const targetPlayer = gameState.players[playerId];
+  if (!targetPlayer) {
+    throw new Error("Player not found in game state");
+  }
+
+  // Validate that the requested color is from our approved palette
+  // This prevents players from injecting arbitrary colors or hex codes
+  const allowedColors = [
+    "white",
+    "black",
+    "red",
+    "blue",
+    "green",
+    "yellow",
+    "purple",
+    "orange",
+  ];
+  if (!allowedColors.includes(requestedColor)) {
+    throw new Error(
+      `Invalid color "${requestedColor}". Must be one of: ${allowedColors.join(
+        ", "
+      )}`
+    );
+  }
+
+  // Check if the player is trying to change to their current color
+  // This is technically valid but unnecessary, so we'll allow it with a different message
+  if (targetPlayer.teamColor === requestedColor) {
+    return {
+      success: true,
+      message: `You already have ${requestedColor} selected as your team color`,
+      gameState: gameState, // No changes needed
+      wasAlreadySelected: true,
+    };
+  }
+
+  // Critical validation: ensure the requested color isn't taken by another player
+  // This is the core multiplayer conflict prevention logic
+  const colorConflictPlayer = Object.values(gameState.players).find(
+    (player) => player.id !== playerId && player.teamColor === requestedColor
+  );
+
+  if (colorConflictPlayer) {
+    throw new Error(
+      `Color "${requestedColor}" is already taken by ${colorConflictPlayer.username}`
+    );
+  }
+
+  // All validations passed - proceed with the color change
+  const updatedGameState = JSON.parse(JSON.stringify(gameState)); // Deep copy for safety
+  const previousColor = targetPlayer.teamColor;
+
+  // Update the player's color
+  updatedGameState.players[playerId] = {
+    ...targetPlayer,
+    teamColor: requestedColor,
+  };
+
+  // If the player has a base, we need to update the terrain to reflect the new color
+  // This ensures that base territories immediately show the new color
+  if (targetPlayer.base && targetPlayer.base.coordinates) {
+    updatedGameState.terrain = updateBaseColorsInTerrain(
+      updatedGameState.terrain,
+      targetPlayer.base.coordinates,
+      requestedColor
+    );
+  }
+
+  console.log(
+    `✅ Player ${targetPlayer.username} changed color from ${previousColor} to ${requestedColor}`
+  );
+
+  return {
+    success: true,
+    message: `Successfully changed your team color to ${requestedColor}`,
+    gameState: updatedGameState,
+    wasAlreadySelected: false,
+    previousColor: previousColor,
+  };
+};
+
+/**
+ * Updates terrain cells to reflect a new team color for base territories.
+ *
+ * This function demonstrates the importance of maintaining data consistency
+ * across different parts of your game state. When a player changes colors,
+ * we need to update not just their player record but also any terrain
+ * cells that represent their base territory.
+ *
+ * @param {Object} terrain - Current terrain data structure
+ * @param {Array} baseCoordinates - Array of coordinates belonging to the base
+ * @param {string} newColor - The new team color to apply
+ * @returns {Object} Updated terrain with new color information
+ */
+const updateBaseColorsInTerrain = (terrain, baseCoordinates, newColor) => {
+  const updatedTerrain = JSON.parse(JSON.stringify(terrain)); // Deep copy
+
+  baseCoordinates.forEach((coord) => {
+    const { x, y, z } = coord;
+
+    // Ensure the terrain cell exists and is marked as a base
+    if (
+      updatedTerrain[z] &&
+      updatedTerrain[z][x] &&
+      updatedTerrain[z][x][y] &&
+      updatedTerrain[z][x][y].terrainType === "base"
+    ) {
+      // Update the color while preserving all other terrain properties
+      updatedTerrain[z][x][y] = {
+        ...updatedTerrain[z][x][y],
+        teamColor: newColor,
+      };
+    }
+  });
+
+  return updatedTerrain;
+};
+
+/**
+ * Assigns bases to players in Apocrypha mode
+ * This function implements the core base assignment logic with random distribution
+ *
+ * @param {Object} gameState - The current game state
+ * @returns {Object} Updated game state with bases assigned
+ */
+const assignPlayerBases = (gameState) => {
+  // Verify we're in the correct game mode
+  if (gameState.playMode !== "Apocrypha") {
+    throw new Error("Base assignment is only available in Apocrypha mode");
+  }
+
+  const players = Object.entries(gameState.players);
+
+  // Apocrypha mode supports exactly 2 players with opposing bases
+  if (players.length !== 2) {
+    throw new Error(
+      `Apocrypha mode requires exactly 2 players, but found ${players.length}`
+    );
+  }
+
+  // Check if bases are already assigned to prevent accidental reassignment
+  const playersWithBases = players.filter(([id, player]) => player.base);
+  if (playersWithBases.length > 0) {
+    throw new Error(
+      "Some players already have bases assigned. Clear existing bases first."
+    );
+  }
+
+  // Randomly determine which player gets which base
+  // This adds an element of chance to base assignment
+  const baseTypes = ["north", "south"];
+  const shuffledBaseTypes = [...baseTypes].sort(() => Math.random() - 0.5);
+
+  // Get existing team colors to avoid duplicates
+  const existingColors = players
+    .map(([id, player]) => player.teamColor)
+    .filter(Boolean);
+
+  // Create the updated game state with assigned bases
+  const updatedGameState = { ...gameState };
+
+  // Assign bases and colors to each player
+  players.forEach(([playerId, player], index) => {
+    const baseType = shuffledBaseTypes[index];
+    const baseCoordinates = generateBaseCoordinates(baseType, 11); // Assuming 11x11 grid
+
+    // Assign team color if player doesn't have one
+    let teamColor = player.teamColor;
+    if (!teamColor) {
+      teamColor = generateRandomTeamColor(existingColors);
+      existingColors.push(teamColor); // Prevent duplicate color assignment
+    }
+
+    // Update player with base and color information
+    updatedGameState.players[playerId] = {
+      ...player,
+      base: {
+        type: baseType,
+        coordinates: baseCoordinates,
+      },
+      teamColor: teamColor,
+    };
+
+    console.log(
+      `Assigned ${baseType} base to player ${player.username} with color ${teamColor}`
+    );
+  });
+
+  // Apply base territories to the terrain system
+  // This modifies the terrain data to include base ownership information
+  updatedGameState.terrain = applyBasesToTerrain(
+    updatedGameState.terrain,
+    updatedGameState.players
+  );
+
+  return updatedGameState;
+};
+
+/**
+ * Applies base territories to the terrain system
+ * This function modifies terrain cells to indicate base ownership and team colors
+ *
+ * @param {Object} terrain - The current terrain data structure
+ * @param {Object} players - The players object with base assignments
+ * @returns {Object} Updated terrain with base markings
+ */
+const applyBasesToTerrain = (terrain, players) => {
+  const updatedTerrain = JSON.parse(JSON.stringify(terrain)); // Deep copy
+
+  // Iterate through all players and apply their base territories
+  Object.entries(players).forEach(([playerId, player]) => {
+    if (player.base && player.base.coordinates) {
+      // Mark each coordinate in the player's base territory
+      player.base.coordinates.forEach((coord) => {
+        const { x, y, z } = coord;
+
+        // Ensure the terrain cell exists before modifying it
+        if (
+          updatedTerrain[z] &&
+          updatedTerrain[z][x] &&
+          updatedTerrain[z][x][y]
+        ) {
+          // Mark this cell as part of a base territory
+          updatedTerrain[z][x][y] = {
+            ...updatedTerrain[z][x][y],
+            terrainType: "base", // Special terrain type for base territories
+            teamColor: player.teamColor, // Color information for rendering
+            baseOwner: playerId, // Track which player owns this territory
+            baseType: player.base.type, // Track whether this is north or south base
+          };
+        }
+      });
+
+      console.log(
+        `Applied ${player.base.type} base territory for ${player.username} with ${player.teamColor} color`
+      );
+    }
+  });
+
+  return updatedTerrain;
+};
+
 const handleMessage = (bytes, uuid) => {
   const message = JSON.parse(bytes.toString());
   const player = playerStates[uuid];
@@ -428,19 +756,28 @@ const handleMessage = (bytes, uuid) => {
             detectionsThisTurn: [], // Initialize as array - Track who has used detection
             pendingCombatProcesses: false,
             terrain: message.initialTerrain || generateDefaultTerrain(),
+            playMode: message.playMode || "Apocrypha", // Add playMode support
           },
         };
         // Load existing autosaves for this room
         loadAutosavesFromDisk(message.roomId);
       }
 
-      // Add player to room
+      // Add player to room with team color generation
       const playerNumber =
         Object.keys(rooms[message.roomId].gameState.players).length + 1;
+      const existingTeamColors = Object.values(
+        rooms[message.roomId].gameState.players
+      )
+        .map((p) => p.teamColor)
+        .filter(Boolean);
+
       rooms[message.roomId].gameState.players[uuid] = {
         id: uuid,
         username: player.username,
         team: `player${playerNumber}`,
+        teamColor: generateRandomTeamColor(existingTeamColors), // Assign unique team color
+        base: null, // Initialize base as null (will be assigned later)
       };
 
       player.currentRoom = message.roomId;
@@ -791,6 +1128,173 @@ const handleMessage = (bytes, uuid) => {
             room.roomId
           );
 
+          break;
+
+        case "ASSIGN_PLAYER_BASES":
+          try {
+            console.log("🏰 Processing base assignment request");
+
+            // Ensure the game is in the correct mode for base assignment
+            if (room.gameState.playMode !== "Apocrypha") {
+              connections[uuid].send(
+                JSON.stringify({
+                  type: "BASE_ASSIGNMENT_ERROR",
+                  message:
+                    "Base assignment is only available in Apocrypha mode. Current mode: " +
+                    (room.gameState.playMode || "Standard"),
+                })
+              );
+              break;
+            }
+
+            // Create autosave before making changes
+            createAutosave(
+              player.currentRoom,
+              room.gameState,
+              "ASSIGN_PLAYER_BASES",
+              "before"
+            );
+
+            // Perform the base assignment
+            const updatedGameState = assignPlayerBases(room.gameState);
+            room.gameState = updatedGameState;
+
+            // Create autosave after successful assignment
+            createAutosave(
+              player.currentRoom,
+              room.gameState,
+              "ASSIGN_PLAYER_BASES",
+              "after"
+            );
+
+            // Notify all players of successful base assignment
+            const playerNames = Object.values(room.gameState.players).map(
+              (p) => p.username
+            );
+            const successMessage = `Bases successfully assigned to ${playerNames.join(
+              " and "
+            )}! Check the map to see your territorial boundaries.`;
+
+            Object.entries(room.gameState.players).forEach(
+              ([playerId, playerInfo]) => {
+                const connection = connections[playerId];
+                if (connection) {
+                  connection.send(
+                    JSON.stringify({
+                      type: "BASE_ASSIGNMENT_COMPLETE",
+                      message: successMessage,
+                    })
+                  );
+                }
+              }
+            );
+
+            console.log("✅ Base assignment completed successfully");
+          } catch (error) {
+            console.error("❌ Base assignment failed:", error.message);
+
+            // Send error message to the requesting player
+            connections[uuid].send(
+              JSON.stringify({
+                type: "BASE_ASSIGNMENT_ERROR",
+                message: error.message,
+              })
+            );
+          }
+          break;
+
+        case "CHANGE_PLAYER_COLOR":
+          try {
+            console.log(
+              `🎨 Processing color change request from player ${player.username}`
+            );
+
+            // Validate the color change request using our server-authoritative approach
+            // Even though the client validates the color selection, we validate again here
+            // because clients can be modified or have network delays that cause conflicts
+            const colorChangeResult = changePlayerColor(
+              uuid,
+              message.newColor,
+              room.gameState
+            );
+
+            // Create autosave before applying the color change
+            createAutosave(
+              player.currentRoom,
+              room.gameState,
+              "CHANGE_PLAYER_COLOR",
+              "before"
+            );
+
+            // Apply the validated changes to the game state
+            room.gameState = colorChangeResult.gameState;
+
+            // Create autosave after successful color change
+            createAutosave(
+              player.currentRoom,
+              room.gameState,
+              "CHANGE_PLAYER_COLOR",
+              "after"
+            );
+
+            // Send success confirmation to the requesting player
+            // We use different messages depending on whether this was actually a change
+            connections[uuid].send(
+              JSON.stringify({
+                type: "COLOR_CHANGE_COMPLETE",
+                message: colorChangeResult.message,
+                newColor: message.newColor,
+                previousColor: colorChangeResult.previousColor,
+              })
+            );
+
+            // If this was an actual color change (not selecting the same color again),
+            // broadcast the change to all other players in the room
+            if (!colorChangeResult.wasAlreadySelected) {
+              console.log(
+                `🌈 Broadcasting color change: ${player.username} is now ${message.newColor}`
+              );
+
+              // Notify other players about the color change for better game coordination
+              Object.entries(room.gameState.players).forEach(
+                ([playerId, playerInfo]) => {
+                  if (playerId !== uuid) {
+                    // Don't notify the player who made the change
+                    const connection = connections[playerId];
+                    if (connection) {
+                      connection.send(
+                        JSON.stringify({
+                          type: "PLAYER_COLOR_CHANGED",
+                          message: `${player.username} changed their team color to ${message.newColor}`,
+                          changedPlayer: player.username,
+                          newColor: message.newColor,
+                          previousColor: colorChangeResult.previousColor,
+                        })
+                      );
+                    }
+                  }
+                }
+              );
+            }
+
+            console.log(
+              `✅ Color change completed successfully for ${player.username}`
+            );
+          } catch (error) {
+            console.error(
+              `❌ Color change failed for ${player.username}:`,
+              error.message
+            );
+
+            // Send detailed error message to help the player understand what went wrong
+            connections[uuid].send(
+              JSON.stringify({
+                type: "COLOR_CHANGE_ERROR",
+                message: `Unable to change color: ${error.message}`,
+                requestedColor: message.newColor,
+              })
+            );
+          }
           break;
 
         case "UPDATE_VEHICLE_PASSENGER_POSITION":

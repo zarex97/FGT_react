@@ -22,31 +22,31 @@ import {
   ArrowRight,
 } from "lucide-react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
-import { createMahalapraya } from "../game/skills/Mahalapraya";
-import { Skill } from "../game/Skill";
+import { createMahalapraya } from "../game/skills/Mahalapraya.js";
+import { Skill } from "../game/Skill.js";
 import {
   getSkillImplementation,
   isSkillOnCooldown,
   executeSkill,
   getSkillAffectedCells,
-} from "../game/skills/registry_skills";
+} from "../game/skills/registry_skills.js";
 import {
   getActionImplementation,
   isActionOnCooldown,
   executeAction,
   getActionAffectedCells,
-} from "../game/actions/registry_actions";
+} from "../game/actions/registry_actions.js";
 import {
   getNPImplementation,
   isNPOnCooldown,
   executeNP,
   getNPAffectedCells,
   canUseNPOnThisRound,
-} from "../game/noblePhantasms/registry_np";
-import { TargetingType } from "../game/targeting/TargetingTypes";
-import { TargetingLogic } from "../game/targeting/TargetingLogic";
-import ServantSelector from "./ServantSelector";
-import { Combat } from "../game/Combat";
+} from "../game/noblePhantasms/registry_np.js";
+import { TargetingType } from "../game/targeting/TargetingTypes.js";
+import { TargetingLogic } from "../game/targeting/TargetingLogic.js";
+import ServantSelector from "./ServantSelector.jsx";
+import { Combat } from "../game/Combat.js";
 import { VehicleUtils } from "../game/utils/VehicleUtils.js";
 import {
   VehiclePassengerManager,
