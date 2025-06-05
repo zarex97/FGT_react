@@ -16,6 +16,7 @@ import { createWaterBoat } from "../materials/archer/ArcherMaterials.js";
 import {
   createMagicResistance,
   createDivinity,
+  createTerritoryCreation,
   combinePassives,
 } from "../../passives/PassiveCreators.js";
 
@@ -23,7 +24,8 @@ import {
 // Anastasia has A-rank Magic Resistance and C-rank Divinity
 const anastasiaPassives = combinePassives(
   createMagicResistance("A+"), // High-rank magical resistance
-  createDivinity("C-") // Minor divine nature
+  createDivinity("C-"), // Minor divine nature
+  createTerritoryCreation("B+")
 );
 
 // Extract the created effects and trigger effects for easy use
@@ -994,6 +996,7 @@ export const AnastasiaTemplate = {
     ...createdEffectsFromPassives, // A-rank Magic Resistance + C-rank Divinity effects
   ],
   triggerEffects: [
+    // Initially empty - trigger effects are added dynamically by skills/buffs
     // Any manually defined trigger effects can go here
     ...createdTriggerEffectsFromPassives, // Currently empty, but ready for future passive triggers
   ],
@@ -1001,9 +1004,6 @@ export const AnastasiaTemplate = {
   // These will be populated by UnitUtils methods when needed
   statusIfHit: null,
   backUpStatus: null,
-  triggerEffects: [
-    // Initially empty - trigger effects are added dynamically by skills/buffs
-  ],
   skills: [
     {
       id: "Anastasia_Mahalapraya",

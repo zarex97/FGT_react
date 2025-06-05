@@ -15,7 +15,7 @@
  * @param {Array}  resistsAgainst - Array of specific resistances for defender by category/type/name
  * @param {Array}  immuneTo - Array of immunities for defender by category/type/name (e.g:  immuneTo: ["Poison", "Mental Debuffs"])
  * @param {string} flatOrMultiplier - if the value is to be taken flatly (+10) or exponentially (10%), mostly for damage related
- * @param {string} sourceLetterRank - The Letter Rank (A+, B, C---, etc...) of the Attack/Skill/NP applied it
+ * @param {string} sourceLetterRank - The Letter Rank (A+, B, C---, etc...) of the Attack/Skill/NP/Passive that applied it
  * @param {number} uses - if it has limited uses, if null it should be taken as it duration limited
  */
 
@@ -58,20 +58,3 @@ export class Effect {
     this.uses = uses;
   }
 }
-const finalEffect = {
-  name: this.effect.name,
-  type: this.effect.type,
-  value: this.calculateFinalEffectValue(),
-  duration: this.effect.duration || null,
-  uses: this.effect.uses || null,
-  appliedAt: this.gameState.currentTurn,
-  description: this.effect.description || `Applied ${this.effect.name}`,
-  source: this.effect.source || this.applicationSource,
-  npValue:
-    this.applicationSource === "NP"
-      ? this.effect.npValue || this.effect.value
-      : null,
-  archetype: this.effect.archetype || this.determineArchetype(this.effect),
-  removable: this.effect.removable !== false, // Default true unless explicitly false
-  category: this.effect.category || this.determineCategory(this.effect),
-};
