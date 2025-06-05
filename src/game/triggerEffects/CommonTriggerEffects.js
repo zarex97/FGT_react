@@ -2,6 +2,9 @@
 import { TriggerEffect } from "../TriggerEffect.js";
 import { EventTypes } from "../EventTypes.js";
 import { convertFractionalDuration } from "../utils/DurationHelper.js";
+import { isUnitInOwnBase } from "../utils/DistanceUtils.js";
+import { DiceUtils } from "../utils/DiceUtils.js";
+import { RankUtils } from "../utils/RankUtils.js";
 
 // Curse Trigger Effect - Activates at end of turn for cursed units
 export const CurseTriggerEffect = new TriggerEffect({
@@ -102,111 +105,194 @@ export const CurseTriggerEffect = new TriggerEffect({
   },
 });
 
-// Burn Trigger Effect - Similar to curse but with different timing/effects
-export const BurnTriggerEffect = new TriggerEffect({
-  eventType: EventTypes.TURN_START,
-  name: "Burn Damage",
-  description: "Deals burn damage at the start of affected unit's turn",
-  source: "Burn Debuff",
-  priority: 9,
+// Territory Creation Trigger Effect - Activates on movement end to check base positioning
+export const TerritoryCreationTriggerEffect = new TriggerEffect({
+  eventType: EventTypes.MOVE_END,
+  name: "Territory Creation",
+  description:
+    "Manages territorial bonuses based on position relative to home base",
+  source: "Territory Creation Passive",
+  priority: 5, // Medium priority - should run after movement but before other effects
 
   conditionLogic: (eventData, gameState, unit) => {
-    // Only trigger if this unit has burn effects AND it's the start of their team's turn
-    const hasBurn = unit.effects?.some((effect) => effect.name === "Burn");
-    const isTheirTeamsTurn = gameState.turn === unit.team;
+    // Only trigger if this unit has Territory Creation trigger reference
+    const hasTerritoryCreation = unit.triggerEffects?.some(
+      (triggerRef) => triggerRef.id === "TerritoryCreationTriggerEffect"
+    );
 
-    return hasBurn && isTheirTeamsTurn;
+    console.log(`🏰 TERRITORY CHECK for ${unit.name}:`, {
+      hasTerritoryCreation,
+      unitPosition: { x: unit.x, y: unit.y, z: unit.z },
+    });
+
+    return hasTerritoryCreation;
   },
 
   effectLogic: (eventData, gameState, unit) => {
-    console.log(`🔥 BURN DAMAGE: Processing for ${unit.name}`);
+    console.log(`🏰 TERRITORY CREATION: Processing for ${unit.name}`);
 
-    const updatedUnits = gameState.units.map((gameUnit) => {
-      if (gameUnit.id === unit.id) {
-        let updatedUnit = { ...gameUnit };
+    // Helper function to find the highest Territory Creation rank among allies
+    const findHighestTerritoryRank = (team, units) => {
+      let highestRank = null;
+      let highestUnit = null;
 
-        // Calculate burn damage (different from curse)
-        const burnEffects =
-          updatedUnit.effects?.filter((e) => e.name === "Burn") || [];
-        const burnDamage = burnEffects.reduce(
-          (total, effect) => total + (effect.value || 15),
-          0
-        );
-
-        if (burnDamage > 0) {
-          updatedUnit.hp = Math.max(0, updatedUnit.hp - burnDamage);
-          console.log(
-            `🔥 BURN DAMAGE: ${unit.name} took ${burnDamage} burn damage`
+      units.forEach((u) => {
+        if (u.team === team) {
+          const territoryTrigger = u.triggerEffects?.find(
+            (tr) => tr.id === "TerritoryCreationTriggerEffect"
           );
-
-          // Remove one burn effect after damage (burns consume themselves)
-          if (updatedUnit.effects) {
-            const burnIndex = updatedUnit.effects.findIndex(
-              (e) => e.name === "Burn"
-            );
-            if (burnIndex !== -1) {
-              updatedUnit.effects.splice(burnIndex, 1);
-              console.log(`🔥 BURN: Removed one burn effect from ${unit.name}`);
+          if (territoryTrigger) {
+            if (
+              !highestRank ||
+              RankUtils.compareRanks(territoryTrigger.rank, highestRank) > 0
+            ) {
+              highestRank = territoryTrigger.rank;
+              highestUnit = u;
             }
           }
         }
+      });
 
-        return updatedUnit;
-      }
-      return gameUnit;
-    });
-
-    return {
-      ...gameState,
-      units: updatedUnits,
+      return { rank: highestRank, unit: highestUnit };
     };
-  },
-});
-
-// Example: Regeneration Trigger Effect - Positive common effect
-export const RegenerationTriggerEffect = new TriggerEffect({
-  eventType: EventTypes.TURN_START,
-  name: "Regeneration Healing",
-  description: "Heals unit at the start of their turn",
-  source: "Regeneration Buff",
-  priority: 8,
-
-  conditionLogic: (eventData, gameState, unit) => {
-    const hasRegen = unit.effects?.some(
-      (effect) => effect.name === "Regeneration"
-    );
-    const isTheirTeamsTurn = gameState.turn === unit.team;
-
-    return hasRegen && isTheirTeamsTurn;
-  },
-
-  effectLogic: (eventData, gameState, unit) => {
-    console.log(`💚 REGENERATION: Processing for ${unit.name}`);
 
     const updatedUnits = gameState.units.map((gameUnit) => {
-      if (gameUnit.id === unit.id) {
-        let updatedUnit = { ...gameUnit };
+      let updatedUnit = { ...gameUnit };
 
-        const regenEffects =
-          updatedUnit.effects?.filter((e) => e.name === "Regeneration") || [];
-        const healingAmount = regenEffects.reduce(
-          (total, effect) => total + (effect.value || 20),
-          0
+      // Get Territory Creation trigger data for this unit
+      const territoryTrigger = updatedUnit.triggerEffects?.find(
+        (tr) => tr.id === "TerritoryCreationTriggerEffect"
+      );
+
+      if (territoryTrigger && gameUnit.id === unit.id) {
+        // PASSIVE 1: Attack Bonus - only for the unit with Territory Creation
+        const baseStatus = isUnitInOwnBase(updatedUnit, gameState);
+        const isInOwnBase = baseStatus.isInOwnBase;
+
+        console.log(`🏰 ${unit.name} base status:`, {
+          isInOwnBase,
+          territoryStatus: baseStatus.territoryStatus,
+          hasBase: baseStatus.hasBase,
+        });
+
+        // Remove any existing Territory Creation attack effects
+        updatedUnit.effects = (updatedUnit.effects || []).filter(
+          (effect) => effect.source !== "Territory Creation Attack"
         );
 
-        if (healingAmount > 0) {
-          updatedUnit.hp = Math.min(
-            updatedUnit.maxHp || updatedUnit.baseHp,
-            updatedUnit.hp + healingAmount
-          );
+        if (isInOwnBase) {
+          // Create dice formula string for attack bonus (NO ROLLING)
+          const baseAttackValue =
+            territoryTrigger.attackBase + territoryTrigger.attackModifier;
+          const attackFormula = `1d${territoryTrigger.attackDie}+${baseAttackValue}`;
+
+          const attackBonusEffect = {
+            name: `Territory Attack Bonus (${territoryTrigger.rank})`,
+            description: `Territorial mastery grants variable attack bonus while in home base (${attackFormula})`,
+            type: "AttackUp",
+            value: baseAttackValue, // Base value without dice
+            variableValue: attackFormula, // Store the formula for combat system to roll
+            duration: null, // Permanent while in base
+            appliedAt: gameState.currentTurn,
+            source: "Territory Creation Attack",
+            npValue: baseAttackValue + 10, // Base value for NPs
+            archetype: "buff",
+            removable: true, // Can be removed when leaving base
+            category: "offensiveBuffs",
+            flatOrMultiplier: "flat",
+            sourceLetterRank: territoryTrigger.rank,
+            uses: null,
+          };
+
+          updatedUnit.effects = [
+            ...(updatedUnit.effects || []),
+            attackBonusEffect,
+          ];
+
           console.log(
-            `💚 REGENERATION: ${unit.name} healed for ${healingAmount} HP`
+            `🏰 ATTACK BONUS: ${unit.name} gained territorial attack bonus in base`,
+            {
+              formula: attackFormula,
+              baseValue: baseAttackValue,
+              rank: territoryTrigger.rank,
+            }
+          );
+        } else {
+          console.log(
+            `🏰 ATTACK BONUS: ${unit.name} lost attack bonus (outside base)`
           );
         }
-
-        return updatedUnit;
       }
-      return gameUnit;
+
+      // PASSIVE 2: Defense Bonus - affects all allied units in base (but only from highest rank Territory Creation)
+      const highestTerritory = findHighestTerritoryRank(
+        updatedUnit.team,
+        gameState.units
+      );
+
+      if (highestTerritory.rank && highestTerritory.unit) {
+        const baseStatus = isUnitInOwnBase(updatedUnit, gameState);
+        const isInOwnBase = baseStatus.isInOwnBase;
+
+        // Get the highest rank Territory Creation trigger data
+        const highestTerritoryTrigger =
+          highestTerritory.unit.triggerEffects?.find(
+            (tr) => tr.id === "TerritoryCreationTriggerEffect"
+          );
+
+        // Remove any existing Territory Creation defense effects
+        updatedUnit.effects = (updatedUnit.effects || []).filter(
+          (effect) => effect.source !== "Territory Creation Defense"
+        );
+
+        if (isInOwnBase && highestTerritoryTrigger) {
+          // Create dice formula string for defense bonus (NO ROLLING)
+          const baseDefenseValue =
+            highestTerritoryTrigger.defenseBase +
+            highestTerritoryTrigger.defenseModifier;
+          const defenseFormula = `3d10+${baseDefenseValue}`;
+
+          const defenseBonusEffect = {
+            name: `Territory Defense Bonus (${highestTerritory.rank})`,
+            description: `Territorial protection reduces incoming damage while in home base (${defenseFormula})`,
+            type: "DefenseUp",
+            value: baseDefenseValue, // Base value without dice
+            variableValue: defenseFormula, // Store the formula for combat system to roll
+            duration: null, // Permanent while in base
+            appliedAt: gameState.currentTurn,
+            source: "Territory Creation Defense",
+            npValue: baseDefenseValue + 5, // Base value for NPs
+            archetype: "buff",
+            removable: true, // Can be removed when leaving base
+            category: "defensiveBuffs",
+            flatOrMultiplier: "flat",
+            sourceLetterRank: highestTerritory.rank,
+            uses: null,
+            providedBy: highestTerritory.unit.id,
+          };
+
+          updatedUnit.effects = [
+            ...(updatedUnit.effects || []),
+            defenseBonusEffect,
+          ];
+
+          console.log(
+            `🏰 DEFENSE BONUS: ${updatedUnit.name} gained territorial defense bonus in base`,
+            {
+              providedBy: highestTerritory.unit.name,
+              rank: highestTerritory.rank,
+              formula: defenseFormula,
+              baseValue: baseDefenseValue,
+            }
+          );
+        } else if (!isInOwnBase) {
+          console.log(
+            `🏰 DEFENSE BONUS: ${updatedUnit.name} lost defense bonus (outside base)`
+          );
+        }
+      }
+
+      return updatedUnit;
     });
 
     return {
@@ -219,6 +305,5 @@ export const RegenerationTriggerEffect = new TriggerEffect({
 // Export all common trigger effects
 export const CommonTriggerEffects = {
   CurseTriggerEffect,
-  BurnTriggerEffect,
-  RegenerationTriggerEffect,
+  TerritoryCreationTriggerEffect,
 };

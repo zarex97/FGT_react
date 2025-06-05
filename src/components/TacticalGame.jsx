@@ -117,6 +117,8 @@ const TacticalGame = ({ username, roomId }) => {
   const [showVehicleInspector, setShowVehicleInspector] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [movementPreviewMode, setMovementPreviewMode] = useState(false);
+  const [showBaseManagement, setShowBaseManagement] = useState(false);
+  const [baseManagementMessage, setBaseManagementMessage] = useState(null);
 
   const WS_URL = `ws://127.0.0.1:8000?username=${username}`;
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
@@ -323,6 +325,34 @@ const TacticalGame = ({ username, roomId }) => {
       };
 
       setTriggerNotifications((prev) => [...prev, newNotification]);
+    }
+    //base assignment
+    else if (lastJsonMessage?.type === "BASE_ASSIGNMENT_COMPLETE") {
+      setBaseManagementMessage({
+        type: "success",
+        text: lastJsonMessage.message,
+      });
+      setTimeout(() => setBaseManagementMessage(null), 3000);
+    } else if (lastJsonMessage?.type === "BASE_ASSIGNMENT_ERROR") {
+      setBaseManagementMessage({
+        type: "error",
+        text: lastJsonMessage.message,
+      });
+      setTimeout(() => setBaseManagementMessage(null), 3000);
+    }
+    //changing color
+    else if (lastJsonMessage?.type === "COLOR_CHANGE_COMPLETE") {
+      setBaseManagementMessage({
+        type: "success",
+        text: lastJsonMessage.message,
+      });
+      setTimeout(() => setBaseManagementMessage(null), 3000);
+    } else if (lastJsonMessage?.type === "COLOR_CHANGE_ERROR") {
+      setBaseManagementMessage({
+        type: "error",
+        text: lastJsonMessage.message,
+      });
+      setTimeout(() => setBaseManagementMessage(null), 3000);
     }
   }, [lastJsonMessage]);
 
@@ -669,8 +699,63 @@ const TacticalGame = ({ username, roomId }) => {
     }
   };
 
-  const getTerrainColorForHeight = (terrainType, height) => {
+  const getTerrainColorForHeight = (terrainType, height, teamColor = null) => {
     const baseColor = getHeightBaseColor(height);
+    // Handle base territories first
+    if (terrainType === "base" && teamColor) {
+      // Create base colors that blend with the height-based colors
+      const baseColorMap = {
+        white:
+          height === 1
+            ? "bg-gray-100"
+            : height === 2
+            ? "bg-gray-200"
+            : "bg-gray-300",
+        black:
+          height === 1
+            ? "bg-amber-700"
+            : height === 2
+            ? "bg-amber-800"
+            : "bg-amber-900",
+        red:
+          height === 1
+            ? "bg-red-200"
+            : height === 2
+            ? "bg-red-300"
+            : "bg-red-400",
+        blue:
+          height === 1
+            ? "bg-blue-200"
+            : height === 2
+            ? "bg-blue-300"
+            : "bg-blue-400",
+        green:
+          height === 1
+            ? "bg-green-200"
+            : height === 2
+            ? "bg-green-300"
+            : "bg-green-400",
+        yellow:
+          height === 1
+            ? "bg-yellow-200"
+            : height === 2
+            ? "bg-yellow-300"
+            : "bg-yellow-400",
+        purple:
+          height === 1
+            ? "bg-purple-200"
+            : height === 2
+            ? "bg-purple-300"
+            : "bg-purple-400",
+        orange:
+          height === 1
+            ? "bg-orange-200"
+            : height === 2
+            ? "bg-orange-300"
+            : "bg-orange-400",
+      };
+      return baseColorMap[teamColor] || "bg-gray-200";
+    }
 
     switch (terrainType) {
       // case "fire":
@@ -5033,10 +5118,14 @@ const TacticalGame = ({ username, roomId }) => {
 
     // Determine base terrain colors and floor indicators
     if (isVisible && effectiveCell) {
-      // Use the terrain color for the effective height
+      // Get team color for base territories
+      const teamColor = effectiveCell.teamColor || null;
+
+      // Use the terrain color for the effective height with team color support
       bgColor = getTerrainColorForHeight(
         effectiveCell.terrainType,
-        effectiveHeight
+        effectiveHeight,
+        teamColor
       );
 
       // Add height indicator if we're showing a floor from a different height
@@ -5763,6 +5852,336 @@ const TacticalGame = ({ username, roomId }) => {
     );
   };
 
+  const getCurrentPlayer = () => {
+    const currentPlayerId = Object.keys(gameState.players || {}).find(
+      (id) => gameState.players[id].username === username
+    );
+    return currentPlayerId ? gameState.players[currentPlayerId] : null;
+  };
+
+  // Get list of colors that are currently available for selection
+  const getAvailableColors = () => {
+    const allColors = [
+      "white",
+      "black",
+      "red",
+      "blue",
+      "green",
+      "yellow",
+      "purple",
+      "orange",
+    ];
+    const currentPlayer = getCurrentPlayer();
+    const usedColors = Object.values(gameState.players || {})
+      .filter((player) => player.id !== currentPlayer?.id) // Exclude current player's color
+      .map((player) => player.teamColor)
+      .filter(Boolean); // Remove any null/undefined colors
+
+    return allColors.filter((color) => !usedColors.includes(color));
+  };
+
+  // Handle color change selection
+  const handleColorChange = (newColor) => {
+    const currentPlayer = getCurrentPlayer();
+
+    if (!currentPlayer) {
+      setBaseManagementMessage({
+        type: "error",
+        text: "Unable to identify current player",
+      });
+      return;
+    }
+
+    if (currentPlayer.teamColor === newColor) {
+      setBaseManagementMessage({
+        type: "error",
+        text: "You already have this color selected",
+      });
+      return;
+    }
+
+    // Send color change request to server
+    sendJsonMessage({
+      type: "GAME_ACTION",
+      action: "CHANGE_PLAYER_COLOR",
+      newColor: newColor,
+    });
+  };
+
+  const BaseManagementWindow = ({ onClose }) => {
+    const [isDragging, setIsDragging] = useState(false);
+    const [position, setPosition] = useState({ x: 300, y: 200 });
+    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+    // Handle mouse down for dragging
+    const handleMouseDown = (e) => {
+      if (e.target.closest(".window-content")) return; // Don't drag if clicking on content
+      setIsDragging(true);
+      setDragOffset({
+        x: e.clientX - position.x,
+        y: e.clientY - position.y,
+      });
+    };
+
+    // Handle mouse move for dragging
+    const handleMouseMove = (e) => {
+      if (isDragging) {
+        setPosition({
+          x: e.clientX - dragOffset.x,
+          y: e.clientY - dragOffset.y,
+        });
+      }
+    };
+
+    // Handle mouse up to stop dragging
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    // Add event listeners for dragging
+    useEffect(() => {
+      if (isDragging) {
+        document.addEventListener("mousemove", handleMouseMove);
+        document.addEventListener("mouseup", handleMouseUp);
+        return () => {
+          document.removeEventListener("mousemove", handleMouseMove);
+          document.removeEventListener("mouseup", handleMouseUp);
+        };
+      }
+    }, [isDragging, dragOffset]);
+
+    const handleAssignPlayerBases = () => {
+      // Check if we're in Apocrypha mode
+      if (gameState.playMode !== "Apocrypha") {
+        setBaseManagementMessage({
+          type: "error",
+          text: "The only mode with Base Logic right now is Apocrypha, please change game modes",
+        });
+        return;
+      }
+
+      // Send message to server to assign bases
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "ASSIGN_PLAYER_BASES",
+      });
+    };
+
+    return (
+      <div
+        className="fixed bg-white shadow-2xl rounded-lg border-2 border-gray-300 z-50 select-none"
+        style={{
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          minWidth: "400px",
+          cursor: isDragging ? "grabbing" : "grab",
+        }}
+        onMouseDown={handleMouseDown}
+      >
+        {/* Window Header */}
+        <div className="bg-blue-600 text-white px-4 py-2 rounded-t-lg flex justify-between items-center">
+          <h3 className="text-lg font-bold">Base Management</h3>
+          <button
+            onClick={onClose}
+            className="text-white hover:text-gray-200 text-xl font-bold w-6 h-6 flex items-center justify-center"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Window Content */}
+        <div className="window-content p-6 space-y-4">
+          <div className="text-sm text-gray-600 mb-4">
+            <p>Manage territorial bases for the current game mode.</p>
+            <p className="font-semibold text-blue-600">
+              Current Mode: {gameState.playMode || "Standard"}
+            </p>
+          </div>
+
+          {/* Base Assignment Section */}
+          <div className="border rounded-lg p-4 bg-gray-50">
+            <h4 className="font-semibold mb-3">Base Assignment</h4>
+            <p className="text-sm text-gray-600 mb-3">
+              Assign territorial bases to players. In Apocrypha mode, players
+              get North or South base territories.
+            </p>
+
+            <button
+              onClick={handleAssignPlayerBases}
+              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 flex items-center gap-2"
+            >
+              🏰 Assign Player Bases
+            </button>
+          </div>
+
+          {/* Color Management Section */}
+          <div className="border rounded-lg p-4 bg-indigo-50">
+            <h4 className="font-semibold mb-3">Team Color Selection</h4>
+            <p className="text-sm text-gray-600 mb-3">
+              Choose your team color. This affects your base territory
+              appearance and unit identification.
+            </p>
+
+            {/* Current Color Display */}
+            {(() => {
+              const currentPlayer = getCurrentPlayer();
+              return currentPlayer?.teamColor ? (
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="text-sm font-medium">Current Color:</span>
+                  <div
+                    className="w-6 h-6 rounded border-2 border-gray-300"
+                    style={{ backgroundColor: currentPlayer.teamColor }}
+                  />
+                  <span className="text-sm capitalize text-gray-700">
+                    {currentPlayer.teamColor}
+                  </span>
+                </div>
+              ) : (
+                <div className="mb-4 text-sm text-gray-500">
+                  No color assigned yet
+                </div>
+              );
+            })()}
+
+            {/* Color Palette Selection */}
+            <div className="mb-3">
+              <span className="text-sm font-medium text-gray-700 block mb-2">
+                Available Colors:
+              </span>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  "white",
+                  "black",
+                  "red",
+                  "blue",
+                  "green",
+                  "yellow",
+                  "purple",
+                  "orange",
+                ].map((color) => {
+                  const isAvailable = getAvailableColors().includes(color);
+                  const isCurrent = getCurrentPlayer()?.teamColor === color;
+                  const isUsed = !isAvailable && !isCurrent;
+
+                  return (
+                    <button
+                      key={color}
+                      onClick={() =>
+                        isAvailable ? handleColorChange(color) : null
+                      }
+                      disabled={!isAvailable}
+                      className={`
+                        relative w-12 h-12 rounded border-2 transition-all duration-200
+                        ${
+                          isAvailable
+                            ? "border-gray-400 hover:border-gray-600 hover:scale-105 cursor-pointer shadow-md hover:shadow-lg"
+                            : "border-gray-200 cursor-not-allowed opacity-50"
+                        }
+                        ${
+                          isCurrent
+                            ? "ring-4 ring-blue-500 ring-opacity-50"
+                            : ""
+                        }
+                      `}
+                      style={{
+                        backgroundColor: color,
+                        // Add special handling for white color visibility
+                        ...(color === "white"
+                          ? { border: "2px solid #e5e5e5" }
+                          : {}),
+                      }}
+                      title={
+                        isCurrent
+                          ? `Your current color: ${color}`
+                          : isUsed
+                          ? `${color} is taken by another player`
+                          : `Select ${color} as your team color`
+                      }
+                    >
+                      {/* Visual indicators for different states */}
+                      {isCurrent && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-blue-600 font-bold text-lg">
+                            ✓
+                          </span>
+                        </div>
+                      )}
+                      {isUsed && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-red-500 font-bold text-lg">
+                            ✗
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Color name tooltip on hover */}
+                      <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {color}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-500">
+              Colors marked with ✓ are your current selection. Colors marked
+              with ✗ are taken by other players.
+            </p>
+          </div>
+
+          {/* Current Base Status */}
+          {gameState.playMode === "Apocrypha" && (
+            <div className="border rounded-lg p-4 bg-blue-50">
+              <h4 className="font-semibold mb-3">Current Base Status</h4>
+              <div className="space-y-2">
+                {Object.entries(gameState.players || {}).map(
+                  ([playerId, player]) => (
+                    <div
+                      key={playerId}
+                      className="flex justify-between items-center text-sm"
+                    >
+                      <span className="font-medium">{player.username}</span>
+                      <span
+                        className={`px-2 py-1 rounded text-xs ${
+                          player.base
+                            ? "bg-green-100 text-green-800"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {player.base ? `${player.base.type} Base` : "No Base"}
+                      </span>
+                      {player.teamColor && (
+                        <div
+                          className="w-4 h-4 rounded border border-gray-300"
+                          style={{ backgroundColor: player.teamColor }}
+                          title={`Team Color: ${player.teamColor}`}
+                        />
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Message Display */}
+          {baseManagementMessage && (
+            <div
+              className={`p-3 rounded border ${
+                baseManagementMessage.type === "error"
+                  ? "bg-red-50 border-red-200 text-red-700"
+                  : "bg-green-50 border-green-200 text-green-700"
+              }`}
+            >
+              {baseManagementMessage.text}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // In TacticalGame.jsx, replace the return statement with:
 
   return (
@@ -5834,6 +6253,13 @@ const TacticalGame = ({ username, roomId }) => {
             className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 flex items-center gap-2"
           >
             <Save size={16} /> Save/Load
+          </button>
+
+          <button
+            onClick={() => setShowBaseManagement(true)}
+            className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 flex items-center gap-2"
+          >
+            🏰 Base Management
           </button>
         </div>
       </div>
@@ -5974,6 +6400,14 @@ const TacticalGame = ({ username, roomId }) => {
           }}
           onBoardUnit={handleBoardUnit}
           onDisembarkUnit={handleDisembarkUnit}
+        />
+      )}
+      {showBaseManagement && (
+        <BaseManagementWindow
+          onClose={() => {
+            setShowBaseManagement(false);
+            setBaseManagementMessage(null);
+          }}
         />
       )}
     </div>

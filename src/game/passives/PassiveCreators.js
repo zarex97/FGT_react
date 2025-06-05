@@ -119,166 +119,6 @@ export function createMagicResistance(rank) {
 }
 
 /**
- * Physical Resistance Passive Creator
- * Creates physical damage resistance effects (the STR equivalent of Magic Resistance)
- * @param {string} rank - The rank of Physical Resistance (e.g., "A", "B+", "C--", "EX")
- * @returns {object} Object containing effects and triggerEffects arrays
- */
-export function createPhysicalResistance(rank) {
-  // Validate rank input using RankUtils
-  if (!RankUtils.isValidRank(rank)) {
-    console.error(
-      `Invalid Physical Resistance rank: ${rank}. Using E as fallback.`
-    );
-    rank = "E";
-  }
-
-  // Get the base rank letter for data lookup
-  const baseRank = RankUtils.getBaseRank(rank);
-
-  const physicalResistanceData = {
-    EX: {
-      damageReduction: 100,
-      description: `Legendary physical immunity (${rank}) - completely negates all physical damage`,
-    },
-    A: {
-      damageReduction: 50,
-      description: `High-rank physical resistance (${rank}) - negates ${rank} and below physical attacks, reduces higher ranks by 50%`,
-    },
-    B: {
-      damageReduction: 40,
-      description: `Moderate physical resistance (${rank}) - negates ${rank} and below physical attacks, reduces higher ranks by 40%`,
-    },
-    C: {
-      damageReduction: 30,
-      description: `Basic physical resistance (${rank}) - negates ${rank} and below physical attacks, reduces higher ranks by 30%`,
-    },
-    D: {
-      damageReduction: 20,
-      description: `Weak physical resistance (${rank}) - negates ${rank} and below physical attacks, reduces higher ranks by 20%`,
-    },
-    E: {
-      damageReduction: 10,
-      description: `Minimal physical resistance (${rank}) - negates ${rank} physical attacks, reduces higher ranks by 10%`,
-    },
-  };
-
-  const data = physicalResistanceData[baseRank];
-
-  const effects = [];
-  const triggerEffects = [];
-
-  const physicalDamageResistance = {
-    name: `Physical Resistance (${rank})`,
-    type: "StrRes",
-    duration: null,
-    appliedAt: null,
-    value: data.damageReduction,
-    npValue: Math.max(10, data.damageReduction - 20),
-    flatOrMultiplier: "multiplier",
-    sourceLetterRank: rank, // Use the FULL rank including modifiers for comparison
-    description: data.description,
-    source: "Physical Resistance Passive",
-    isPermanent: true,
-    isPassive: true,
-    type: "Physical Resistance",
-    rank: rank,
-  };
-
-  effects.push(physicalDamageResistance);
-
-  return {
-    effects,
-    triggerEffects,
-    passiveName: "Physical Resistance",
-    rank: rank,
-  };
-}
-
-/**
- * Battle Continuation Passive Creator
- * Provides survival abilities and death resistance
- * @param {string} rank - The rank of Battle Continuation (e.g., "A", "B+", "C--", "EX")
- * @returns {object} Object containing effects and triggerEffects arrays
- */
-export function createBattleContinuation(rank) {
-  // Validate rank input using RankUtils
-  if (!RankUtils.isValidRank(rank)) {
-    console.error(
-      `Invalid Battle Continuation rank: ${rank}. Using E as fallback.`
-    );
-    rank = "E";
-  }
-
-  // Get the base rank letter for data lookup
-  const baseRank = RankUtils.getBaseRank(rank);
-
-  const battleContinuationData = {
-    EX: {
-      deathResistance: 95,
-      survivalThreshold: 1,
-      description: `Legendary determination (${rank}) - almost impossible to kill, fights at full strength even near death`,
-    },
-    A: {
-      deathResistance: 80,
-      survivalThreshold: 5,
-      description: `Incredible will to live (${rank}) - high resistance to death effects and enhanced survival`,
-    },
-    B: {
-      deathResistance: 65,
-      survivalThreshold: 10,
-      description: `Strong survival instinct (${rank}) - good resistance to death effects`,
-    },
-    C: {
-      deathResistance: 50,
-      survivalThreshold: 15,
-      description: `Moderate battle endurance (${rank}) - some resistance to death effects`,
-    },
-    D: {
-      deathResistance: 35,
-      survivalThreshold: 20,
-      description: `Basic survival training (${rank}) - limited resistance to death effects`,
-    },
-    E: {
-      deathResistance: 20,
-      survivalThreshold: 25,
-      description: `Minimal survival instinct (${rank}) - slight resistance to death effects`,
-    },
-  };
-
-  const data = battleContinuationData[baseRank];
-
-  const effects = [];
-  const triggerEffects = [];
-
-  // Death Resistance Effect
-  const deathResistance = {
-    name: `Battle Continuation (${rank})`,
-    type: "DeathRes",
-    duration: null,
-    appliedAt: null,
-    value: data.deathResistance,
-    flatOrMultiplier: "multiplier",
-    description: data.description,
-    source: "Battle Continuation Passive",
-    isPermanent: true,
-    isPassive: true,
-    type: "Battle Continuation",
-    rank: rank,
-    survivalThreshold: data.survivalThreshold, // When near death, special effects might trigger
-  };
-
-  effects.push(deathResistance);
-
-  return {
-    effects,
-    triggerEffects,
-    passiveName: "Battle Continuation",
-    rank: rank,
-  };
-}
-
-/**
  * Divinity Passive Creator
  * Provides various divine bonuses and resistances
  * @param {string} rank - The rank of Divinity (e.g., "A", "B+", "C--", "EX")
@@ -399,6 +239,149 @@ export function createDivinity(rank) {
 }
 
 /**
+ * Territory Creation Passive Creator
+ * Creates territorial bonuses for attack and defense when in own base
+ * @param {string} rank - The rank of Territory Creation (e.g., "A", "B+", "C--", "EX")
+ * @returns {object} Object containing effects and triggerEffects arrays
+ */
+export function createTerritoryCreation(rank) {
+  // Validate rank input using RankUtils
+  if (!RankUtils.isValidRank(rank)) {
+    console.error(
+      `Invalid Territory Creation rank: ${rank}. Using E as fallback.`
+    );
+    rank = "E";
+  }
+
+  // Get the base rank letter for data lookup
+  const baseRank = RankUtils.getBaseRank(rank);
+
+  // Parse rank to get modifier count for bonus/penalty calculations
+  const parsedRank = RankUtils.parseRank(rank);
+  const modifierCount = parsedRank.modifierCount;
+  const attackModifier = modifierCount * 5; // +5 per plus, -5 per minus
+  const defenseModifier = modifierCount * 2; // +2 per plus, -2 per minus
+
+  // Define rank-based values for Territory Creation
+  const territoryData = {
+    EX: {
+      attackBase: 40,
+      attackDie: 60,
+      defenseBase: 30,
+      description: `Legendary territory mastery (${rank}) - supreme control over domain`,
+    },
+    A: {
+      attackBase: 30,
+      attackDie: 50,
+      defenseBase: 20,
+      description: `High territory control (${rank}) - excellent domain mastery`,
+    },
+    B: {
+      attackBase: 15,
+      attackDie: 25,
+      defenseBase: 15,
+      description: `Moderate territory control (${rank}) - good domain control`,
+    },
+    C: {
+      attackBase: 12,
+      attackDie: 20,
+      defenseBase: 10,
+      description: `Basic territory control (${rank}) - modest domain influence`,
+    },
+    D: {
+      attackBase: 10,
+      attackDie: 15,
+      defenseBase: 5,
+      description: `Weak territory control (${rank}) - limited domain power`,
+    },
+    E: {
+      attackBase: 8,
+      attackDie: 10,
+      defenseBase: 0,
+      description: `Minimal territory control (${rank}) - basic domain awareness`,
+    },
+  };
+
+  const data = territoryData[baseRank];
+
+  const effects = [];
+  const triggerEffects = [];
+
+  // Create informational passive effects that show Territory Creation capabilities
+  const territoryAttackCapability = {
+    name: `Territory Attack Mastery (${rank})`,
+    type: "TerritoryAttack",
+    duration: null,
+    appliedAt: null,
+    value: data.attackBase + attackModifier,
+    npValue: null,
+    flatOrMultiplier: "flat",
+    description: `Grants ${data.attackBase + attackModifier} + 1d${
+      data.attackDie
+    } attack bonus when fighting in home territory`,
+    source: "Territory Creation Passive",
+    isPermanent: true,
+    isPassive: true,
+    sourceLetterRank: rank,
+    attackDie: data.attackDie,
+  };
+
+  const territoryDefenseCapability = {
+    name: `Territory Defense Mastery (${rank})`,
+    type: "TerritoryDefense",
+    duration: null,
+    appliedAt: null,
+    value: data.defenseBase + defenseModifier,
+    npValue: null,
+    flatOrMultiplier: "flat",
+    description: `Provides 3d10+${
+      data.defenseBase + defenseModifier
+    } damage reduction to all allies within home territory`,
+    source: "Territory Creation Passive",
+    isPermanent: true,
+    isPassive: true,
+    rank: rank,
+  };
+
+  // Add the passive effects to the effects array (THIS WAS MISSING!)
+  effects.push(territoryAttackCapability, territoryDefenseCapability);
+
+  // Create the trigger reference that will be added to units with this passive
+  const territoryTriggerReference = {
+    id: "TerritoryCreationTriggerEffect",
+    appliedAt: null,
+    source: "Territory Creation Passive",
+    rank: rank,
+    attackBase: data.attackBase,
+    attackDie: data.attackDie,
+    defenseBase: data.defenseBase,
+    attackModifier: attackModifier,
+    defenseModifier: defenseModifier,
+  };
+
+  triggerEffects.push(territoryTriggerReference);
+
+  console.log(`Created Territory Creation (${rank}):`, {
+    baseRank: baseRank,
+    fullRank: rank,
+    modifierCount: modifierCount,
+    attackBase: data.attackBase,
+    attackDie: data.attackDie,
+    defenseBase: data.defenseBase,
+    attackModifier: attackModifier,
+    defenseModifier: defenseModifier,
+    effectsCount: effects.length,
+    triggerEffectsCount: triggerEffects.length,
+  });
+
+  return {
+    effects,
+    triggerEffects,
+    passiveName: "Territory Creation",
+    rank: rank,
+  };
+}
+/**
  * Utility function to combine multiple passive creators
  * @param {...object} passiveResults - Results from passive creator functions
  * @returns {object} Combined effects and triggerEffects
@@ -441,9 +424,8 @@ export function combinePassives(...passiveResults) {
 export function createPassiveByName(passiveName, rank) {
   const passiveCreators = {
     "Magic Resistance": createMagicResistance,
-    "Physical Resistance": createPhysicalResistance,
-    "Battle Continuation": createBattleContinuation,
     Divinity: createDivinity,
+    "Territory Creation": createTerritoryCreation,
   };
 
   const creator = passiveCreators[passiveName];
@@ -461,11 +443,11 @@ export function demonstratePassiveCreation() {
 
   // Create individual passives
   const magicResA = createMagicResistance("A");
-  const battleContB = createBattleContinuation("B");
   const divinityC = createDivinity("C");
+  const territoryB = createTerritoryCreation("B+");
 
   // Combine multiple passives
-  const combinedPassives = combinePassives(magicResA, battleContB, divinityC);
+  const combinedPassives = combinePassives(magicResA, divinityC, territoryB);
 
   console.log("Final combined result:", {
     totalEffects: combinedPassives.effects.length,

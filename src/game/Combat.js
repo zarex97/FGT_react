@@ -1,5 +1,6 @@
 // Enhanced Combat.js with sophisticated rank-based resistance system
 import { RankUtils } from "../game/utils/RankUtils.js";
+import { DiceUtils } from "../game/utils/DiceUtils.js";
 export class Combat {
   constructor({
     typeOfAttackCausingIt,
@@ -100,15 +101,54 @@ export class Combat {
     };
   }
 
-  // Helper method to determine if we should use npValue instead of value
+  // Helper method to determine effect value, handling dice formulas in variableValue
   getEffectValue(effect) {
+    let baseValue;
+
+    // First determine the base value (npValue vs value)
     if (
       this.typeOfAttackCausingIt === "Noble Phantasm" &&
       effect.npValue !== undefined
     ) {
-      return effect.npValue;
+      baseValue = effect.npValue;
+    } else {
+      baseValue = effect.value;
     }
-    return effect.value;
+
+    // Check if effect has a variableValue with dice formula
+    if (effect.variableValue && typeof effect.variableValue === "string") {
+      console.log(
+        `Processing variableValue dice formula: ${effect.variableValue} for effect: ${effect.name}`
+      );
+
+      // Roll the dice formula
+      const rollResult = DiceUtils.rollFormula(effect.variableValue);
+
+      if (!rollResult.error) {
+        console.log(
+          `Dice roll result for ${effect.name}: ${rollResult.breakdown} = ${rollResult.total}`
+        );
+
+        // Store the roll result on the effect for debugging/logging purposes
+        effect.lastRollResult = {
+          formula: effect.variableValue,
+          result: rollResult.total,
+          breakdown: rollResult.breakdown,
+          rolledAt: Date.now(),
+        };
+
+        return rollResult.total;
+      } else {
+        console.error(
+          `Failed to roll dice formula "${effect.variableValue}" for effect "${effect.name}": ${rollResult.breakdown}`
+        );
+        console.log(`Falling back to base value: ${baseValue}`);
+        return baseValue;
+      }
+    }
+
+    // No variableValue or it's null/empty, return the base value
+    return baseValue;
   }
 
   /**
