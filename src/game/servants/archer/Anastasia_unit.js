@@ -948,6 +948,15 @@ export const AnastasiaAttributes = {
   // Combat Stats
   strength: 80, // Physical attack power
   magic: 120, // Magical attack power
+  parameters: {
+    str: "C+", // C+ rank strength
+    mag: "B", // B rank magic
+    end: "B+", // B+ rank endurance
+    agi: "A-", // A- rank agility
+    mana: "A", // A rank mana capacity
+    lck: "D", // D rank luck
+    // Add other parameters as needed for your system
+  },
   // Vision and Targeting
   visionRange: 5,
   // Agility Stats
