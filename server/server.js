@@ -2075,6 +2075,10 @@ const handleMessage = (bytes, uuid) => {
           const actionName = message.actionId;
           const actionCasterId = message.casterId;
           const newActionCooldownUntil = message.newCooldownUntil;
+          // Store original game state to detect combat initiation
+          const originalGameStateAction = JSON.parse(
+            JSON.stringify(room.gameState)
+          );
 
           room.gameState = {
             ...message.updatedGameState,
@@ -2108,6 +2112,37 @@ const handleMessage = (bytes, uuid) => {
           };
 
           console.log("Updated game state after action:", room.gameState);
+
+          // CONDITIONAL processing - Only if combat was initiated
+          const combatWasInitiatedAction = detectCombatInitiation(
+            originalGameStateAction,
+            room.gameState
+          );
+
+          if (combatWasInitiatedAction) {
+            console.log(
+              `🎯 Combat detected from action ${actionName}, processing combat trigger effects`
+            );
+
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.COMBAT_INITIATED,
+              {
+                actionName: message.actionId,
+                actionType: message.actionType,
+                casterId: message.casterId,
+                targetX: message.targetX,
+                targetY: message.targetY,
+                combatInitiated: true,
+                isAttackAction: true,
+              },
+              player.currentRoom
+            );
+          } else {
+            console.log(
+              `✨ Non-combat action ${actionName} executed, skipping combat trigger effects`
+            );
+          }
           broadcastToRoom(player.currentRoom);
           break;
 
@@ -2124,6 +2159,11 @@ const handleMessage = (bytes, uuid) => {
           const npName = message.npName;
           const npCasterId = message.casterId;
           const newNPCooldownUntil = message.newCooldownUntil;
+
+          // Store original game state to detect combat initiation
+          const originalGameStateNP = JSON.parse(
+            JSON.stringify(room.gameState)
+          );
 
           room.gameState = {
             ...message.updatedGameState,
@@ -2164,9 +2204,39 @@ const handleMessage = (bytes, uuid) => {
             },
             room.roomId
           );
+
+          // CONDITIONAL processing - Only if combat was initiated
+          const combatWasInitiatedNP = detectCombatInitiation(
+            originalGameStateNP,
+            room.gameState
+          );
+
+          if (combatWasInitiated) {
+            console.log(
+              `🎯 Combat detected from Noble Phantasm ${npName}, processing combat trigger effects`
+            );
+
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.COMBAT_INITIATED,
+              {
+                npName: message.npName,
+                casterId: message.casterId,
+                targetX: message.targetX,
+                targetY: message.targetY,
+                combatInitiated: true,
+                isAttackNP: true,
+              },
+              player.currentRoom
+            );
+          } else {
+            console.log(
+              `✨ Non-combat Noble Phantasm ${npName} executed, skipping combat trigger effects`
+            );
+          }
+
           broadcastToRoom(player.currentRoom);
           break;
-
         case "USE_SKILL":
           const skillCaster = room.gameState.units.find(
             (u) => u.id === message.casterId
@@ -2175,6 +2245,9 @@ const handleMessage = (bytes, uuid) => {
           const skillName = message.skillName;
           const casterId = message.casterId;
           const newCooldownUntil = message.newCooldownUntil;
+
+          // Store original game state to detect combat initiation
+          const originalGameState = JSON.parse(JSON.stringify(room.gameState));
 
           room.gameState = {
             ...message.updatedGameState,
@@ -2212,6 +2285,37 @@ const handleMessage = (bytes, uuid) => {
             },
             room.roomId
           );
+
+          // CONDITIONAL processing - Only if combat was initiated
+          const combatWasInitiated = detectCombatInitiation(
+            originalGameState,
+            room.gameState
+          );
+
+          if (combatWasInitiated) {
+            console.log(
+              `🎯 Combat detected from skill ${skillName}, processing combat trigger effects`
+            );
+
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.COMBAT_INITIATED,
+              {
+                skillName: message.skillName,
+                casterId: message.casterId,
+                targetX: message.targetX,
+                targetY: message.targetY,
+                combatInitiated: true,
+                isAttackSkill: true,
+              },
+              player.currentRoom
+            );
+          } else {
+            console.log(
+              `✨ Non-combat skill ${skillName} executed, skipping combat trigger effects`
+            );
+          }
+
           broadcastToRoom(player.currentRoom);
           break;
 
@@ -2709,6 +2813,45 @@ const getVisibleUnits = (gameState, playerTeam) => {
     units: filteredUnits,
     visibleCells: Array.from(visibleCells),
   };
+};
+
+// Helper function to detect if combat was initiated by comparing game states
+const detectCombatInitiation = (originalGameState, updatedGameState) => {
+  // Check if any unit has new combatReceived or combatSent entries
+  for (let i = 0; i < updatedGameState.units.length; i++) {
+    const updatedUnit = updatedGameState.units[i];
+    const originalUnit = originalGameState.units.find(
+      (u) => u.id === updatedUnit.id
+    );
+
+    if (!originalUnit) continue;
+
+    // Check for new combatReceived
+    const hadCombatReceived =
+      originalUnit.combatReceived &&
+      Object.keys(originalUnit.combatReceived).length > 0;
+    const hasCombatReceived =
+      updatedUnit.combatReceived &&
+      Object.keys(updatedUnit.combatReceived).length > 0;
+
+    if (!hadCombatReceived && hasCombatReceived) {
+      return true; // Combat was initiated
+    }
+
+    // Check for new combatSent
+    const originalCombatSentCount = originalUnit.combatSent
+      ? originalUnit.combatSent.length
+      : 0;
+    const updatedCombatSentCount = updatedUnit.combatSent
+      ? updatedUnit.combatSent.length
+      : 0;
+
+    if (updatedCombatSentCount > originalCombatSentCount) {
+      return true; // Combat was initiated
+    }
+  }
+
+  return false; // No combat was initiated
 };
 
 const broadcastToRoom = (roomId) => {
