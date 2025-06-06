@@ -42,6 +42,7 @@ export class EffectApplication {
   }
 
   // Step 1: Calculate success chance based on modifiers (with specific caster bonuses)
+  // Step 1: Calculate success chance based on modifiers (with specific caster bonuses)
   calculateSuccessChance() {
     const { caster, target } = this.applicationResults.modifiers;
     let successChance = this.applicationResults.baseSuccessChance;
@@ -58,110 +59,367 @@ export class EffectApplication {
       effectCategory: this.effect.category,
     });
 
-    // Apply general caster modifiers
+    // Helper function to check if an effect should be exempted from modifier application
+    const isExemptFromModifier = (modifierEffect, targetEffect) => {
+      if (
+        !modifierEffect.exemptions ||
+        !Array.isArray(modifierEffect.exemptions)
+      ) {
+        return false;
+      }
+
+      return modifierEffect.exemptions.some(
+        (exemption) =>
+          exemption === targetEffect.type ||
+          exemption === targetEffect.category ||
+          exemption === targetEffect.name
+      );
+    };
+
+    // Apply general caster modifiers (with exemption checking)
     if (isBuff) {
-      successChance += caster.buffChanceUp;
+      // Check if any caster effects that provide buffChanceUp have exemptions
+      let applicableBuffChanceUp = 0;
+      caster.usedEffects?.forEach((effect) => {
+        if (
+          effect.type === "Buff Chance Up" ||
+          effect.type === "DebuffSuccessUp"
+        ) {
+          if (!isExemptFromModifier(effect, this.effect)) {
+            applicableBuffChanceUp += effect.value || 15;
+          } else {
+            console.log(
+              `🚫 Exemption: ${effect.name} does not apply to ${this.effect.name} (exempted type/category)`
+            );
+          }
+        }
+      });
+      successChance += applicableBuffChanceUp;
+
+      if (applicableBuffChanceUp !== caster.buffChanceUp) {
+        console.log(
+          `🚫 Applied ${applicableBuffChanceUp} instead of ${caster.buffChanceUp} buff chance due to exemptions`
+        );
+      }
     } else if (isDebuff) {
-      successChance += caster.debuffChanceUp;
+      // Check if any caster effects that provide debuffChanceUp have exemptions
+      let applicableDebuffChanceUp = 0;
+      caster.usedEffects?.forEach((effect) => {
+        if (
+          effect.type === "Debuff Chance Up" ||
+          effect.type === "DebuffSuccessUp"
+        ) {
+          if (!isExemptFromModifier(effect, this.effect)) {
+            applicableDebuffChanceUp += effect.value || 15;
+          } else {
+            console.log(
+              `🚫 Exemption: ${effect.name} does not apply to ${this.effect.name} (exempted type/category)`
+            );
+          }
+        }
+      });
+      successChance += applicableDebuffChanceUp;
+
+      if (applicableDebuffChanceUp !== caster.debuffChanceUp) {
+        console.log(
+          `🚫 Applied ${applicableDebuffChanceUp} instead of ${caster.debuffChanceUp} debuff chance due to exemptions`
+        );
+      }
     }
 
-    // Apply specific caster modifiers
+    // Apply specific caster modifiers (with exemption checking)
     const effectCategory = this.effect.category;
     const effectType = this.effect.type;
     const effectName = this.effect.name;
 
-    // Check for specific buff chance bonuses
+    // Check for specific buff chance bonuses (with exemptions)
     if (isBuff) {
       if (effectCategory && caster.specificBuffChance[effectCategory]) {
-        const specificBonus = caster.specificBuffChance[effectCategory];
-        successChance += specificBonus;
-        console.log(
-          `🔮 Specific buff category bonus: ${effectCategory} +${specificBonus}%`
-        );
+        // Find the original effect that provided this bonus to check exemptions
+        let applicableBonus = 0;
+        caster.usedEffects?.forEach((effect) => {
+          if (
+            effect.type === "Specific Buff Chance Up" &&
+            effect.appliesToEffects?.includes(effectCategory)
+          ) {
+            if (!isExemptFromModifier(effect, this.effect)) {
+              applicableBonus += effect.value || 15;
+            } else {
+              console.log(
+                `🚫 Exemption: ${effect.name} category bonus does not apply to ${this.effect.name}`
+              );
+            }
+          }
+        });
+        successChance += applicableBonus;
+        if (applicableBonus > 0) {
+          console.log(
+            `🔮 Specific buff category bonus: ${effectCategory} +${applicableBonus}%`
+          );
+        }
       }
+
       if (caster.specificBuffChance[effectType]) {
-        const specificBonus = caster.specificBuffChance[effectType];
-        successChance += specificBonus;
-        console.log(
-          `🔮 Specific buff type bonus: ${effectType} +${specificBonus}%`
-        );
+        let applicableBonus = 0;
+        caster.usedEffects?.forEach((effect) => {
+          if (
+            effect.type === "Specific Buff Chance Up" &&
+            effect.appliesToEffects?.includes(effectType)
+          ) {
+            if (!isExemptFromModifier(effect, this.effect)) {
+              applicableBonus += effect.value || 15;
+            } else {
+              console.log(
+                `🚫 Exemption: ${effect.name} type bonus does not apply to ${this.effect.name}`
+              );
+            }
+          }
+        });
+        successChance += applicableBonus;
+        if (applicableBonus > 0) {
+          console.log(
+            `🔮 Specific buff type bonus: ${effectType} +${applicableBonus}%`
+          );
+        }
       }
+
       if (caster.specificBuffChance[effectName]) {
-        const specificBonus = caster.specificBuffChance[effectName];
-        successChance += specificBonus;
-        console.log(
-          `🔮 Specific buff name bonus: ${effectName} +${specificBonus}%`
-        );
+        let applicableBonus = 0;
+        caster.usedEffects?.forEach((effect) => {
+          if (
+            effect.type === "Specific Buff Chance Up" &&
+            effect.appliesToEffects?.includes(effectName)
+          ) {
+            if (!isExemptFromModifier(effect, this.effect)) {
+              applicableBonus += effect.value || 15;
+            } else {
+              console.log(
+                `🚫 Exemption: ${effect.name} name bonus does not apply to ${this.effect.name}`
+              );
+            }
+          }
+        });
+        successChance += applicableBonus;
+        if (applicableBonus > 0) {
+          console.log(
+            `🔮 Specific buff name bonus: ${effectName} +${applicableBonus}%`
+          );
+        }
       }
     }
 
-    // Check for specific debuff chance bonuses
+    // Check for specific debuff chance bonuses (with exemptions)
     if (isDebuff) {
       if (effectCategory && caster.specificDebuffChance[effectCategory]) {
-        const specificBonus = caster.specificDebuffChance[effectCategory];
-        successChance += specificBonus;
-        console.log(
-          `🔮 Specific debuff category bonus: ${effectCategory} +${specificBonus}%`
-        );
+        let applicableBonus = 0;
+        caster.usedEffects?.forEach((effect) => {
+          if (
+            effect.type === "Specific Debuff Chance Up" &&
+            effect.appliesToEffects?.includes(effectCategory)
+          ) {
+            if (!isExemptFromModifier(effect, this.effect)) {
+              applicableBonus += effect.value || 15;
+            } else {
+              console.log(
+                `🚫 Exemption: ${effect.name} category bonus does not apply to ${this.effect.name}`
+              );
+            }
+          }
+        });
+        successChance += applicableBonus;
+        if (applicableBonus > 0) {
+          console.log(
+            `🔮 Specific debuff category bonus: ${effectCategory} +${applicableBonus}%`
+          );
+        }
       }
+
       if (caster.specificDebuffChance[effectType]) {
-        const specificBonus = caster.specificDebuffChance[effectType];
-        successChance += specificBonus;
-        console.log(
-          `🔮 Specific debuff type bonus: ${effectType} +${specificBonus}%`
-        );
+        let applicableBonus = 0;
+        caster.usedEffects?.forEach((effect) => {
+          if (
+            effect.type === "Specific Debuff Chance Up" &&
+            effect.appliesToEffects?.includes(effectType)
+          ) {
+            if (!isExemptFromModifier(effect, this.effect)) {
+              applicableBonus += effect.value || 15;
+            } else {
+              console.log(
+                `🚫 Exemption: ${effect.name} type bonus does not apply to ${this.effect.name}`
+              );
+            }
+          }
+        });
+        successChance += applicableBonus;
+        if (applicableBonus > 0) {
+          console.log(
+            `🔮 Specific debuff type bonus: ${effectType} +${applicableBonus}%`
+          );
+        }
       }
+
       if (caster.specificDebuffChance[effectName]) {
-        const specificBonus = caster.specificDebuffChance[effectName];
-        successChance += specificBonus;
+        let applicableBonus = 0;
+        caster.usedEffects?.forEach((effect) => {
+          if (
+            effect.type === "Specific Debuff Chance Up" &&
+            effect.appliesToEffects?.includes(effectName)
+          ) {
+            if (!isExemptFromModifier(effect, this.effect)) {
+              applicableBonus += effect.value || 15;
+            } else {
+              console.log(
+                `🚫 Exemption: ${effect.name} name bonus does not apply to ${this.effect.name}`
+              );
+            }
+          }
+        });
+        successChance += applicableBonus;
+        if (applicableBonus > 0) {
+          console.log(
+            `🔮 Specific debuff name bonus: ${effectName} +${applicableBonus}%`
+          );
+        }
+      }
+    }
+
+    // Apply general target resistance (with exemption checking)
+    if (isBuff) {
+      let applicableBuffResistance = 0;
+      target.limitedUseDefenses?.forEach((effect) => {
+        if (
+          effect.type === "Buff Resistance" ||
+          effect.type === "DebuffResistanceUp"
+        ) {
+          if (!isExemptFromModifier(effect, this.effect)) {
+            applicableBuffResistance += effect.value || 20;
+          } else {
+            console.log(
+              `🚫 Exemption: ${effect.name} resistance does not apply to ${this.effect.name}`
+            );
+          }
+        }
+      });
+      successChance -= applicableBuffResistance;
+
+      if (applicableBuffResistance !== target.buffResistance) {
         console.log(
-          `🔮 Specific debuff name bonus: ${effectName} +${specificBonus}%`
+          `🚫 Applied ${applicableBuffResistance} instead of ${target.buffResistance} buff resistance due to exemptions`
+        );
+      }
+    } else if (isDebuff) {
+      let applicableDebuffResistance = 0;
+      target.limitedUseDefenses?.forEach((effect) => {
+        if (
+          effect.type === "Debuff Resistance" ||
+          effect.type === "DebuffResistanceUp"
+        ) {
+          if (!isExemptFromModifier(effect, this.effect)) {
+            applicableDebuffResistance += effect.value || 20;
+          } else {
+            console.log(
+              `🚫 Exemption: ${effect.name} resistance does not apply to ${this.effect.name}`
+            );
+          }
+        }
+      });
+      successChance -= applicableDebuffResistance;
+
+      if (applicableDebuffResistance !== target.debuffResistance) {
+        console.log(
+          `🚫 Applied ${applicableDebuffResistance} instead of ${target.debuffResistance} debuff resistance due to exemptions`
         );
       }
     }
 
-    // Apply general target resistance
-    if (isBuff) {
-      successChance -= target.buffResistance;
-    } else if (isDebuff) {
-      successChance -= target.debuffResistance;
-    }
-
-    // Apply specific target resistances
+    // Apply specific target resistances (with exemption checking)
     if (effectCategory && target.specificResistances[effectCategory]) {
-      const specificResistance = target.specificResistances[effectCategory];
-      successChance -= specificResistance;
-      console.log(
-        `🛡️ Specific category resistance: ${effectCategory} -${specificResistance}%`
-      );
+      let applicableResistance = 0;
+      target.limitedUseDefenses?.forEach((effect) => {
+        if (
+          effect.type === "Specific Resistance" &&
+          effect.resistsAgainst?.includes(effectCategory)
+        ) {
+          if (!isExemptFromModifier(effect, this.effect)) {
+            applicableResistance += effect.value || 20;
+          } else {
+            console.log(
+              `🚫 Exemption: ${effect.name} specific resistance does not apply to ${this.effect.name}`
+            );
+          }
+        }
+      });
+      successChance -= applicableResistance;
+      if (applicableResistance > 0) {
+        console.log(
+          `🛡️ Specific category resistance: ${effectCategory} -${applicableResistance}%`
+        );
+      }
     }
 
     if (target.specificResistances[effectType]) {
-      const specificResistance = target.specificResistances[effectType];
-      successChance -= specificResistance;
-      console.log(
-        `🛡️ Specific type resistance: ${effectType} -${specificResistance}%`
-      );
+      let applicableResistance = 0;
+      target.limitedUseDefenses?.forEach((effect) => {
+        if (
+          effect.type === "Specific Resistance" &&
+          effect.resistsAgainst?.includes(effectType)
+        ) {
+          if (!isExemptFromModifier(effect, this.effect)) {
+            applicableResistance += effect.value || 20;
+          } else {
+            console.log(
+              `🚫 Exemption: ${effect.name} specific resistance does not apply to ${this.effect.name}`
+            );
+          }
+        }
+      });
+      successChance -= applicableResistance;
+      if (applicableResistance > 0) {
+        console.log(
+          `🛡️ Specific type resistance: ${effectType} -${applicableResistance}%`
+        );
+      }
     }
 
     if (target.specificResistances[effectName]) {
-      const specificResistance = target.specificResistances[effectName];
-      successChance -= specificResistance;
-      console.log(
-        `🛡️ Specific name resistance: ${effectName} -${specificResistance}%`
-      );
+      let applicableResistance = 0;
+      target.limitedUseDefenses?.forEach((effect) => {
+        if (
+          effect.type === "Specific Resistance" &&
+          effect.resistsAgainst?.includes(effectName)
+        ) {
+          if (!isExemptFromModifier(effect, this.effect)) {
+            applicableResistance += effect.value || 20;
+          } else {
+            console.log(
+              `🚫 Exemption: ${effect.name} specific resistance does not apply to ${this.effect.name}`
+            );
+          }
+        }
+      });
+      successChance -= applicableResistance;
+      if (applicableResistance > 0) {
+        console.log(
+          `🛡️ Specific name resistance: ${effectName} -${applicableResistance}%`
+        );
+      }
     }
 
-    // General effect resistance
-    successChance -= target.effectResistance;
+    // General effect resistance (with exemption checking)
+    let applicableEffectResistance = 0;
+    target.limitedUseDefenses?.forEach((effect) => {
+      if (effect.type === "Effect Resistance") {
+        if (!isExemptFromModifier(effect, this.effect)) {
+          applicableEffectResistance += effect.value || 15;
+        } else {
+          console.log(
+            `🚫 Exemption: ${effect.name} general resistance does not apply to ${this.effect.name}`
+          );
+        }
+      }
+    });
+    successChance -= applicableEffectResistance;
 
-    // // Ensure bounds (0-100%)
-    // this.applicationResults.finalSuccessChance = Math.max(
-    //   0,
-    //   Math.min(100, successChance)
-    // );
-
-    // removed bounds as they can go beyond 100%, specially taking into account that enemy resistances can lower the chances
     this.applicationResults.finalSuccessChance = successChance;
 
     console.log(
