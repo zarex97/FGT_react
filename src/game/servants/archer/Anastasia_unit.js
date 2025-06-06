@@ -18,6 +18,7 @@ import {
   createDivinity,
   createTerritoryCreation,
   createItemConstruction,
+  createPresenceConcealment,
   combinePassives,
 } from "../../passives/PassiveCreators.js";
 
@@ -29,10 +30,23 @@ const anastasiaPassives = combinePassives(
   createTerritoryCreation("B+"),
   createItemConstruction("A++")
 );
+// Create Presence Concealment separately since it has additional components
+const anastasiaPresenceConcealment = createPresenceConcealment("A"); // A-rank stealth mastery
 
 // Extract the created effects and trigger effects for easy use
 const createdEffectsFromPassives = anastasiaPassives.effects;
+
+const createdEffectsFromPassives_1 = [
+  ...anastasiaPassives.effects,
+  ...anastasiaPresenceConcealment.effects,
+];
+
 const createdTriggerEffectsFromPassives = anastasiaPassives.triggerEffects;
+
+const createdTriggerEffectsFromPassives_1 = [
+  ...anastasiaPassives.triggerEffects,
+  ...anastasiaPresenceConcealment.triggerEffects,
+];
 
 console.log("Anastasia's Passives Created:", {
   passives: anastasiaPassives.passiveInfo,
@@ -849,6 +863,9 @@ export const AnastasiaActions = {
       false,
       false
     ),
+    // ADD PRESENCE CONCEALMENT ACTION
+    deactivatePresenceConcealment:
+      anastasiaPresenceConcealment.actions.common.deactivatePresenceConcealment,
   },
   unique: {},
 };
@@ -935,6 +952,8 @@ export const AnastasiaSkills = {
     true, // counts towards attack limit
     false // not reactionary
   ),
+  ActivatePresenceConcealment:
+    anastasiaPresenceConcealment.skills.ActivatePresenceConcealment,
 };
 
 // Define Anastasia's base stats and attributes
@@ -995,12 +1014,12 @@ export const AnastasiaTemplate = {
   // INTEGRATE PASSIVE-CREATED EFFECTS AND TRIGGER EFFECTS
   effects: [
     // Any manually defined effects can go here
-    ...createdEffectsFromPassives, // A-rank Magic Resistance + C-rank Divinity effects
+    ...createdEffectsFromPassives_1, // A-rank Magic Resistance + C-rank Divinity effects
   ],
   triggerEffects: [
     // Initially empty - trigger effects are added dynamically by skills/buffs
     // Any manually defined trigger effects can go here
-    ...createdTriggerEffectsFromPassives, // Currently empty, but ready for future passive triggers
+    ...createdTriggerEffectsFromPassives_1, // Currently empty, but ready for future passive triggers
   ],
 
   // These will be populated by UnitUtils methods when needed
@@ -1054,6 +1073,12 @@ export const AnastasiaTemplate = {
       onCooldownUntil: 0,
       isAttack: true,
       affectsAttackCount: true,
+    },
+    {
+      id: "Anastasia_ActivatePresenceConcealment",
+      onCooldownUntil: 0,
+      isAttack: false,
+      affectsAttackCount: false,
     },
   ],
   noblePhantasms: [

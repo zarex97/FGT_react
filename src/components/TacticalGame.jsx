@@ -1114,7 +1114,6 @@ const TacticalGame = ({ username, roomId }) => {
     const d_unit = gameState.units.find(
       (u) => u.id === unit.combatReceived?.attacker.id
     );
-    const d_unit_id = d_unit.id;
 
     const combat = unit.combatReceived;
 
