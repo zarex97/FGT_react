@@ -710,11 +710,62 @@ export class EffectApplication {
   }
 
   // Main method: Execute the full application process
+  // Main method: Execute the full application process
   executeApplication() {
     console.log(
       `🎯 Starting effect application: ${this.effect.name} from ${this.caster.name} to ${this.target.name}`
     );
 
+    // Fast path for Passive effects and "neither" archetype effects
+    if (
+      this.applicationSource === "Passive" ||
+      this.effect.archetype === "neither"
+    ) {
+      console.log(
+        `🚀 Fast-track processing: ${this.effect.name} (${
+          this.applicationSource === "Passive"
+            ? "Passive source"
+            : "Neither archetype"
+        })`
+      );
+
+      // Apply effect directly without validation pipeline
+      const updatedTarget = { ...this.target };
+      const currentEffects = Array.isArray(updatedTarget.effects)
+        ? updatedTarget.effects
+        : [];
+
+      // Add the effect with minimal processing
+      const appliedEffect = {
+        ...this.effect,
+        appliedAt: this.gameState.currentTurn || 0,
+      };
+
+      updatedTarget.effects = [...currentEffects, appliedEffect];
+
+      // Update application results for fast-track
+      this.applicationResults.wasSuccessful = true;
+      this.applicationResults.updatedCaster = { ...this.caster };
+      this.applicationResults.updatedTarget = updatedTarget;
+      this.applicationResults.finalSuccessChance = 100;
+      this.applicationResults.rollResult = 0;
+      this.applicationResults.wasBlocked = false;
+      this.applicationResults.consumedCasterEffects = [];
+      this.applicationResults.consumedTargetDefenses = [];
+      this.applicationResults.applicationMethod = "fast_track";
+      this.applicationResults.reason =
+        this.applicationSource === "Passive"
+          ? "passive_source"
+          : "neither_archetype";
+
+      console.log(
+        `✅ Fast-track application successful: ${this.effect.name} applied to ${this.target.name}`
+      );
+
+      return this.applicationResults;
+    }
+
+    // Standard processing pipeline for regular effects
     this.collectCasterModifiers();
     this.collectTargetResistance();
     this.calculateSuccessChance();

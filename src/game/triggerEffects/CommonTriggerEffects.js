@@ -196,19 +196,34 @@ export const TerritoryCreationTriggerEffect = new TriggerEffect({
             duration: null, // Permanent while in base
             appliedAt: gameState.currentTurn,
             source: "Territory Creation Attack",
-            npValue: baseAttackValue + 10, // Base value for NPs
-            archetype: "buff",
-            removable: true, // Can be removed when leaving base
+            npValue: baseAttackValue, // Base value for NPs
+            archetype: "neither",
+            removable: false, // Can be removed when leaving base
             category: "offensiveBuffs",
             flatOrMultiplier: "flat",
             sourceLetterRank: territoryTrigger.rank,
             uses: null,
           };
 
-          updatedUnit.effects = [
-            ...(updatedUnit.effects || []),
+          const attackApplication = applyEffect(
+            updatedUnit, // The unit providing the effect (self)
+            updatedUnit, // The unit receiving the effect (self)
             attackBonusEffect,
-          ];
+            gameState,
+            "Passive", // Effect type
+            100 // 100% success rate for all effects by default unless stated otherwise
+          );
+
+          if (attackApplication.wasSuccessful) {
+            updatedUnit = attackApplication.updatedTarget;
+            console.log(
+              `✅ Applied territory attack bonus to ${updatedUnit.name}`
+            );
+          } else {
+            console.log(
+              `❌ Failed to apply territory attack bonus to ${updatedUnit.name}`
+            );
+          }
 
           console.log(
             `🏰 ATTACK BONUS: ${unit.name} gained territorial attack bonus in base`,
@@ -262,9 +277,9 @@ export const TerritoryCreationTriggerEffect = new TriggerEffect({
             duration: null, // Permanent while in base
             appliedAt: gameState.currentTurn,
             source: "Territory Creation Defense",
-            npValue: baseDefenseValue + 5, // Base value for NPs
-            archetype: "buff",
-            removable: true, // Can be removed when leaving base
+            npValue: baseDefenseValue, // Base value for NPs
+            archetype: "neither",
+            removable: false, // Can be removed when leaving base
             category: "defensiveBuffs",
             flatOrMultiplier: "flat",
             sourceLetterRank: highestTerritory.rank,
@@ -272,10 +287,26 @@ export const TerritoryCreationTriggerEffect = new TriggerEffect({
             providedBy: highestTerritory.unit.id,
           };
 
-          updatedUnit.effects = [
-            ...(updatedUnit.effects || []),
+          // Apply the defense bonus effect using EffectApplication
+          const defenseApplication = applyEffect(
+            highestTerritory.unit, // The unit providing the effect
+            updatedUnit, // The unit receiving the effect
             defenseBonusEffect,
-          ];
+            gameState,
+            "Passive", // Effect type
+            100 // 100% success rate for all effects by default unless stated otherwise
+          );
+
+          if (defenseApplication.wasSuccessful) {
+            updatedUnit = defenseApplication.updatedTarget;
+            console.log(
+              `✅ Applied territory defense bonus to ${updatedUnit.name}`
+            );
+          } else {
+            console.log(
+              `❌ Failed to apply territory defense bonus to ${updatedUnit.name}`
+            );
+          }
 
           console.log(
             `🏰 DEFENSE BONUS: ${updatedUnit.name} gained territorial defense bonus in base`,
@@ -422,7 +453,7 @@ export const ItemConstructionTriggerEffect = new TriggerEffect({
             appliedAt: gameState.currentTurn,
             source: "Item Construction Debuff Success",
             npValue: itemConstructionTrigger.debuffSuccessValue,
-            archetype: "buff",
+            archetype: "neither",
             removable: true,
             category: "offensiveBuffs",
             flatOrMultiplier: "multiplier",
@@ -443,7 +474,7 @@ export const ItemConstructionTriggerEffect = new TriggerEffect({
             appliedAt: gameState.currentTurn,
             source: "Item Construction Debuff Resistance",
             npValue: itemConstructionTrigger.debuffResistanceValue,
-            archetype: "buff",
+            archetype: "neither",
             removable: true,
             category: "defensiveBuffs",
             flatOrMultiplier: "multiplier",
@@ -460,7 +491,7 @@ export const ItemConstructionTriggerEffect = new TriggerEffect({
             updatedUnit,
             debuffSuccessEffect,
             gameState,
-            debuffSuccessEffect.name, // Effect type
+            "Passive", // Effect type
             100 // 100% success rate by default to all effects unless stated otherwise
           );
 
@@ -480,7 +511,7 @@ export const ItemConstructionTriggerEffect = new TriggerEffect({
             updatedUnit,
             debuffResistanceEffect,
             gameState,
-            debuffResistanceEffect.name, // Effect type
+            "Passive", // Skill/NP/Passive
             100 // 100% success rate by default to all effects unless stated otherwise
           );
 

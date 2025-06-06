@@ -9,8 +9,13 @@
       Last Session Short term Goals:
 
 - [ ] Fix Terrain, is not working properly right now (I have seen ice cells with the fire effect)
+- [ ] Fix Base Management Window, it's changing positions with each server message.
 - [ ] Create Normal Attack Logic, it should use the same Action/Skill/NP implementation
 - [ ] Finish the implementation of Common Skills (like Battle Continuation)
+  - [ ] Riding
+  - [ ] Presence Concealment
+  - [ ] Madness Enhancement
+  - [ ] Battle Continuation
 - [ ] Review and expand Masters
   - [ ] Gotta add the ability for them to contract servants
   - [ ] Gotta add the ability for them to use Command Seals and implement Command Seal Logic
