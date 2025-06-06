@@ -381,6 +381,139 @@ export function createTerritoryCreation(rank) {
     rank: rank,
   };
 }
+
+/**
+ * Item Construction Passive Creator
+ * Creates aura effects that enhance debuff application and resistance for nearby allies
+ * @param {string} rank - The rank of Item Construction (e.g., "A", "B+", "C--", "EX")
+ * @returns {object} Object containing effects and triggerEffects arrays
+ */
+export function createItemConstruction(rank) {
+  // Validate rank input using RankUtils
+  if (!RankUtils.isValidRank(rank)) {
+    console.error(
+      `Invalid Item Construction rank: ${rank}. Using E as fallback.`
+    );
+    rank = "E";
+  }
+
+  // Get the base rank letter for data lookup
+  const baseRank = RankUtils.getBaseRank(rank);
+
+  // Parse rank to get modifier count for bonus/penalty calculations
+  const parsedRank = RankUtils.parseRank(rank);
+  const modifierCount = parsedRank.modifierCount;
+  const effectModifier = modifierCount * 5; // +5 per plus, -5 per minus
+
+  // Define rank-based values for Item Construction
+  const itemConstructionData = {
+    EX: {
+      baseValue: 75,
+      description: `Legendary craftsmanship mastery (${rank}) - exceptional enhancement of allied abilities`,
+    },
+    A: {
+      baseValue: 50,
+      description: `High craftsmanship skill (${rank}) - major enhancement of allied abilities`,
+    },
+    B: {
+      baseValue: 40,
+      description: `Moderate craftsmanship skill (${rank}) - notable enhancement of allied abilities`,
+    },
+    C: {
+      baseValue: 30,
+      description: `Basic craftsmanship skill (${rank}) - modest enhancement of allied abilities`,
+    },
+    D: {
+      baseValue: 20,
+      description: `Limited craftsmanship skill (${rank}) - minor enhancement of allied abilities`,
+    },
+    E: {
+      baseValue: 10,
+      description: `Minimal craftsmanship skill (${rank}) - slight enhancement of allied abilities`,
+    },
+  };
+
+  const data = itemConstructionData[baseRank];
+  const finalValue = Math.max(0, data.baseValue + effectModifier);
+
+  const effects = [];
+  const triggerEffects = [];
+
+  // Create informational passive effects that show Item Construction capabilities
+  const itemConstructionDebuffSuccess = {
+    name: `Item Construction - Debuff Enhancement (${rank})`,
+    description: `Provides ${finalValue}% debuff success rate increase to allies within 2 panels (excludes Instakill, Death, Erase)`,
+    type: "ItemConstructionDebuffSuccess",
+    value: finalValue,
+    duration: null,
+    appliedAt: null,
+    source: "Item Construction Passive",
+    npValue: null,
+    archetype: "neutral",
+    removable: false,
+    category: null,
+    flatOrMultiplier: "multiplier",
+    sourceLetterRank: rank,
+    uses: null,
+    isPermanent: true,
+    isPassive: true,
+    auraRange: 2,
+  };
+
+  const itemConstructionDebuffResistance = {
+    name: `Item Construction - Debuff Resistance (${rank})`,
+    description: `Provides ${finalValue}% debuff resistance to allies within 2 panels (excludes Instakill, Death, Erase)`,
+    type: "ItemConstructionDebuffResistance",
+    value: finalValue,
+    duration: null,
+    appliedAt: null,
+    source: "Item Construction Passive",
+    npValue: null,
+    archetype: "neutral",
+    removable: false,
+    category: null,
+    flatOrMultiplier: "multiplier",
+    sourceLetterRank: rank,
+    uses: null,
+    isPermanent: true,
+    isPassive: true,
+    auraRange: 2,
+  };
+
+  effects.push(itemConstructionDebuffSuccess, itemConstructionDebuffResistance);
+
+  // Create the trigger reference that will be added to units with this passive
+  const itemConstructionTriggerReference = {
+    id: "ItemConstructionTriggerEffect",
+    appliedAt: null,
+    source: "Item Construction Passive",
+    rank: rank,
+    debuffSuccessValue: finalValue,
+    debuffResistanceValue: finalValue,
+    auraRange: 2,
+  };
+
+  triggerEffects.push(itemConstructionTriggerReference);
+
+  console.log(`Created Item Construction (${rank}):`, {
+    baseRank: baseRank,
+    fullRank: rank,
+    modifierCount: modifierCount,
+    baseValue: data.baseValue,
+    effectModifier: effectModifier,
+    finalValue: finalValue,
+    effectsCount: effects.length,
+    triggerEffectsCount: triggerEffects.length,
+  });
+
+  return {
+    effects,
+    triggerEffects,
+    passiveName: "Item Construction",
+    rank: rank,
+  };
+}
+
 /**
  * Utility function to combine multiple passive creators
  * @param {...object} passiveResults - Results from passive creator functions
@@ -426,6 +559,7 @@ export function createPassiveByName(passiveName, rank) {
     "Magic Resistance": createMagicResistance,
     Divinity: createDivinity,
     "Territory Creation": createTerritoryCreation,
+    "Item Construction": createItemConstruction,
   };
 
   const creator = passiveCreators[passiveName];
