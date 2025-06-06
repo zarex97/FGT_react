@@ -5,6 +5,7 @@ import { convertFractionalDuration } from "../utils/DurationHelper.js";
 import { isUnitInOwnBase } from "../utils/DistanceUtils.js";
 import { DiceUtils } from "../utils/DiceUtils.js";
 import { RankUtils } from "../utils/RankUtils.js";
+import { applyEffect } from "../EffectApplication.js";
 
 // Curse Trigger Effect - Activates at end of turn for cursed units
 export const CurseTriggerEffect = new TriggerEffect({
@@ -302,8 +303,227 @@ export const TerritoryCreationTriggerEffect = new TriggerEffect({
   },
 });
 
+// Item Construction Trigger Effect - Activates on movement end to manage aura effects
+// Item Construction Trigger Effect - Activates on movement end to manage aura effects
+export const ItemConstructionTriggerEffect = new TriggerEffect({
+  eventType: EventTypes.MOVE_END,
+  name: "Item Construction Aura",
+  description: "Manages Item Construction aura effects for allies within range",
+  source: "Item Construction Passive",
+  priority: 4, // Medium-high priority - should run after movement
+
+  conditionLogic: (eventData, gameState, unit) => {
+    // Only trigger if any unit has Item Construction trigger reference
+    const hasItemConstruction = gameState.units.some((u) =>
+      u.triggerEffects?.some(
+        (triggerRef) => triggerRef.id === "ItemConstructionTriggerEffect"
+      )
+    );
+
+    console.log(`🔧 ITEM CONSTRUCTION CHECK:`, {
+      hasItemConstruction,
+      totalUnits: gameState.units.length,
+    });
+
+    return hasItemConstruction;
+  },
+
+  effectLogic: (eventData, gameState, unit) => {
+    console.log(`🔧 ITEM CONSTRUCTION: Processing aura effects`);
+
+    // Helper function to calculate 2D Manhattan distance for aura range
+    const calculateDistance = (pos1, pos2) => {
+      return Math.abs(pos1.x - pos2.x) + Math.abs(pos1.y - pos2.y);
+    };
+
+    // Helper function to find the highest Item Construction rank affecting a unit
+    const findHighestItemConstructionRank = (targetUnit, units) => {
+      let highestRank = null;
+      let providingUnit = null;
+
+      units.forEach((u) => {
+        if (u.team === targetUnit.team) {
+          const itemConstructionTrigger = u.triggerEffects?.find(
+            (tr) => tr.id === "ItemConstructionTriggerEffect"
+          );
+
+          if (itemConstructionTrigger) {
+            // Check if target unit is within aura range
+            const distance = calculateDistance(
+              { x: u.x, y: u.y },
+              { x: targetUnit.x, y: targetUnit.y }
+            );
+
+            if (distance <= itemConstructionTrigger.auraRange) {
+              if (
+                !highestRank ||
+                RankUtils.compareRanks(
+                  itemConstructionTrigger.rank,
+                  highestRank
+                ) > 0
+              ) {
+                highestRank = itemConstructionTrigger.rank;
+                providingUnit = u;
+              }
+            }
+          }
+        }
+      });
+
+      return { rank: highestRank, unit: providingUnit };
+    };
+
+    const updatedUnits = gameState.units.map((targetUnit) => {
+      let updatedUnit = { ...targetUnit };
+
+      // Remove all existing Item Construction aura effects (direct manipulation for removal)
+      const beforeRemoval = (updatedUnit.effects || []).length;
+      updatedUnit.effects = (updatedUnit.effects || []).filter(
+        (effect) =>
+          !(
+            effect.source === "Item Construction Debuff Success" ||
+            effect.source === "Item Construction Debuff Resistance"
+          )
+      );
+      const afterRemoval = updatedUnit.effects.length;
+
+      if (beforeRemoval > afterRemoval) {
+        console.log(
+          `🔧 REMOVED: ${
+            beforeRemoval - afterRemoval
+          } Item Construction effects from ${updatedUnit.name}`
+        );
+      }
+
+      // Find the highest rank Item Construction affecting this unit
+      const highestItemConstruction = findHighestItemConstructionRank(
+        updatedUnit,
+        gameState.units
+      );
+
+      if (highestItemConstruction.rank && highestItemConstruction.unit) {
+        const itemConstructionTrigger =
+          highestItemConstruction.unit.triggerEffects?.find(
+            (tr) => tr.id === "ItemConstructionTriggerEffect"
+          );
+
+        if (itemConstructionTrigger) {
+          console.log(
+            `🔧 AURA EFFECT: ${updatedUnit.name} receives Item Construction (${highestItemConstruction.rank}) from ${highestItemConstruction.unit.name}`
+          );
+
+          // Create Debuff Success Rate Increase effect
+          const debuffSuccessEffect = {
+            name: `Item Construction - Debuff Success (${highestItemConstruction.rank})`,
+            description: `Crafted items increase debuff success rate by ${itemConstructionTrigger.debuffSuccessValue}% (excludes Instakill, Death, Erase)`,
+            type: "DebuffSuccessUp",
+            value: itemConstructionTrigger.debuffSuccessValue,
+            duration: null, // Permanent while in aura
+            appliedAt: gameState.currentTurn,
+            source: "Item Construction Debuff Success",
+            npValue: itemConstructionTrigger.debuffSuccessValue,
+            archetype: "buff",
+            removable: true,
+            category: "offensiveBuffs",
+            flatOrMultiplier: "multiplier",
+            sourceLetterRank: highestItemConstruction.rank,
+            uses: null,
+            providedBy: highestItemConstruction.unit.id,
+            auraRange: itemConstructionTrigger.auraRange,
+            exemptions: ["Instakill", "Death", "Erase"],
+          };
+
+          // Create Debuff Resistance effect
+          const debuffResistanceEffect = {
+            name: `Item Construction - Debuff Resistance (${highestItemConstruction.rank})`,
+            description: `Crafted items provide ${itemConstructionTrigger.debuffResistanceValue}% debuff resistance (excludes Instakill, Death, Erase)`,
+            type: "DebuffResistanceUp",
+            value: itemConstructionTrigger.debuffResistanceValue,
+            duration: null, // Permanent while in aura
+            appliedAt: gameState.currentTurn,
+            source: "Item Construction Debuff Resistance",
+            npValue: itemConstructionTrigger.debuffResistanceValue,
+            archetype: "buff",
+            removable: true,
+            category: "defensiveBuffs",
+            flatOrMultiplier: "multiplier",
+            sourceLetterRank: highestItemConstruction.rank,
+            uses: null,
+            providedBy: highestItemConstruction.unit.id,
+            auraRange: itemConstructionTrigger.auraRange,
+            exemptions: ["Instakill", "Death", "Erase"],
+          };
+
+          // Apply effects using EffectApplication for additions
+          const debuffSuccessApplication = applyEffect(
+            highestItemConstruction.unit,
+            updatedUnit,
+            debuffSuccessEffect,
+            gameState,
+            debuffSuccessEffect.name, // Effect type
+            100 // 100% success rate by default to all effects unless stated otherwise
+          );
+
+          if (debuffSuccessApplication.wasSuccessful) {
+            updatedUnit = debuffSuccessApplication.updatedTarget;
+            console.log(
+              `✅ Applied debuff success effect to ${updatedUnit.name}`
+            );
+          } else {
+            console.log(
+              `❌ Failed to apply debuff success effect to ${updatedUnit.name}`
+            );
+          }
+
+          const debuffResistanceApplication = applyEffect(
+            highestItemConstruction.unit,
+            updatedUnit,
+            debuffResistanceEffect,
+            gameState,
+            debuffResistanceEffect.name, // Effect type
+            100 // 100% success rate by default to all effects unless stated otherwise
+          );
+
+          if (debuffResistanceApplication.wasSuccessful) {
+            updatedUnit = debuffResistanceApplication.updatedTarget;
+            console.log(
+              `✅ Applied debuff resistance effect to ${updatedUnit.name}`
+            );
+          } else {
+            console.log(
+              `❌ Failed to apply debuff resistance effect to ${updatedUnit.name}`
+            );
+          }
+
+          console.log(
+            `🔧 AURA APPLIED: ${updatedUnit.name} gained Item Construction effects`,
+            {
+              providedBy: highestItemConstruction.unit.name,
+              rank: highestItemConstruction.rank,
+              debuffSuccess: itemConstructionTrigger.debuffSuccessValue,
+              debuffResistance: itemConstructionTrigger.debuffResistanceValue,
+            }
+          );
+        }
+      } else {
+        console.log(
+          `🔧 NO AURA: ${updatedUnit.name} not within range of any Item Construction aura`
+        );
+      }
+
+      return updatedUnit;
+    });
+
+    return {
+      ...gameState,
+      units: updatedUnits,
+    };
+  },
+});
+
 // Export all common trigger effects
 export const CommonTriggerEffects = {
   CurseTriggerEffect,
   TerritoryCreationTriggerEffect,
+  ItemConstructionTriggerEffect,
 };

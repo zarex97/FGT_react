@@ -261,90 +261,128 @@ export class Combat {
     const effectsToRemove = [];
 
     this.attacker.effects?.forEach((effect, index) => {
-      // Check if effect has limited uses and process accordingly
-      let shouldApplyEffect = true;
-      if (effect.uses !== undefined && effect.uses !== null) {
-        if (effect.uses <= 0) {
-          // Effect is already expired, mark for removal
-          effectsToRemove.push(index);
-          shouldApplyEffect = false;
-        } else {
-          // Effect has uses remaining, consume one use
-          effect.uses -= 1;
-          console.log(`${effect.name} used: ${effect.uses} uses remaining`);
-
-          // If this was the last use, mark for removal
-          if (effect.uses === 0) {
+      // Helper function to handle usage tracking for each effect type
+      const handleEffectUsage = () => {
+        if (effect.uses !== undefined && effect.uses !== null) {
+          if (effect.uses <= 0) {
+            // Effect is already expired, mark for removal and don't apply
             effectsToRemove.push(index);
-            console.log(
-              `${effect.name} has been exhausted and will be removed`
-            );
+            return false; // Don't apply effect
+          } else {
+            // Effect has uses remaining, consume one use
+            effect.uses -= 1;
+            console.log(`${effect.name} used: ${effect.uses} uses remaining`);
+
+            // If this was the last use, mark for removal
+            if (effect.uses === 0) {
+              effectsToRemove.push(index);
+              console.log(
+                `${effect.name} has been exhausted and will be removed`
+              );
+            }
+            return true; // Apply effect
           }
         }
-      }
+        return true; // No usage limit, apply effect
+      };
 
-      if (!shouldApplyEffect) {
-        return; // Skip processing this effect
-      }
-
-      // Get the appropriate value (npValue for Noble Phantasms, value otherwise)
-      const effectValue = this.getEffectValue(effect);
-
+      // Process each effect type and handle its usage within the same block
       switch (effect.type) {
         case "AttackUp":
-          if (effect.flatOrMultiplier === "flat") {
-            modifiers.flatAttack += effectValue;
-          } else {
-            modifiers.multiplierAttack += effectValue;
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            if (effect.flatOrMultiplier === "flat") {
+              modifiers.flatAttack += effectValue;
+            } else {
+              modifiers.multiplierAttack += effectValue;
+            }
+            console.log(
+              `Applied AttackUp: ${effectValue} (${
+                effect.flatOrMultiplier
+              }) - Used ${
+                this.typeOfAttackCausingIt === "Noble Phantasm" &&
+                effect.npValue !== undefined
+                  ? "npValue"
+                  : "value"
+              }`
+            );
           }
-          console.log(
-            `Applied AttackUp: ${effectValue} (${
-              effect.flatOrMultiplier
-            }) - Used ${
-              this.typeOfAttackCausingIt === "Noble Phantasm" &&
-              effect.npValue !== undefined
-                ? "npValue"
-                : "value"
-            }`
-          );
           break;
+
         case "AttackDown":
-          if (effect.flatOrMultiplier === "flat") {
-            modifiers.flatAttack -= effectValue;
-          } else {
-            modifiers.multiplierAttack -= effectValue;
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            if (effect.flatOrMultiplier === "flat") {
+              modifiers.flatAttack -= effectValue;
+            } else {
+              modifiers.multiplierAttack -= effectValue;
+            }
+            console.log(
+              `Applied AttackDown: ${effectValue} (${effect.flatOrMultiplier})`
+            );
           }
           break;
+
         case "CritUp":
-          modifiers.critChance += effectValue;
-          break;
-        case "CritDown":
-          modifiers.critChance -= effectValue;
-          break;
-        case "CritDmgUp":
-          modifiers.critDamage += effectValue;
-          break;
-        case "CritDmgDown":
-          modifiers.critDamage -= effectValue;
-          break;
-        case "MagicResistanceNullification":
-          // NEW: Handle Magic Resistance Nullification effects
-          if (effect.flatOrMultiplier === "flat") {
-            modifiers.magicResistanceNullification.flatReduction += effectValue;
-          } else {
-            modifiers.magicResistanceNullification.multiplierReduction +=
-              effectValue;
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            modifiers.critChance += effectValue;
+            console.log(`Applied CritUp: ${effectValue}`);
           }
+          break;
 
-          modifiers.magicResistanceNullification.appliedEffects.push({
-            name: effect.name,
-            value: effectValue,
-            flatOrMultiplier: effect.flatOrMultiplier,
-            source: effect.source || "Unknown",
-          });
+        case "CritDown":
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            modifiers.critChance -= effectValue;
+            console.log(`Applied CritDown: ${effectValue}`);
+          }
+          break;
 
+        case "CritDmgUp":
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            modifiers.critDamage += effectValue;
+            console.log(`Applied CritDmgUp: ${effectValue}`);
+          }
+          break;
+
+        case "CritDmgDown":
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            modifiers.critDamage -= effectValue;
+            console.log(`Applied CritDmgDown: ${effectValue}`);
+          }
+          break;
+
+        case "MagicResistanceNullification":
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            if (effect.flatOrMultiplier === "flat") {
+              modifiers.magicResistanceNullification.flatReduction +=
+                effectValue;
+            } else {
+              modifiers.magicResistanceNullification.multiplierReduction +=
+                effectValue;
+            }
+
+            modifiers.magicResistanceNullification.appliedEffects.push({
+              name: effect.name,
+              value: effectValue,
+              flatOrMultiplier: effect.flatOrMultiplier,
+              source: effect.source || "Unknown",
+            });
+
+            console.log(
+              `Applied Magic Resistance Nullification: ${effectValue} (${effect.flatOrMultiplier})`
+            );
+          }
+          break;
+
+        default:
+          // Effect type not relevant to attacker combat modifiers - don't consume uses
           console.log(
-            `Applied Magic Resistance Nullification: ${effectValue} (${effect.flatOrMultiplier})`
+            `Skipping non-combat attacker effect: ${effect.name} (${effect.type})`
           );
           break;
       }
@@ -397,76 +435,121 @@ export class Combat {
     const effectsToRemove = [];
 
     this.defender.effects?.forEach((effect, index) => {
-      // Check if effect has limited uses and process accordingly
-      let shouldApplyEffect = true;
-      if (effect.uses !== undefined && effect.uses !== null) {
-        if (effect.uses <= 0) {
-          // Effect is already expired, mark for removal
-          effectsToRemove.push(index);
-          shouldApplyEffect = false;
-        } else {
-          // Effect has uses remaining, consume one use
-          effect.uses -= 1;
-          console.log(`${effect.name} used: ${effect.uses} uses remaining`);
-
-          // If this was the last use, mark for removal
-          if (effect.uses === 0) {
+      // Helper function to handle usage tracking for each effect type
+      const handleEffectUsage = () => {
+        if (effect.uses !== undefined && effect.uses !== null) {
+          if (effect.uses <= 0) {
+            // Effect is already expired, mark for removal and don't apply
             effectsToRemove.push(index);
-            console.log(
-              `${effect.name} has been exhausted and will be removed`
-            );
+            return false; // Don't apply effect
+          } else {
+            // Effect has uses remaining, consume one use
+            effect.uses -= 1;
+            console.log(`${effect.name} used: ${effect.uses} uses remaining`);
+
+            // If this was the last use, mark for removal
+            if (effect.uses === 0) {
+              effectsToRemove.push(index);
+              console.log(
+                `${effect.name} has been exhausted and will be removed`
+              );
+            }
+            return true; // Apply effect
           }
         }
-      }
+        return true; // No usage limit, apply effect
+      };
 
-      if (!shouldApplyEffect) {
-        return; // Skip processing this effect
-      }
-
-      // Get the appropriate value (npValue for Noble Phantasms, value otherwise)
-      const effectValue = this.getEffectValue(effect);
-
+      // Process each effect type and handle its usage within the same block
       switch (effect.type) {
         case "DefenseUp":
-          if (effect.flatOrMultiplier === "flat") {
-            modifiers.flatDefense += effectValue;
-          } else {
-            modifiers.multiplierDefense += effectValue;
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            if (effect.flatOrMultiplier === "flat") {
+              modifiers.flatDefense += effectValue;
+            } else {
+              modifiers.multiplierDefense += effectValue;
+            }
+            console.log(
+              `Applied DefenseUp: ${effectValue} (${effect.flatOrMultiplier})`
+            );
           }
           break;
+
         case "DefenseDown":
-          if (effect.flatOrMultiplier === "flat") {
-            modifiers.flatDefense -= effectValue;
-          } else {
-            modifiers.multiplierDefense -= effectValue;
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            if (effect.flatOrMultiplier === "flat") {
+              modifiers.flatDefense -= effectValue;
+            } else {
+              modifiers.multiplierDefense -= effectValue;
+            }
+            console.log(
+              `Applied DefenseDown: ${effectValue} (${effect.flatOrMultiplier})`
+            );
           }
           break;
+
         case "CritResUp":
-          modifiers.critResistance += effectValue;
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            modifiers.critResistance += effectValue;
+            console.log(`Applied CritResUp: ${effectValue}`);
+          }
           break;
+
         case "CritResDown":
-          modifiers.critResistance -= effectValue;
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            modifiers.critResistance -= effectValue;
+            console.log(`Applied CritResDown: ${effectValue}`);
+          }
           break;
+
         case "CritDmgResUp":
-          modifiers.critDamageResistance += effectValue;
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            modifiers.critDamageResistance += effectValue;
+            console.log(`Applied CritDmgResUp: ${effectValue}`);
+          }
           break;
+
         case "CritDmgResDown":
-          modifiers.critDamageResistance -= effectValue;
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            modifiers.critDamageResistance -= effectValue;
+            console.log(`Applied CritDmgResDown: ${effectValue}`);
+          }
           break;
+
         case "MagRes":
-          this.processResistance(
-            effect,
-            effectValue,
-            modifiers.magicResistance,
-            "magic"
-          );
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            this.processResistance(
+              effect,
+              effectValue,
+              modifiers.magicResistance,
+              "magic"
+            );
+          }
           break;
+
         case "StrRes":
-          this.processResistance(
-            effect,
-            effectValue,
-            modifiers.strengthResistance,
-            "strength"
+          if (handleEffectUsage()) {
+            const effectValue = this.getEffectValue(effect);
+            this.processResistance(
+              effect,
+              effectValue,
+              modifiers.strengthResistance,
+              "strength"
+            );
+          }
+          break;
+
+        default:
+          // Effect type not relevant to defender combat modifiers - don't consume uses
+          console.log(
+            `Skipping non-combat defender effect: ${effect.name} (${effect.type})`
           );
           break;
       }
@@ -630,20 +713,18 @@ export class Combat {
 
   calculateFinalDamage() {
     const { attacker, defender } = this.combatResults.modifiers;
-    const { criticals, initialForces } = this.combatResults;
+    const { criticals, initialForces, attackComposition } = this.combatResults;
 
     const calculateDamageComponent = (initialForce, critDamageMod) => {
       return (
         ((initialForce + criticals.modifier * critDamageMod) *
           this.integratedAttackMultiplier +
           this.integratedAttackFlatBonus) *
-          (1 +
-            (attacker.multiplierAttack - defender.multiplierDefense) * 0.01) +
-        (attacker.flatAttack - defender.flatDefense)
+        (1 + (attacker.multiplierAttack - defender.multiplierDefense) * 0.01)
       );
     };
 
-    // Calculate base damage for both types
+    // Calculate base damage for both types (without flat bonuses yet)
     let magicalDamage = calculateDamageComponent(
       initialForces.magic,
       criticals.damageModifierMagic
@@ -652,6 +733,23 @@ export class Combat {
       initialForces.strength,
       criticals.damageModifierPhysical
     );
+
+    // Calculate net flat bonus and distribute according to attack composition
+    const netFlatBonus = attacker.flatAttack - defender.flatDefense;
+    const flatBonusMagical = netFlatBonus * attackComposition.magicalPortion;
+    const flatBonusPhysical = netFlatBonus * attackComposition.physicalPortion;
+
+    // Add distributed flat bonuses
+    magicalDamage += flatBonusMagical;
+    physicalDamage += flatBonusPhysical;
+
+    console.log(`Flat damage distribution:`, {
+      netFlatBonus: netFlatBonus,
+      magicalPortion: attackComposition.magicalPortion,
+      physicalPortion: attackComposition.physicalPortion,
+      flatBonusMagical: flatBonusMagical,
+      flatBonusPhysical: flatBonusPhysical,
+    });
 
     // Store original damage values for nullification calculations
     const originalMagicalDamage = magicalDamage;

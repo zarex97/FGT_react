@@ -17,6 +17,7 @@ import {
   createMagicResistance,
   createDivinity,
   createTerritoryCreation,
+  createItemConstruction,
   combinePassives,
 } from "../../passives/PassiveCreators.js";
 
@@ -25,7 +26,8 @@ import {
 const anastasiaPassives = combinePassives(
   createMagicResistance("A+"), // High-rank magical resistance
   createDivinity("C-"), // Minor divine nature
-  createTerritoryCreation("B+")
+  createTerritoryCreation("B+"),
+  createItemConstruction("A++")
 );
 
 // Extract the created effects and trigger effects for easy use
