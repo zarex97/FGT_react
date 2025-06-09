@@ -1717,7 +1717,7 @@ const TacticalGame = ({ username, roomId }) => {
       setReadyToConfirm(true);
     };
 
-    const willTriggerDoubleCounter = d_unit.counteringAgainstWho === unit.id;
+    const willTriggerDoubleCounter = d_unit?.counteringAgainstWho === unit.id;
     const hasUsedCommandSeal =
       unit.combatReceived.response.evadeWithCS_defender.done;
     return (

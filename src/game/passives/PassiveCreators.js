@@ -600,17 +600,27 @@ export function createPresenceConcealment(rank) {
 
   effects.push(presenceConcealmentCapability);
 
-  // Create the trigger reference that will be added to units with this passive
-  const presenceConcealmentTriggerReference = {
-    id: "PresenceConcealmentTriggerEffect",
+  // Create separate trigger references that match the actual implementations in CommonTriggerEffects.js
+  const presenceConcealmentCombatTriggerReference = {
+    id: "PresenceConcealmentCombatTriggerEffect",
     appliedAt: null,
     source: "Presence Concealment Passive",
     rank: rank,
     evadeRollDown: data.evadeRollDown,
+  };
+
+  const presenceConcealmentAttackBonusTriggerReference = {
+    id: "PresenceConcealmentAttackBonusTriggerEffect",
+    appliedAt: null,
+    source: "Presence Concealment Passive",
+    rank: rank,
     cooldownAfterDeactivation: data.cooldownAfterDeactivation,
   };
 
-  triggerEffects.push(presenceConcealmentTriggerReference);
+  triggerEffects.push(
+    presenceConcealmentCombatTriggerReference,
+    presenceConcealmentAttackBonusTriggerReference
+  );
 
   // Create MicroAction for activating presence concealment
   const activatePresenceConcealmentMicroAction = new MicroAction({

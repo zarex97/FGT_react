@@ -552,9 +552,429 @@ export const ItemConstructionTriggerEffect = new TriggerEffect({
   },
 });
 
+// Presence Concealment Combat Trigger Effect - Activates when combat is initiated
+export const PresenceConcealmentCombatTriggerEffect = new TriggerEffect({
+  eventType: EventTypes.COMBAT_INITIATED,
+  name: "Presence Concealment Combat Advantage",
+  description: "Applies debuffs to target when attacking from concealment",
+  source: "Presence Concealment Passive",
+  priority: 8, // High priority to process before combat resolution
+
+  conditionLogic: (eventData, gameState, unit) => {
+    // Only trigger if the attacker (caster) has Presence Concealment effect active
+    const attackerId = eventData.casterId;
+    const attacker = gameState.units.find((u) => u.id === attackerId);
+
+    if (!attacker) {
+      console.log(`🥷 PRESENCE CONCEALMENT: Attacker not found`);
+      return false;
+    }
+
+    const hasPresenceConcealment = attacker.effects?.some(
+      (effect) => effect.name === "Presence Concealment"
+    );
+
+    const hasTriggerRef = attacker.triggerEffects?.some(
+      (triggerRef) => triggerRef.id === "PresenceConcealmentCombatTriggerEffect"
+    );
+
+    console.log(`🥷 PRESENCE CONCEALMENT COMBAT CHECK for ${attacker.name}:`, {
+      hasPresenceConcealment,
+      hasTriggerRef,
+      targetX: eventData.targetX,
+      targetY: eventData.targetY,
+    });
+
+    return hasPresenceConcealment && hasTriggerRef;
+  },
+
+  effectLogic: (eventData, gameState, unit) => {
+    console.log(`🥷 PRESENCE CONCEALMENT COMBAT: Processing for attacker`);
+
+    const attackerId = eventData.casterId;
+    const attacker = gameState.units.find((u) => u.id === attackerId);
+
+    if (!attacker) {
+      console.log(`🥷 PRESENCE CONCEALMENT: Attacker not found`);
+      return gameState;
+    }
+
+    // Check if attacker has combatSent array with targets
+    if (
+      !attacker.combatSent ||
+      !Array.isArray(attacker.combatSent) ||
+      attacker.combatSent.length === 0
+    ) {
+      console.log(
+        `🥷 PRESENCE CONCEALMENT: No combat targets found in attacker.combatSent`
+      );
+      return gameState;
+    }
+
+    // Get the concealment effect to determine rank-based values
+    const concealmentEffect = attacker.effects?.find(
+      (effect) => effect.name === "Presence Concealment"
+    );
+
+    if (!concealmentEffect) {
+      console.log(`🥷 PRESENCE CONCEALMENT: No concealment effect found`);
+      return gameState;
+    }
+
+    // Get evade roll down value based on rank
+    const rank = concealmentEffect.rank;
+    const baseRank = RankUtils.getBaseRank(rank);
+
+    let evadeRollDownValue;
+    switch (baseRank) {
+      case "EX":
+      case "A":
+        evadeRollDownValue = 4;
+        break;
+      case "B":
+      case "C":
+        evadeRollDownValue = 3;
+        break;
+      case "D":
+      case "E":
+      default:
+        evadeRollDownValue = 2;
+        break;
+    }
+
+    // Get attacker's AGI for comparison
+    const attackerAgi = attacker.baseAgility || attacker.agility || 0;
+
+    // Extract all defender IDs from combatSent array
+    const defenderIds = attacker.combatSent
+      .map((combat) => combat.defender?.id)
+      .filter((id) => id);
+
+    console.log(
+      `🥷 PRESENCE CONCEALMENT: Found ${defenderIds.length} combat targets`,
+      {
+        attackerId: attacker.id,
+        attackerName: attacker.name,
+        defenderIds: defenderIds,
+      }
+    );
+
+    const updatedUnits = gameState.units.map((gameUnit) => {
+      // Check if this unit is one of the defenders
+      if (defenderIds.includes(gameUnit.id)) {
+        // Check if defender's AGI < attacker's AGI
+        const defenderAgi = gameUnit.baseAgility || gameUnit.agility || 0;
+
+        console.log(
+          `🥷 AGI CHECK: Attacker ${attackerAgi} vs Defender ${gameUnit.name} ${defenderAgi}`
+        );
+
+        if (defenderAgi >= attackerAgi) {
+          console.log(
+            `🥷 PRESENCE CONCEALMENT: ${gameUnit.name} too agile, no debuffs applied`
+          );
+          return gameUnit; // Return unchanged if defender is too agile
+        }
+
+        let updatedUnit = { ...gameUnit };
+
+        // Apply CantCounter effect
+        const cantCounterEffect = {
+          name: "Can't Counter",
+          type: "CantCounter",
+          duration: 1, // Just for this combat
+          appliedAt: gameState.currentTurn,
+          description: "Cannot counter-attack due to surprise",
+          source: "Presence Concealment Surprise",
+          archetype: "debuff",
+          category: "combatDebuffs",
+          removable: true,
+        };
+
+        // Apply CantBlock effect
+        const cantBlockEffect = {
+          name: "Can't Block",
+          type: "CantBlock",
+          duration: 1, // Just for this combat
+          appliedAt: gameState.currentTurn,
+          description: "Cannot block due to surprise",
+          source: "Presence Concealment Surprise",
+          archetype: "debuff",
+          category: "combatDebuffs",
+          removable: true,
+        };
+
+        // Apply EvadeRollDown effect
+        const evadeRollDownEffect = {
+          name: "Evade Roll Down",
+          type: "EvadeRollDown",
+          duration: 1, // Just for this combat
+          appliedAt: gameState.currentTurn,
+          value: evadeRollDownValue,
+          description: `Evasion severely hampered by surprise attack (-${evadeRollDownValue} to evade rolls)`,
+          source: "Presence Concealment Surprise",
+          archetype: "debuff",
+          category: "combatDebuffs",
+          flatOrMultiplier: "flat",
+          removable: true,
+        };
+
+        // Apply all effects using EffectApplication
+        const effects = [
+          cantCounterEffect,
+          cantBlockEffect,
+          evadeRollDownEffect,
+        ];
+
+        effects.forEach((effect) => {
+          const application = applyEffect(
+            attacker,
+            updatedUnit,
+            effect,
+            gameState,
+            "Passive",
+            100 // 100% success rate for surprise effects
+          );
+
+          if (application.wasSuccessful) {
+            updatedUnit = application.updatedTarget;
+            console.log(`✅ Applied ${effect.name} to ${gameUnit.name}`);
+          } else {
+            console.log(
+              `❌ Failed to apply ${effect.name} to ${gameUnit.name}`
+            );
+          }
+        });
+
+        console.log(
+          `🥷 SURPRISE ATTACK: Applied presence concealment debuffs to ${gameUnit.name}`,
+          {
+            evadeRollDown: evadeRollDownValue,
+            rank: rank,
+            attackerAgi: attackerAgi,
+            defenderAgi: defenderAgi,
+          }
+        );
+
+        return updatedUnit;
+      }
+      return gameUnit; // Return unchanged if not a combat target
+    });
+
+    return {
+      ...gameState,
+      units: updatedUnits,
+    };
+  },
+});
+
+// Presence Concealment Attack Bonus Trigger Effect - Manages attack bonus while concealed
+export const PresenceConcealmentAttackBonusTriggerEffect = new TriggerEffect({
+  eventType: EventTypes.COMBAT_INITIATED, // Check at start of each turn
+  name: "Presence Concealment Attack Bonus",
+  description: "Applies attack bonus while concealed",
+  source: "Presence Concealment Passive",
+  priority: 3, // Medium priority
+
+  conditionLogic: (eventData, gameState, unit) => {
+    // Check if ANY unit in gameState has both trigger reference AND active concealment
+    const unitsWithConcealment = gameState.units.filter((gameUnit) => {
+      const hasTriggerRef = gameUnit.triggerEffects?.some(
+        (triggerRef) =>
+          triggerRef.id === "PresenceConcealmentAttackBonusTriggerEffect"
+      );
+
+      const hasActiveConcealment = gameUnit.effects?.some(
+        (effect) => effect.name === "Presence Concealment"
+      );
+
+      return hasTriggerRef && hasActiveConcealment;
+    });
+
+    console.log(`🥷 ATTACK BONUS CHECK - Units with active concealment:`, {
+      unitsFound: unitsWithConcealment.length,
+      unitNames: unitsWithConcealment.map((u) => u.name),
+    });
+
+    return unitsWithConcealment.length > 0;
+  },
+
+  effectLogic: (eventData, gameState, unit) => {
+    console.log(
+      `🥷 PRESENCE CONCEALMENT ATTACK BONUS: Processing for all units`
+    );
+
+    const updatedUnits = gameState.units.map((gameUnit) => {
+      // Check if this unit has both trigger reference and active concealment
+      const hasTriggerRef = gameUnit.triggerEffects?.some(
+        (triggerRef) =>
+          triggerRef.id === "PresenceConcealmentAttackBonusTriggerEffect"
+      );
+
+      const hasActiveConcealment = gameUnit.effects?.some(
+        (effect) => effect.name === "Presence Concealment"
+      );
+
+      if (hasTriggerRef && hasActiveConcealment) {
+        let updatedUnit = { ...gameUnit };
+
+        // Remove any existing concealment attack bonus
+        updatedUnit.effects = (updatedUnit.effects || []).filter(
+          (effect) => effect.source !== "Presence Concealment Attack Bonus"
+        );
+
+        // Apply attack bonus effect
+        const attackBonusEffect = {
+          name: "Concealment Attack Bonus",
+          type: "AttackUp",
+          duration: null, // Permanent while concealed
+          appliedAt: gameState.currentTurn,
+          value: 100, // 100% attack bonus
+          description: "Hidden position grants significant attack advantage",
+          source: "Presence Concealment Attack Bonus",
+          npValue: 100,
+          archetype: "buff",
+          removable: false, // Removed when concealment ends
+          category: "offensiveBuffs",
+          flatOrMultiplier: "multiplier",
+          uses: null,
+        };
+
+        const application = applyEffect(
+          updatedUnit, // Self-applied
+          updatedUnit,
+          attackBonusEffect,
+          gameState,
+          "Passive",
+          100 // 100% success rate
+        );
+
+        if (application.wasSuccessful) {
+          updatedUnit = application.updatedTarget;
+          console.log(
+            `✅ Applied concealment attack bonus to ${gameUnit.name}`
+          );
+        } else {
+          console.log(
+            `❌ Failed to apply concealment attack bonus to ${gameUnit.name}`
+          );
+        }
+
+        return updatedUnit;
+      } else {
+        // Remove concealment attack bonus if unit no longer qualifies
+        let updatedUnit = { ...gameUnit };
+        const beforeRemoval = (updatedUnit.effects || []).length;
+        updatedUnit.effects = (updatedUnit.effects || []).filter(
+          (effect) => effect.source !== "Presence Concealment Attack Bonus"
+        );
+        const afterRemoval = updatedUnit.effects.length;
+
+        if (beforeRemoval > afterRemoval) {
+          console.log(
+            `🥷 REMOVED: Concealment attack bonus from ${gameUnit.name} (no longer concealed)`
+          );
+        }
+
+        return updatedUnit;
+      }
+    });
+
+    return {
+      ...gameState,
+      units: updatedUnits,
+    };
+  },
+});
+
+// Presence Concealment Cooldown Management Trigger Effect - Handles cooldown application after deactivation
+export const PresenceConcealmentCooldownTriggerEffect = new TriggerEffect({
+  eventType: EventTypes.ACTION_USED, // Trigger when actions are used
+  name: "Presence Concealment Cooldown Management",
+  description:
+    "Applies cooldown to Presence Concealment skill after deactivation",
+  source: "Presence Concealment Passive",
+  priority: 2, // Low priority, after action processing
+
+  conditionLogic: (eventData, gameState, unit) => {
+    // Only trigger if the deactivation action was used
+    const wasDeactivationAction =
+      eventData.actionId === "deactivatePresenceConcealment" ||
+      eventData.actionId === "Anastasia_deactivatePresenceConcealment";
+
+    const hasTriggerRef = unit.triggerEffects?.some(
+      (triggerRef) =>
+        triggerRef.id === "PresenceConcealmentAttackBonusTriggerEffect"
+    );
+
+    console.log(`🥷 COOLDOWN CHECK for ${unit.name}:`, {
+      wasDeactivationAction,
+      hasTriggerRef,
+      actionId: eventData.actionId,
+    });
+
+    return (
+      wasDeactivationAction && hasTriggerRef && eventData.casterId === unit.id
+    );
+  },
+
+  effectLogic: (eventData, gameState, unit) => {
+    console.log(
+      `🥷 PRESENCE CONCEALMENT COOLDOWN: Processing for ${unit.name}`
+    );
+
+    // Get the cooldown value from the trigger reference
+    const triggerRef = unit.triggerEffects?.find(
+      (ref) => ref.id === "PresenceConcealmentAttackBonusTriggerEffect"
+    );
+
+    if (!triggerRef) {
+      console.log(`🥷 COOLDOWN: No trigger reference found for ${unit.name}`);
+      return gameState;
+    }
+
+    const cooldownDuration = triggerRef.cooldownAfterDeactivation || 2;
+
+    const updatedUnits = gameState.units.map((gameUnit) => {
+      if (gameUnit.id === unit.id) {
+        // Apply cooldown to the activation skill
+        const updatedSkills = (gameUnit.skills || []).map((skill) => {
+          if (
+            skill.id === "Anastasia_ActivatePresenceConcealment" ||
+            skill.id.includes("ActivatePresenceConcealment")
+          ) {
+            console.log(
+              `🥷 COOLDOWN: Applied ${cooldownDuration} turn cooldown to ${unit.name}'s Presence Concealment`
+            );
+            return {
+              ...skill,
+              onCooldownUntil: gameState.currentTurn + cooldownDuration,
+            };
+          }
+          return skill;
+        });
+
+        return {
+          ...gameUnit,
+          skills: updatedSkills,
+        };
+      }
+      return gameUnit;
+    });
+
+    return {
+      ...gameState,
+      units: updatedUnits,
+    };
+  },
+});
+
 // Export all common trigger effects
 export const CommonTriggerEffects = {
   CurseTriggerEffect,
   TerritoryCreationTriggerEffect,
   ItemConstructionTriggerEffect,
+  PresenceConcealmentCombatTriggerEffect,
+  PresenceConcealmentAttackBonusTriggerEffect,
+  PresenceConcealmentCooldownTriggerEffect,
 };

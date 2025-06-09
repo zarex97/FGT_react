@@ -716,6 +716,15 @@ export const GoghAttributes = {
   // Combat Stats
   strength: 200, // Physical attack power
   magic: 300, // Magical attack power
+  parameters: {
+    str: "C+", // C+ rank strength
+    mag: "B", // B rank magic
+    end: "B+", // B+ rank endurance
+    agi: "C-", // C- rank agility
+    mana: "A", // A rank mana capacity
+    lck: "D", // D rank luck
+    // Add other parameters as needed for your system
+  },
   // Vision and Targeting
   visionRange: 5,
   // Agility Stats

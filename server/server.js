@@ -2113,6 +2113,20 @@ const handleMessage = (bytes, uuid) => {
 
           console.log("Updated game state after action:", room.gameState);
 
+          // Add AFTER skill execution but BEFORE broadcasting
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.USE_ACTION,
+            {
+              actionName: actionName,
+              casterId: actionCasterId,
+              targetX: message.targetX,
+              targetY: message.targetY,
+              updatedGameState: message.updatedGameState,
+            },
+            room.roomId
+          );
+
           // CONDITIONAL processing - Only if combat was initiated
           const combatWasInitiatedAction = detectCombatInitiation(
             originalGameStateAction,
