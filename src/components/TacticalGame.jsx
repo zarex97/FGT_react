@@ -2381,7 +2381,7 @@ const TacticalGame = ({ username, roomId }) => {
         defenderId: combat.defender.id,
         updatedDefender,
         combatResults: finalResults,
-        outcome,
+        outcome: outcome,
       });
 
       onClose();
