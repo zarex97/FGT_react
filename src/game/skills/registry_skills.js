@@ -1,9 +1,9 @@
 // src/game/skills/registry.js
-import { MicroAction } from "../MicroAction";
-import { TargetingLogic } from "../targeting/TargetingLogic";
-import { TargetingType } from "../targeting/TargetingTypes";
-import { Skill } from "../Skill";
-import { ServantRegistry } from "../servants/registry_character";
+import { MicroAction } from "../MicroAction.js";
+import { TargetingLogic } from "../targeting/TargetingLogic.js";
+import { TargetingType } from "../targeting/TargetingTypes.js";
+import { Skill } from "../Skill.js";
+import { ServantRegistry } from "../servants/registry_character.js";
 
 export const SkillImplementations = Object.values(ServantRegistry).reduce(
   (acc, servantClass) => {
