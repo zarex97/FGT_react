@@ -1114,7 +1114,6 @@ const TacticalGame = ({ username, roomId }) => {
     const d_unit = gameState.units.find(
       (u) => u.id === unit.combatReceived?.attacker.id
     );
-    const d_unit_id = d_unit.id;
 
     const combat = unit.combatReceived;
 
@@ -1718,7 +1717,7 @@ const TacticalGame = ({ username, roomId }) => {
       setReadyToConfirm(true);
     };
 
-    const willTriggerDoubleCounter = d_unit.counteringAgainstWho === unit.id;
+    const willTriggerDoubleCounter = d_unit?.counteringAgainstWho === unit.id;
     const hasUsedCommandSeal =
       unit.combatReceived.response.evadeWithCS_defender.done;
     return (
@@ -2381,7 +2380,7 @@ const TacticalGame = ({ username, roomId }) => {
         defenderId: combat.defender.id,
         updatedDefender,
         combatResults: finalResults,
-        outcome: outcome,
+        outcome,
       });
 
       onClose();

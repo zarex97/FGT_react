@@ -2584,7 +2584,7 @@ const handleMessage = (bytes, uuid) => {
           console.log(
             `🎯 Final Damage:`,
             JSON.stringify(completeResults.finalDamage, null, 2)
-          );
+          ); //untested line
           console.log(
             `🎯 Attack from attacker POV (handleConfirmCombatResults) was successful: ${was__Successful}`
           );

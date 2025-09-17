@@ -1,6 +1,11 @@
 // src/game/passives/PassiveCreators.js
 // Factory functions for creating common passive abilities
 import { RankUtils } from "../utils/RankUtils.js";
+import { MicroAction } from "../MicroAction.js";
+import { Skill } from "../Skill.js";
+import { Action } from "../actions/Action.js";
+import { ActionType } from "../actions/ActionTypes.js";
+import { TargetingType } from "../targeting/TargetingTypes.js";
 
 /**
  * Magic Resistance Passive Creator
@@ -515,16 +520,323 @@ export function createItemConstruction(rank) {
 }
 
 /**
- * Utility function to combine multiple passive creators
+ * Presence Concealment Passive Creator
+ * Creates stealth effects, activation skill, and deactivation action
+ * @param {string} rank - The rank of Presence Concealment (e.g., "A", "B+", "C--", "EX")
+ * @returns {object} Object containing effects, triggerEffects, skills, and actions
+ */
+export function createPresenceConcealment(rank) {
+  // Validate rank input using RankUtils
+  if (!RankUtils.isValidRank(rank)) {
+    console.error(
+      `Invalid Presence Concealment rank: ${rank}. Using E as fallback.`
+    );
+    rank = "E";
+  }
+
+  // Get the base rank letter for data lookup
+  const baseRank = RankUtils.getBaseRank(rank);
+
+  // Parse rank to get modifier count for bonus/penalty calculations
+  const parsedRank = RankUtils.parseRank(rank);
+  const modifierCount = parsedRank.modifierCount;
+
+  // Define rank-based values for Presence Concealment
+  const presenceConcealmentData = {
+    EX: {
+      evadeRollDown: 4,
+      cooldownAfterDeactivation: 2,
+      description: `Legendary stealth mastery (${rank}) - nearly impossible to detect`,
+    },
+    A: {
+      evadeRollDown: 4,
+      cooldownAfterDeactivation: 2,
+      description: `Master-level concealment (${rank}) - extremely difficult to detect`,
+    },
+    B: {
+      evadeRollDown: 3,
+      cooldownAfterDeactivation: 2,
+      description: `High-level stealth (${rank}) - very difficult to detect`,
+    },
+    C: {
+      evadeRollDown: 3,
+      cooldownAfterDeactivation: 1,
+      description: `Moderate concealment ability (${rank}) - difficult to detect`,
+    },
+    D: {
+      evadeRollDown: 2,
+      cooldownAfterDeactivation: 1,
+      description: `Basic stealth training (${rank}) - somewhat difficult to detect`,
+    },
+    E: {
+      evadeRollDown: 2,
+      cooldownAfterDeactivation: 1,
+      description: `Minimal concealment skill (${rank}) - slightly difficult to detect`,
+    },
+  };
+
+  const data = presenceConcealmentData[baseRank];
+
+  const effects = [];
+  const triggerEffects = [];
+
+  // Create informational passive effect that shows Presence Concealment capabilities
+  const presenceConcealmentCapability = {
+    name: `Presence Concealment Mastery (${rank})`,
+    type: "PresenceConcealmentCapability",
+    duration: null,
+    appliedAt: null,
+    value: data.evadeRollDown,
+    npValue: null,
+    flatOrMultiplier: "flat",
+    description: data.description,
+    source: "Presence Concealment Passive",
+    isPermanent: true,
+    isPassive: true,
+    sourceLetterRank: rank,
+    evadeRollDown: data.evadeRollDown,
+    cooldownAfterDeactivation: data.cooldownAfterDeactivation,
+  };
+
+  effects.push(presenceConcealmentCapability);
+
+  // Create separate trigger references that match the actual implementations in CommonTriggerEffects.js
+  const presenceConcealmentCombatTriggerReference = {
+    id: "PresenceConcealmentCombatTriggerEffect",
+    appliedAt: null,
+    source: "Presence Concealment Passive",
+    rank: rank,
+    evadeRollDown: data.evadeRollDown,
+  };
+
+  const presenceConcealmentAttackBonusTriggerReference = {
+    id: "PresenceConcealmentAttackBonusTriggerEffect",
+    appliedAt: null,
+    source: "Presence Concealment Passive",
+    rank: rank,
+    cooldownAfterDeactivation: data.cooldownAfterDeactivation,
+  };
+
+  triggerEffects.push(
+    presenceConcealmentCombatTriggerReference,
+    presenceConcealmentAttackBonusTriggerReference
+  );
+
+  // Create MicroAction for activating presence concealment
+  const activatePresenceConcealmentMicroAction = new MicroAction({
+    targetingType: TargetingType.SELF,
+    range: 0,
+    effectLogic: (gameState, caster, affectedCells) => {
+      console.log(`🥷 ACTIVATING: Presence Concealment for ${caster.name}`);
+
+      const updatedUnits = gameState.units.map((unit) => {
+        if (unit.id === caster.id) {
+          const currentEffects = Array.isArray(unit.effects)
+            ? unit.effects
+            : [];
+
+          // Check if already concealed
+          const alreadyConcealed = currentEffects.some(
+            (effect) => effect.name === "Presence Concealment"
+          );
+
+          if (alreadyConcealed) {
+            console.log(`🥷 ${caster.name} is already concealed`);
+            return unit;
+          }
+
+          const presenceConcealmentEffect = {
+            name: "Presence Concealment",
+            type: "PresenceConcealment",
+            duration: 2,
+            appliedAt: gameState.currentTurn,
+            value: 0, // Not used for this effect type
+            description: `Hidden from detection - grants combat advantages and 100% attack bonus`,
+            source: "Presence Concealment Skill",
+            rank: rank,
+            archetype: "buff",
+            category: "stealthBuffs",
+            removable: true,
+          };
+
+          console.log(`✅ ${caster.name} entered stealth mode for 2 turns`);
+
+          return {
+            ...unit,
+            effects: [...currentEffects, presenceConcealmentEffect],
+          };
+        }
+        return unit;
+      });
+
+      return {
+        ...gameState,
+        units: updatedUnits,
+      };
+    },
+  });
+
+  // Create MicroAction for deactivating presence concealment
+  const deactivatePresenceConcealmentMicroAction = new MicroAction({
+    targetingType: TargetingType.SELF,
+    range: 0,
+    effectLogic: (gameState, caster, affectedCells) => {
+      console.log(`🥷 DEACTIVATING: Presence Concealment for ${caster.name}`);
+
+      const updatedUnits = gameState.units.map((unit) => {
+        if (unit.id === caster.id) {
+          // Remove presence concealment effect
+          const filteredEffects = (unit.effects || []).filter(
+            (effect) => effect.name !== "Presence Concealment"
+          );
+
+          // Also remove the attack bonus if it exists
+          const finalEffects = filteredEffects.filter(
+            (effect) => effect.source !== "Presence Concealment Attack Bonus"
+          );
+
+          console.log(
+            `✅ ${caster.name} exited stealth mode (cooldown: ${data.cooldownAfterDeactivation} turns)`
+          );
+
+          return {
+            ...unit,
+            effects: finalEffects,
+          };
+        }
+        return unit;
+      });
+
+      // Note: The cooldown application happens in the game logic when the action is used
+      // The cooldown value is stored in the passive data and accessed by the trigger effects
+
+      return {
+        ...gameState,
+        units: updatedUnits,
+      };
+    },
+  });
+
+  // Create the actual Skill and Action objects
+  const presenceConcealmentSkill = new Skill(
+    "Activate Presence Concealment",
+    `Enter stealth mode for 2 turns. Grants 100% attack bonus and combat advantages when attacking unaware enemies.`,
+    3, // Initial cooldown
+    0, // Self-targeting range
+    [activatePresenceConcealmentMicroAction],
+    false, // isAttack
+    false, // affectsAttackCount
+    false, // isReactionary
+    rank
+  );
+
+  const presenceConcealmentAction = new Action(
+    "Deactivate Presence Concealment",
+    `Voluntarily exit stealth mode and apply cooldown (${data.cooldownAfterDeactivation} turns).`,
+    1, // cooldown
+    0, // Self-targeting range
+    [deactivatePresenceConcealmentMicroAction],
+    ActionType.common,
+    false, // isReactionary
+    false, // isAttack
+    false // affectsAttackCount
+  );
+
+  console.log(`Created Presence Concealment (${rank}):`, {
+    baseRank: baseRank,
+    fullRank: rank,
+    evadeRollDown: data.evadeRollDown,
+    cooldownAfterDeactivation: data.cooldownAfterDeactivation,
+    effectsCount: effects.length,
+    triggerEffectsCount: triggerEffects.length,
+  });
+
+  return {
+    effects,
+    triggerEffects,
+    skills: {
+      ActivatePresenceConcealment: presenceConcealmentSkill,
+    },
+    actions: {
+      common: {
+        deactivatePresenceConcealment: presenceConcealmentAction,
+      },
+    },
+    passiveName: "Presence Concealment",
+    rank: rank,
+    cooldownAfterDeactivation: data.cooldownAfterDeactivation,
+  };
+}
+
+/**
+ * Enhanced utility function to combine multiple passive creators including skills and actions
  * @param {...object} passiveResults - Results from passive creator functions
- * @returns {object} Combined effects and triggerEffects
+ * @returns {object} Combined effects, triggerEffects, skills, and actions
  */
 export function combinePassives(...passiveResults) {
   const combinedEffects = [];
   const combinedTriggerEffects = [];
+  const combinedSkills = {};
+  const combinedActions = { common: {}, unique: {} };
   const passiveInfo = [];
 
   passiveResults.forEach((result) => {
+    if (result && result.effects) {
+      combinedEffects.push(...result.effects);
+    }
+    if (result && result.triggerEffects) {
+      combinedTriggerEffects.push(...result.triggerEffects);
+    }
+    if (result && result.skills) {
+      // Merge skills objects
+      Object.assign(combinedSkills, result.skills);
+    }
+    if (result && result.actions) {
+      // Merge actions, handling common and unique categories
+      if (result.actions.common) {
+        Object.assign(combinedActions.common, result.actions.common);
+      }
+      if (result.actions.unique) {
+        Object.assign(combinedActions.unique, result.actions.unique);
+      }
+    }
+    if (result && result.passiveName && result.rank) {
+      passiveInfo.push(`${result.passiveName} (${result.rank})`);
+    }
+  });
+
+  console.log(`Combined passives: ${passiveInfo.join(", ")}`);
+  console.log(
+    `Total effects: ${combinedEffects.length}, Total trigger effects: ${combinedTriggerEffects.length}`
+  );
+  console.log(
+    `Total skills: ${Object.keys(combinedSkills).length}, Total actions: ${
+      Object.keys(combinedActions.common).length +
+      Object.keys(combinedActions.unique).length
+    }`
+  );
+
+  return {
+    effects: combinedEffects,
+    triggerEffects: combinedTriggerEffects,
+    skills: combinedSkills,
+    actions: combinedActions,
+    passiveInfo: passiveInfo,
+  };
+}
+
+/**
+ * Alternative approach: Separate combining for basic passives vs complex passives
+ * Use this when you want to handle Presence Concealment separately due to its unique structure
+ * @param {...object} basicPassiveResults - Results from basic passive creators (no skills/actions)
+ * @returns {object} Combined effects and triggerEffects only
+ */
+export function combineBasicPassives(...basicPassiveResults) {
+  const combinedEffects = [];
+  const combinedTriggerEffects = [];
+  const passiveInfo = [];
+
+  basicPassiveResults.forEach((result) => {
     if (result && result.effects) {
       combinedEffects.push(...result.effects);
     }
@@ -536,7 +848,7 @@ export function combinePassives(...passiveResults) {
     }
   });
 
-  console.log(`Combined passives: ${passiveInfo.join(", ")}`);
+  console.log(`Combined basic passives: ${passiveInfo.join(", ")}`);
   console.log(
     `Total effects: ${combinedEffects.length}, Total trigger effects: ${combinedTriggerEffects.length}`
   );
