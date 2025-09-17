@@ -2113,20 +2113,6 @@ const handleMessage = (bytes, uuid) => {
 
           console.log("Updated game state after action:", room.gameState);
 
-          // Add AFTER skill execution but BEFORE broadcasting
-          room.gameState = processTriggerEffectsForAction(
-            room.gameState,
-            EventTypes.USE_ACTION,
-            {
-              actionName: actionName,
-              casterId: actionCasterId,
-              targetX: message.targetX,
-              targetY: message.targetY,
-              updatedGameState: message.updatedGameState,
-            },
-            room.roomId
-          );
-
           // CONDITIONAL processing - Only if combat was initiated
           const combatWasInitiatedAction = detectCombatInitiation(
             originalGameStateAction,
@@ -2594,8 +2580,13 @@ const handleMessage = (bytes, uuid) => {
 
           // Check if this was a successful attack
           const was__Successful = completeResults.finalDamage.total > 0;
+          const finalD = completeResults.finalDamage;
           console.log(
-            `🎯 Attack from attacker POV (handleConfirmCombatResults) was successful: ${was_Successful}`
+            `🎯 Final Damage:`,
+            JSON.stringify(completeResults.finalDamage, null, 2)
+          ); //untested line
+          console.log(
+            `🎯 Attack from attacker POV (handleConfirmCombatResults) was successful: ${was__Successful}`
           );
 
           if (was__Successful) {
