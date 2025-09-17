@@ -10,6 +10,10 @@ import "../src/game/registry_triggers.js";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { VehicleUtils } from "./../src/game/utils/VehicleUtils.js";
+import {
+  executeSkill,
+  getSkillImplementation,
+} from "../src/game/skills/registry_skills.js";
 
 const server = http.createServer();
 const wsServer = new WebSocketServer({ server });
@@ -2237,88 +2241,106 @@ const handleMessage = (bytes, uuid) => {
 
           broadcastToRoom(player.currentRoom);
           break;
-        case "USE_SKILL":
-          const skillCaster = room.gameState.units.find(
-            (u) => u.id === message.casterId
-          );
-          if (!skillCaster) return;
-          const skillName = message.skillName;
-          const casterId = message.casterId;
-          const newCooldownUntil = message.newCooldownUntil;
+        case "USE_SKILL": {
+          // <--- ADD this opening brace
+          const { skillId, casterId, targetX, targetY } = message;
+          const caster = room.gameState.units.find((u) => u.id === casterId);
+          const skillImpl = getSkillImplementation(skillId);
+          const skillRef = caster.skills.find((s) => s.id === skillId);
 
-          // Store original game state to detect combat initiation
-          const originalGameState = JSON.parse(JSON.stringify(room.gameState));
+          if (!caster || !skillImpl || !skillRef) {
+            console.error("Server USE_SKILL Error: Caster or Skill not found.");
+            // We break here to avoid crashing, the broadcast at the end will still run
+            // which is fine, as no state has changed.
+            break;
+          }
 
-          room.gameState = {
-            ...message.updatedGameState,
-            units: message.updatedGameState.units.map((updatedUnit) => {
-              if (updatedUnit.id === casterId) {
-                return {
-                  ...updatedUnit,
-                  skills: updatedUnit.skills.map((skill) => {
-                    if (skill.id === skillName) {
-                      return {
-                        ...skill,
-                        onCooldownUntil: newCooldownUntil,
-                      };
-                    }
-                    return skill;
-                  }),
-                };
-              }
-              return updatedUnit;
-            }),
-          };
-
-          console.log("Updated game state after skill:", room.gameState);
-
-          // Add AFTER skill execution but BEFORE broadcasting
-          room.gameState = processTriggerEffectsForAction(
-            room.gameState,
-            EventTypes.USE_SKILL,
-            {
-              skillName: message.skillName,
-              casterId: message.casterId,
-              targetX: message.targetX,
-              targetY: message.targetY,
-              updatedGameState: message.updatedGameState,
-            },
-            room.roomId
+          console.log(
+            `SERVER: Received intent to use skill "${skillImpl.name}" from ${caster.name}`
           );
 
-          // CONDITIONAL processing - Only if combat was initiated
-          const combatWasInitiated = detectCombatInitiation(
-            originalGameState,
-            room.gameState
-          );
-
-          if (combatWasInitiated) {
+          // STEP 1: Process PRE-COMBAT Triggers if this is an attack skill
+          if (skillImpl.isAttack) {
             console.log(
-              `🎯 Combat detected from skill ${skillName}, processing combat trigger effects`
+              `🎯 Skill "${skillImpl.name}" is an attack. Firing COMBAT_INITIATED triggers.`
             );
-
             room.gameState = processTriggerEffectsForAction(
               room.gameState,
               EventTypes.COMBAT_INITIATED,
               {
-                skillName: message.skillName,
-                casterId: message.casterId,
-                targetX: message.targetX,
-                targetY: message.targetY,
-                combatInitiated: true,
+                skillName: skillImpl.name,
+                casterId: casterId,
+                targetX: targetX,
+                targetY: targetY,
                 isAttackSkill: true,
               },
               player.currentRoom
             );
           } else {
             console.log(
-              `✨ Non-combat skill ${skillName} executed, skipping combat trigger effects`
+              `✨ Skill "${skillImpl.name}" is not an attack. Skipping COMBAT_INITIATED triggers.`
             );
           }
 
-          broadcastToRoom(player.currentRoom);
-          break;
+          // STEP 2: Execute the skill logic on the server.
+          const updatedCaster = room.gameState.units.find(
+            (u) => u.id === casterId
+          );
+          const result = executeSkill(
+            skillRef,
+            room.gameState,
+            updatedCaster,
+            targetX,
+            targetY
+          );
 
+          if (result.success) {
+            room.gameState = result.updatedGameState;
+
+            // STEP 3: Apply cooldowns.
+            const newCooldownUntil =
+              room.gameState.currentTurn +
+              Math.floor(skillImpl.cooldown * room.gameState.turnsPerRound);
+
+            room.gameState.units = room.gameState.units.map((unit) => {
+              if (unit.id === casterId) {
+                return {
+                  ...unit,
+                  skills: unit.skills.map((skill) => {
+                    if (skill.id === skillId) {
+                      return { ...skill, onCooldownUntil: newCooldownUntil };
+                    }
+                    return skill;
+                  }),
+                };
+              }
+              return unit;
+            });
+
+            console.log(
+              `SERVER: Skill "${skillImpl.name}" executed successfully.`
+            );
+          } else {
+            console.error(
+              `SERVER: Skill "${skillImpl.name}" execution failed.`
+            );
+          }
+
+          // STEP 4: Process POST-EXECUTION Triggers.
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.USE_SKILL,
+            {
+              skillName: skillImpl.name,
+              casterId: casterId,
+              targetX: targetX,
+              targetY: targetY,
+            },
+            player.currentRoom
+          );
+
+          break; // The break for the case
+        }
         case "CLOSE_COMBAT_MENU":
           const { targetPlayerId, reason } = message;
 

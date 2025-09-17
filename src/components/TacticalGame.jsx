@@ -3025,83 +3025,37 @@ const TacticalGame = ({ username, roomId }) => {
       console.log("Skill is on cooldown");
       return;
     }
+
     setSelectedUnit(unit);
 
-    setActiveSkill({
-      ref: skillRef,
-      impl: skillImpl,
-    });
-
+    // If the skill is self-targeting, send the request immediately. No targeting mode needed.
     if (skillImpl.microActions[0]?.targetingType === TargetingType.SELF) {
-      const result = executeSkill(skillRef, gameState, unit, unit.x, unit.y);
-      if (result.success) {
-        const newCooldownUntil =
-          gameState.currentTurn +
-          Math.floor(skillImpl.cooldown * gameState.turnsPerRound);
+      console.log(`Requesting to use SELF skill: ${skillImpl.name}`);
 
-        // Create deep copy with preserved cooldowns
-        const updatedGameState = {
-          ...result.updatedGameState,
-          units: result.updatedGameState.units.map((updatedUnit) => {
-            if (updatedUnit.id === unit.id) {
-              return {
-                ...updatedUnit,
-                skills: updatedUnit.skills.map((skill) => {
-                  if (skill.id === skillRef.id) {
-                    return {
-                      ...skill,
-                      onCooldownUntil: newCooldownUntil,
-                    };
-                  }
-                  return skill;
-                }),
-              };
-            }
-            return updatedUnit;
-          }),
-        };
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "USE_SKILL",
+        skillId: skillRef.id,
+        casterId: unit.id,
+        targetX: unit.x, // For self-target, target is the caster's own location
+        targetY: unit.y,
+      });
 
-        console.log("Skill execution (deep copy on Targeting Self):", {
-          success: result.success,
-          updatedState: result.updatedGameState,
-          onCooldownUntil: newCooldownUntil,
-        });
-
-        sendJsonMessage({
-          type: "GAME_ACTION",
-          action: "USE_SKILL",
-          skillName: skillRef.name,
-          casterId: unit.id,
-          targetX: unit.x,
-          targetY: unit.y,
-          updatedGameState: updatedGameState,
-          newCooldownUntil: newCooldownUntil,
-        });
-        console.log("newCooldown is now:", newCooldownUntil);
-      }
-
+      // Clean up all UI states
       setActiveSkill(null);
       setSkillTargetingMode(false);
-
-      return;
-    }
-    setSkillTargetingMode(true);
-    setContextMenu(false);
-    setShowSkillsMenu(false);
-
-    // For AOE_AROUND_SELF targeting type
-    if (
-      skillImpl.microActions?.[0]?.targetingType ===
-      TargetingType.AOE_AROUND_SELF
-    ) {
-      const affectedCells = getSkillAffectedCells(
-        skillImpl,
-        unit,
-        null,
-        null,
-        11
-      );
-      setPreviewCells(affectedCells);
+      setShowSkillsMenu(false);
+      setContextMenu(null);
+      setSelectedUnit(null);
+    } else {
+      // For targeted skills, just enable targeting mode and close the menu.
+      setActiveSkill({
+        ref: skillRef,
+        impl: skillImpl,
+      });
+      setSkillTargetingMode(true);
+      setContextMenu(null);
+      setShowSkillsMenu(false); // This is the line that closes the menu.
     }
   };
 
@@ -4329,60 +4283,26 @@ const TacticalGame = ({ username, roomId }) => {
 
       const { ref, impl } = activeSkill;
 
-      console.log("Executing skill:", {
+      console.log("Requesting to use skill:", {
         skillName: impl.name,
         caster: caster.name,
         targetX: x,
         targetY: y,
       });
 
-      // Execute the skill using the implementation
-      const result = executeSkill(ref, gameState, caster, x, y);
-      if (result.success) {
-        const newCooldownUntil =
-          gameState.currentTurn +
-          Math.floor(impl.cooldown * gameState.turnsPerRound);
+      // REMOVing the client-side execution
+      // const result = executeSkill(ref, gameState, caster, x, y);
 
-        console.log("Skill execution result on TacticalGame:", {
-          success: result.success,
-          updatedState: result.updatedGameState,
-          nowCooldownIs: newCooldownUntil,
-        });
-
-        // Create deep copy with preserved cooldowns to maintain game state integrity
-        const updatedGameState = {
-          ...result.updatedGameState,
-          units: result.updatedGameState.units.map((updatedUnit) => {
-            if (updatedUnit.id === caster.id) {
-              return {
-                ...updatedUnit,
-                skills: updatedUnit.skills.map((skill) => {
-                  if (skill.id === ref.id) {
-                    return {
-                      ...skill,
-                      onCooldownUntil: newCooldownUntil,
-                    };
-                  }
-                  return skill;
-                }),
-              };
-            }
-            return updatedUnit;
-          }),
-        };
-
-        // Send the skill execution to the server
-        sendJsonMessage({
-          type: "GAME_ACTION",
-          action: "USE_SKILL",
-          skillName: impl.name,
-          casterId: caster.id,
-          targetX: x,
-          targetY: y,
-          updatedGameState: result.updatedGameState,
-          newCooldownUntil: newCooldownUntil,
-        });
-      }
+      // INSTEAD, just send the intent to the server
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "USE_SKILL", // We will repurpose this action on the server
+        skillId: ref.id, // Send the ID so the server can find the implementation
+        casterId: caster.id,
+        targetX: x,
+        targetY: y,
+        // Do NOT send updatedGameState. The server will generate it.
+      });
 
       // Reset all targeting-related states after skill execution
       setSkillTargetingMode(false);
