@@ -1225,12 +1225,28 @@ const TacticalGame = ({ username, roomId }) => {
     };
 
     const handleDoNothing = async () => {
+      // --- START OF FIX ---
+      const managingUnit = gameState.units.find((u) => u.id === s_unit.id);
+
+      if (
+        !managingUnit ||
+        !managingUnit.combatReceived ||
+        !managingUnit.combatReceived.attacker
+      ) {
+        console.error(
+          "Could not find the managing unit or its combat data in the latest gameState."
+        );
+        onClose();
+        return;
+      }
+
       const currentAttacker = gameState.units.find(
-        (u) => u.id === unit.combatReceived.attacker.id
+        (u) => u.id === managingUnit.combatReceived.attacker.id
       );
       const currentDefender = gameState.units.find(
-        (u) => u.id === unit.combatReceived.defender.id
+        (u) => u.id === managingUnit.combatReceived.defender.id
       );
+      // --- END OF FIX ---
 
       if (!currentAttacker || !currentDefender) {
         console.error("Could not find current units");
@@ -1339,23 +1355,57 @@ const TacticalGame = ({ username, roomId }) => {
     };
 
     const handleConfirmCombatResultsAndInitiateCounter = async () => {
-      const currentAttacker = gameState.units.find(
-        (u) => u.id === unit.combatReceived.attacker.id
-      );
-      const currentDefender = gameState.units.find(
-        (u) => u.id === unit.combatReceived.defender.id
-      );
+      // --- START OF FIX ---
+      // 1. Get the fresh version of the unit whose menu is open.
+      const managingUnit = gameState.units.find((u) => u.id === s_unit.id);
 
-      if (!currentAttacker || !currentDefender) {
-        console.error("Could not find current units");
+      // 2. Add a robust check to ensure the combat data we need still exists.
+      if (
+        !managingUnit ||
+        !managingUnit.combatReceived ||
+        !managingUnit.combatReceived.attacker
+      ) {
+        console.error(
+          "Could not find the managing unit or its combat data in the latest gameState. The combat may have been resolved already."
+        );
+        onClose(); // Close the menu to prevent further errors.
         return;
       }
 
-      // STEP 1: Find the attacker's player ID (WebSocket UUID) from the game state
-      const attackerPlayerId = Object.keys(gameState.players).find(
-        (playerId) => gameState.players[playerId].team === currentAttacker.team
+      // 3. Find the attacker and defender using the FRESH combat data.
+      const currentAttacker = gameState.units.find(
+        (u) => u.id === managingUnit.combatReceived.attacker.id
       );
 
+      if (!currentAttacker) {
+        console.error("currentAttacker not found in current game state");
+        onClose(); // Close the menu gracefully
+        return;
+      }
+
+      const currentDefender = gameState.units.find(
+        (u) => u.id === managingUnit.combatReceived.defender.id
+      );
+
+      if (!currentDefender) {
+        console.error("currentDefender not found in current game state");
+        onClose(); // Close the menu gracefully
+        return;
+      }
+      // --- END OF FIX ---
+
+      // STEP 1: Find the attacker's player ID (WebSocket UUID) from the game state
+      if (!d_unit) {
+        console.error(
+          "Attacker unit not found in current game state. It may have been defeated."
+        );
+        onClose(); // Close the menu gracefully
+        return;
+      }
+
+      const attackerPlayerId = Object.keys(gameState.players).find(
+        (playerId) => gameState.players[playerId].team === d_unit.team
+      );
       if (!attackerPlayerId) {
         console.error("Could not find attacker's player ID");
         return;
@@ -2295,15 +2345,29 @@ const TacticalGame = ({ username, roomId }) => {
     };
 
     const handleConfirmCombatResults = () => {
+      // --- START OF FIX ---
+      // 1. Get the fresh attacker (the unit for this menu) and the fresh defender using stable IDs from props.
       const currentAttacker = gameState.units.find((u) => u.id === unit.id);
-      const currentDefender = gameState.units.find(
-        (u) => u.id === combat.defender.id
-      );
+      const currentDefender = gameState.units.find((u) => u.id === defenderId);
 
-      if (!currentAttacker || !currentDefender) {
-        console.error("Could not find current units");
+      // 2. The single source of truth for the current combat state is the defender's `combatReceived` object.
+      // Get this fresh data directly from the current defender.
+      const freshCombatData = currentDefender?.combatReceived;
+
+      // 3. Add robust validation to handle cases where the combat might have already been resolved or cleared.
+      if (
+        !currentAttacker ||
+        !currentDefender ||
+        !freshCombatData ||
+        !freshCombatData.attacker
+      ) {
+        console.error(
+          "handleConfirmCombatResults: Could not find fresh combat participants or data. Combat may have been resolved already."
+        );
+        onClose(); // Close the menu gracefully to prevent a crash.
         return;
       }
+      // --- END OF FIX ---
 
       const currentAttackerDeepCopy = JSON.parse(
         JSON.stringify(currentAttacker)
@@ -2956,59 +3020,43 @@ const TacticalGame = ({ username, roomId }) => {
   };
 
   const handleNPSelect = (npRef, npImpl, unit) => {
-    // First check round restriction
     const roundCheck = canUseNPOnThisRound(
       npRef,
       npImpl,
       gameState.currentRound
     );
-    if (!roundCheck.canUse) {
-      console.log("NP round restriction:", roundCheck);
-      return;
-    }
-
-    if (isNPOnCooldown(npRef, gameState.currentTurn)) {
-      console.log("NP is on cooldown");
+    if (!roundCheck.canUse || isNPOnCooldown(npRef, gameState.currentTurn)) {
+      console.log("NP cannot be used (cooldown or round restriction)");
       return;
     }
 
     setSelectedUnit(unit);
 
-    setActiveNP({
-      ref: npRef,
-      impl: npImpl,
-    });
-
     if (npImpl.microActions[0]?.targetingType === TargetingType.SELF) {
-      const result = executeNP(npRef, gameState, unit, unit.x, unit.y);
-      if (result.success) {
-        const newCooldownUntil =
-          gameState.currentTurn +
-          Math.floor(impl.cooldown * gameState.turnsPerRound);
+      console.log(`Requesting to use SELF NP: ${npImpl.name}`);
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "USE_NP",
+        npId: npRef.id, // Send ID
+        casterId: unit.id,
+        targetX: unit.x,
+        targetY: unit.y,
+      });
 
-        sendJsonMessage({
-          type: "GAME_ACTION",
-          action: "USE_NP",
-          npName: npRef.name,
-          casterId: unit.id,
-          targetX: unit.x,
-          targetY: unit.y,
-          updatedGameState: result.updatedGameState,
-          newCooldownUntil: newCooldownUntil,
-          roundUsed: gameState.currentRound,
-        });
-      }
-
-      console.log("newCooldown is now:", newCooldownUntil);
+      // Clean up UI
       setActiveNP(null);
       setNPTargetingMode(false);
       setShowNPMenu(false);
-      return;
+      setSelectedUnit(null);
+    } else {
+      setActiveNP({
+        ref: npRef,
+        impl: npImpl,
+      });
+      setNPTargetingMode(true);
+      setContextMenu(false);
+      setShowNPMenu(false);
     }
-
-    setNPTargetingMode(true);
-    setContextMenu(false);
-    setShowNPMenu(false);
   };
 
   const handleAddServant = (newUnit) => {
@@ -3637,78 +3685,35 @@ const TacticalGame = ({ username, roomId }) => {
 
     setSelectedUnit(unit);
 
-    setActiveAction({
-      ref: actionRef,
-      impl: actionImpl,
-    });
-
     if (actionImpl.microActions[0]?.targetingType === TargetingType.SELF) {
-      const result = executeAction(
-        actionRef,
-        actionImpl.type,
-        gameState,
-        unit,
-        unit.x,
-        unit.y
-      );
-      if (result.success) {
-        const newCooldownUntil =
-          gameState.currentTurn +
-          Math.floor(actionImpl.cooldown * gameState.turnsPerRound);
+      console.log(`Requesting to use SELF action: ${actionImpl.name}`);
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "USE_ACTION",
+        actionId: actionRef.id,
+        actionType: actionImpl.type,
+        casterId: unit.id,
+        targetX: unit.x,
+        targetY: unit.y,
+      });
 
-        // Create deep copy of game state with updated cooldowns
-        const updatedGameState = {
-          ...result.updatedGameState,
-          units: result.updatedGameState.units.map((updatedUnit) => {
-            if (updatedUnit.id === unit.id) {
-              return {
-                ...updatedUnit,
-                actions: {
-                  ...updatedUnit.actions,
-                  [actionImpl.type]: updatedUnit.actions[actionImpl.type].map(
-                    (action) => {
-                      if (action.id === actionRef.id) {
-                        console.log("Updating action cooldown:", {
-                          actionId: action.id,
-                          newCooldownUntil,
-                          currentTurn: gameState.currentTurn,
-                        });
-                        return {
-                          ...action,
-                          onCooldownUntil: newCooldownUntil,
-                        };
-                      }
-                      return action;
-                    }
-                  ),
-                },
-              };
-            }
-            return updatedUnit;
-          }),
-        };
-
-        sendJsonMessage({
-          type: "GAME_ACTION",
-          action: "USE_ACTION",
-          actionId: actionRef.id,
-          actionType: actionImpl.type,
-          casterId: unit.id,
-          targetX: unit.x,
-          targetY: unit.y,
-          updatedGameState: updatedGameState,
-          newCooldownUntil: newCooldownUntil,
-        });
-      }
+      // Clean up UI
       setActiveAction(null);
       setActionTargetingMode(false);
-      return;
+      setShowCommonActions(false);
+      setShowUniqueActions(false);
+      setShowOtherActions(false);
+      setSelectedUnit(null);
+    } else {
+      setActiveAction({
+        ref: actionRef,
+        impl: actionImpl,
+      });
+      setActionTargetingMode(true);
+      setShowCommonActions(false);
+      setShowUniqueActions(false);
+      setShowOtherActions(false);
     }
-
-    setActionTargetingMode(true);
-    setShowCommonActions(false);
-    setShowUniqueActions(false);
-    setShowOtherActions(false);
   };
 
   const OtherActionsMenu = ({ unit }) => {
@@ -4314,117 +4319,59 @@ const TacticalGame = ({ username, roomId }) => {
     }
 
     // ACTION TARGETING MODE: Handle action execution when player is targeting with an action
+    // --- ACTION TARGETING MODE (REFACTORED - server side execution of Skills/Actions/NPs) ---
     if (actionTargetingMode && activeAction) {
       const caster = selectedUnit;
       if (!caster) return;
 
       const { ref, impl } = activeAction;
-      const result = executeAction(ref, impl.type, gameState, caster, x, y);
-      if (result.success) {
-        const newCooldownUntil =
-          gameState.currentTurn +
-          Math.floor(impl.cooldown * gameState.turnsPerRound);
 
-        // Maintain action cooldown state consistency
-        const updatedGameState = {
-          ...result.updatedGameState,
-          units: result.updatedGameState.units.map((updatedUnit) => {
-            if (updatedUnit.id === caster.id) {
-              return {
-                ...updatedUnit,
-                actions: {
-                  ...updatedUnit.actions,
-                  [impl.type]: updatedUnit.actions[impl.type].map((action) => {
-                    if (action.id === ref.id) {
-                      return {
-                        ...action,
-                        onCooldownUntil: newCooldownUntil,
-                      };
-                    }
-                    return action;
-                  }),
-                },
-              };
-            }
-            return updatedUnit;
-          }),
-        };
+      console.log(`Requesting to use ACTION: ${impl.name} on (${x}, ${y})`);
 
-        sendJsonMessage({
-          type: "GAME_ACTION",
-          action: "USE_ACTION",
-          actionId: impl.name,
-          actionType: impl.type,
-          casterId: caster.id,
-          targetX: x,
-          targetY: y,
-          updatedGameState: updatedGameState,
-          newCooldownUntil: newCooldownUntil,
-        });
-      }
+      // Send the action intent to the server
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "USE_ACTION",
+        actionId: ref.id,
+        actionType: impl.type,
+        casterId: caster.id,
+        targetX: x,
+        targetY: y,
+      });
 
-      // Clean up action targeting states
+      // Reset all targeting-related states
       setActionTargetingMode(false);
       setActiveAction(null);
       setPreviewCells(new Set());
       setSelectedUnit(null);
-      setMovementPreviewMode(false);
       return;
     }
 
     // NOBLE PHANTASM TARGETING MODE: Handle NP execution when player is targeting with a Noble Phantasm
+    // --- NOBLE PHANTASM TARGETING MODE (REFACTORED) ---
     if (npTargetingMode && activeNP) {
       const caster = selectedUnit;
       if (!caster) return;
 
       const { ref, impl } = activeNP;
-      const result = executeNP(ref, gameState, caster, x, y);
-      if (result.success) {
-        const newCooldownUntil =
-          gameState.currentTurn +
-          Math.floor(impl.cooldown * gameState.turnsPerRound);
 
-        // Preserve Noble Phantasm state integrity
-        const updatedGameState = {
-          ...result.updatedGameState,
-          units: result.updatedGameState.units.map((updatedUnit) => {
-            if (updatedUnit.id === caster.id) {
-              return {
-                ...updatedUnit,
-                noblePhantasms: updatedUnit.noblePhantasms.map((np) => {
-                  if (np.id === ref.id) {
-                    return {
-                      ...np,
-                      onCooldownUntil: newCooldownUntil,
-                    };
-                  }
-                  return np;
-                }),
-              };
-            }
-            return updatedUnit;
-          }),
-        };
+      console.log(`Requesting to use NP: ${impl.name} on (${x}, ${y})`);
 
-        sendJsonMessage({
-          type: "GAME_ACTION",
-          action: "USE_NP",
-          npName: impl.name,
-          casterId: caster.id,
-          targetX: x,
-          targetY: y,
-          updatedGameState: updatedGameState,
-          newCooldownUntil: newCooldownUntil,
-          roundUsed: gameState.currentRound,
-        });
-      }
+      // Send the NP intent to the server
+      sendJsonMessage({
+        type: "GAME_ACTION",
+        action: "USE_NP",
+        npId: ref.id,
+        casterId: caster.id,
+        targetX: x,
+        targetY: y,
+      });
 
-      // Reset Noble Phantasm targeting states
+      // Reset all targeting-related states
       setNPTargetingMode(false);
       setActiveNP(null);
       setPreviewCells(new Set());
       setSelectedUnit(null);
-      setMovementPreviewMode(false);
       return;
     }
 

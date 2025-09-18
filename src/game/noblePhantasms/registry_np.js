@@ -1,9 +1,9 @@
 // src/game/noblePhantasms/registry_np.js
-import { MicroAction } from "../MicroAction";
-import { TargetingLogic } from "../targeting/TargetingLogic";
-import { TargetingType } from "../targeting/TargetingTypes";
-import { NoblePhantasm } from "../NoblePhantasm";
-import { ServantRegistry } from "../servants/registry_character";
+import { MicroAction } from "../MicroAction.js";
+import { TargetingLogic } from "../targeting/TargetingLogic.js";
+import { TargetingType } from "../targeting/TargetingTypes.js";
+import { NoblePhantasm } from "../NoblePhantasm.js";
+import { ServantRegistry } from "../servants/registry_character.js";
 
 // Updated NPImplementations with namespacing
 export const NPImplementations = Object.values(ServantRegistry).reduce(

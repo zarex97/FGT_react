@@ -14,6 +14,14 @@ import {
   executeSkill,
   getSkillImplementation,
 } from "../src/game/skills/registry_skills.js";
+import {
+  getActionImplementation,
+  executeAction,
+} from "../src/game/actions/registry_actions.js";
+import {
+  getNPImplementation,
+  executeNP,
+} from "../src/game/noblePhantasms/registry_np.js";
 
 const server = http.createServer();
 const wsServer = new WebSocketServer({ server });
@@ -2070,177 +2078,202 @@ const handleMessage = (bytes, uuid) => {
           broadcastToRoom(player.currentRoom);
           break;
 
-        case "USE_ACTION":
-          const actionCaster = room.gameState.units.find(
-            (u) => u.id === message.casterId
-          );
-          if (!actionCaster) return;
+        case "USE_ACTION": {
+          // Scoped with braces
+          const { actionId, actionType, casterId, targetX, targetY } = message;
 
-          const actionName = message.actionId;
-          const actionCasterId = message.casterId;
-          const newActionCooldownUntil = message.newCooldownUntil;
-          // Store original game state to detect combat initiation
-          const originalGameStateAction = JSON.parse(
-            JSON.stringify(room.gameState)
+          const caster = room.gameState.units.find((u) => u.id === casterId);
+          const actionImpl = getActionImplementation(actionId, actionType);
+          const actionRef = caster?.actions[actionType]?.find(
+            (a) => a.id === actionId
           );
 
-          room.gameState = {
-            ...message.updatedGameState,
-            units: message.updatedGameState.units.map((updatedUnit) => {
-              if (updatedUnit.id === message.casterId) {
-                const updatedActions = {
-                  ...updatedUnit.actions,
-                  [message.actionType]: updatedUnit.actions[
-                    message.actionType
-                  ].map((action) => {
-                    if (action.id === message.actionId) {
-                      console.log("Server updating action cooldown:", {
-                        actionId: action.id,
-                        newCooldownUntil: message.newCooldownUntil,
-                      });
-                      return {
-                        ...action,
-                        onCooldownUntil: message.newCooldownUntil,
-                      };
-                    }
-                    return action;
-                  }),
-                };
-                return {
-                  ...updatedUnit,
-                  actions: updatedActions,
-                };
-              }
-              return updatedUnit;
-            }),
-          };
-
-          console.log("Updated game state after action:", room.gameState);
-
-          // CONDITIONAL processing - Only if combat was initiated
-          const combatWasInitiatedAction = detectCombatInitiation(
-            originalGameStateAction,
-            room.gameState
-          );
-
-          if (combatWasInitiatedAction) {
-            console.log(
-              `🎯 Combat detected from action ${actionName}, processing combat trigger effects`
+          if (!caster || !actionImpl || !actionRef) {
+            console.error(
+              `Server USE_ACTION Error: Caster, ActionRef, or ActionImpl not found for ID ${actionId}`
             );
+            break;
+          }
 
+          console.log(
+            `SERVER: Received intent to use action "${actionImpl.name}" from ${caster.name}`
+          );
+
+          // 1. Fire PRE-COMBAT triggers if it's an attack action
+          if (actionImpl.isAttack) {
+            console.log(
+              `🎯 Action "${actionImpl.name}" is an attack. Firing COMBAT_INITIATED triggers.`
+            );
             room.gameState = processTriggerEffectsForAction(
               room.gameState,
               EventTypes.COMBAT_INITIATED,
               {
-                actionName: message.actionId,
-                actionType: message.actionType,
-                casterId: message.casterId,
-                targetX: message.targetX,
-                targetY: message.targetY,
-                combatInitiated: true,
+                actionName: actionImpl.name,
+                casterId: casterId,
+                targetX: targetX,
+                targetY: targetY,
                 isAttackAction: true,
               },
               player.currentRoom
             );
-          } else {
+          }
+
+          // 2. Execute the action on the server with the potentially modified game state
+          const updatedCaster = room.gameState.units.find(
+            (u) => u.id === casterId
+          );
+          const result = executeAction(
+            actionRef,
+            actionImpl.type,
+            room.gameState,
+            updatedCaster,
+            targetX,
+            targetY
+          );
+
+          if (result.success) {
+            room.gameState = result.updatedGameState;
+
+            // 3. Apply cooldown
+            const newCooldownUntil =
+              room.gameState.currentTurn +
+              Math.floor(actionImpl.cooldown * room.gameState.turnsPerRound);
+
+            room.gameState.units = room.gameState.units.map((unit) => {
+              if (unit.id === casterId) {
+                return {
+                  ...unit,
+                  actions: {
+                    ...unit.actions,
+                    [actionType]: unit.actions[actionType].map((action) => {
+                      if (action.id === actionId) {
+                        return { ...action, onCooldownUntil: newCooldownUntil };
+                      }
+                      return action;
+                    }),
+                  },
+                };
+              }
+              return unit;
+            });
             console.log(
-              `✨ Non-combat action ${actionName} executed, skipping combat trigger effects`
+              `SERVER: Action "${actionImpl.name}" executed successfully.`
+            );
+          } else {
+            console.error(
+              `SERVER: Action "${actionImpl.name}" execution failed.`
             );
           }
-          broadcastToRoom(player.currentRoom);
-          break;
 
-          console.log("Updated game state after action:", room.gameState);
-          broadcastToRoom(player.currentRoom);
-          break;
-
-        case "USE_NP":
-          const npCaster = room.gameState.units.find(
-            (u) => u.id === message.casterId
-          );
-          if (!npCaster) return;
-
-          const npName = message.npName;
-          const npCasterId = message.casterId;
-          const newNPCooldownUntil = message.newCooldownUntil;
-
-          // Store original game state to detect combat initiation
-          const originalGameStateNP = JSON.parse(
-            JSON.stringify(room.gameState)
+          // 4. Fire POST-EXECUTION triggers
+          room.gameState = processTriggerEffectsForAction(
+            room.gameState,
+            EventTypes.ACTION_USED, // This is a new event you might need to add to EventTypes.js
+            {
+              actionName: actionImpl.name,
+              casterId: casterId,
+            },
+            player.currentRoom
           );
 
-          room.gameState = {
-            ...message.updatedGameState,
-            units: message.updatedGameState.units.map((updatedUnit) => {
-              if (updatedUnit.id === npCasterId) {
+          break;
+        }
+
+        case "USE_NP": {
+          // Scoped with braces
+          const { npId, casterId, targetX, targetY } = message;
+
+          const caster = room.gameState.units.find((u) => u.id === casterId);
+          const npImpl = getNPImplementation(npId);
+          const npRef = caster?.noblePhantasms?.find((np) => np.id === npId);
+
+          if (!caster || !npImpl || !npRef) {
+            console.error(
+              `Server USE_NP Error: Caster, NPRef, or NPImpl not found for ID ${npId}`
+            );
+            break;
+          }
+
+          console.log(
+            `SERVER: Received intent to use NP "${npImpl.name}" from ${caster.name}`
+          );
+
+          // 1. Fire PRE-COMBAT triggers if it's an attack NP
+          if (npImpl.isAttack) {
+            console.log(
+              `🎯 NP "${npImpl.name}" is an attack. Firing COMBAT_INITIATED triggers.`
+            );
+            room.gameState = processTriggerEffectsForAction(
+              room.gameState,
+              EventTypes.COMBAT_INITIATED,
+              {
+                npName: npImpl.name,
+                casterId: casterId,
+                targetX: targetX,
+                targetY: targetY,
+                isAttackNP: true,
+              },
+              player.currentRoom
+            );
+          }
+
+          // 2. Execute the NP on the server
+          const updatedCaster = room.gameState.units.find(
+            (u) => u.id === casterId
+          );
+          const result = executeNP(
+            npRef,
+            room.gameState,
+            updatedCaster,
+            targetX,
+            targetY
+          );
+
+          if (result.success) {
+            room.gameState = result.updatedGameState;
+
+            // 3. Apply cooldown and track round usage
+            const newCooldownUntil =
+              room.gameState.currentTurn +
+              Math.floor(npImpl.cooldown * room.gameState.turnsPerRound);
+
+            room.gameState.units = room.gameState.units.map((unit) => {
+              if (unit.id === casterId) {
                 return {
-                  ...updatedUnit,
-                  noblePhantasms: updatedUnit.noblePhantasms.map((np) => {
-                    if (np.id === npName) {
+                  ...unit,
+                  noblePhantasms: unit.noblePhantasms.map((np) => {
+                    if (np.id === npId) {
                       return {
                         ...np,
-                        onCooldownUntil: newNPCooldownUntil,
+                        onCooldownUntil: newCooldownUntil,
+                        roundUsed: room.gameState.currentRound, // Track when it was used
                       };
                     }
                     return np;
                   }),
                 };
               }
-              return updatedUnit;
-            }),
-          };
+              return unit;
+            });
+            console.log(`SERVER: NP "${npImpl.name}" executed successfully.`);
+          } else {
+            console.error(`SERVER: NP "${npImpl.name}" execution failed.`);
+          }
 
-          console.log(
-            "Updated game state after Noble Phantasm:",
-            room.gameState
-          );
-
-          // Add AFTER NP execution but BEFORE broadcasting
+          // 4. Fire POST-EXECUTION triggers
           room.gameState = processTriggerEffectsForAction(
             room.gameState,
             EventTypes.USE_NP,
             {
-              npName: message.npName,
-              casterId: message.casterId,
-              targetX: message.targetX,
-              targetY: message.targetY,
-              updatedGameState: message.updatedGameState,
+              npName: npImpl.name,
+              casterId: casterId,
             },
-            room.roomId
+            player.currentRoom
           );
 
-          // CONDITIONAL processing - Only if combat was initiated
-          const combatWasInitiatedNP = detectCombatInitiation(
-            originalGameStateNP,
-            room.gameState
-          );
-
-          if (combatWasInitiated) {
-            console.log(
-              `🎯 Combat detected from Noble Phantasm ${npName}, processing combat trigger effects`
-            );
-
-            room.gameState = processTriggerEffectsForAction(
-              room.gameState,
-              EventTypes.COMBAT_INITIATED,
-              {
-                npName: message.npName,
-                casterId: message.casterId,
-                targetX: message.targetX,
-                targetY: message.targetY,
-                combatInitiated: true,
-                isAttackNP: true,
-              },
-              player.currentRoom
-            );
-          } else {
-            console.log(
-              `✨ Non-combat Noble Phantasm ${npName} executed, skipping combat trigger effects`
-            );
-          }
-
-          broadcastToRoom(player.currentRoom);
           break;
+        }
+
         case "USE_SKILL": {
           // <--- ADD this opening brace
           const { skillId, casterId, targetX, targetY } = message;

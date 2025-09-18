@@ -1,6 +1,6 @@
 // src/game/actions/registry_actions.js
-import { ServantRegistry } from "../servants/registry_character";
-import { TargetingLogic } from "../targeting/TargetingLogic";
+import { ServantRegistry } from "../servants/registry_character.js";
+import { TargetingLogic } from "../targeting/TargetingLogic.js";
 
 // Updated ActionImplementations with namespacing
 export const ActionImplementations = Object.values(ServantRegistry).reduce(
