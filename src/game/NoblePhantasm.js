@@ -10,7 +10,7 @@ export class NoblePhantasm {
     range,
     microActions,
     isAttack = false,
-    affectsAttackCount = false,
+    affectsAttackCount = true, //NPs normally count as the Attack of turn, even if they are not Attack (if they don't do damage)
     isReactionary = false,
     usableFromRound = 6, // Default to round 6
     rankLetter = null,
@@ -106,7 +106,7 @@ export const createNoblePhantasm = (
   range,
   microActions,
   isAttack = false,
-  affectsAttackCount = false,
+  affectsAttackCount = true,
   isReactionary = false,
   usableFromRound = 6
 ) => {

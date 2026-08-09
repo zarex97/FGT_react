@@ -7,12 +7,12 @@ export class Skill {
     description,
     cooldown,
     range,
-    microActions,
-    isAttack = false,
-    affectsAttackCount = false,
+    microActions, //the steps or little action that make a whole skill
+    isAttack = false, //if it counts as an Attack
+    affectsAttackCount = false, //if it affects the maximum limit of Attacks per turn
     isReactionary = false,
-    rankLetter = null,
-    rankScale = null
+    rankLetter = null, //A++. B-
+    rankScale = null // Anti-Army, Anti-world, Anti-unit, etc... whatever it is
   ) {
     this.name = name;
     this.description = description;
